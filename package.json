@@ -26,7 +26,14 @@
       "client/dist/**/*"
     ],
     "win": {
-      "target": "zip"
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Pose Annotator"
     },
     "asar": true,
     "asarUnpack": [
