@@ -39,6 +39,18 @@
   --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.6);
 }
 
+/* Hide number input spinners globally */
+input::-webkit-outer-spin-button,
+input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type=number] {
+  -moz-appearance: textfield;
+  appearance: none;
+}
+
 /* ========================================
    BASE RESET & DEFAULTS
    ======================================== */

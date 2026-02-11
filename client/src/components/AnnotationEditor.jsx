@@ -548,17 +548,19 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                         {/* Crosshair Guides */}
                         {showGuides && (mode === 'bbox' || mode === 'keypoint') && (
                             <>
+                                {/* Vertical Guide with contrast shadow */}
                                 <div style={{
                                     position: 'absolute', top: 0, bottom: 0, left: cursorPos.x,
                                     width: '1px', pointerEvents: 'none', zIndex: 50,
-                                    borderLeft: '1px dashed rgba(255, 255, 255, 0.6)',
-                                    boxShadow: '0 0 2px rgba(0,0,0,0.5)'
+                                    borderLeft: '1px dashed rgba(255, 255, 255, 1)',
+                                    boxShadow: '0 0 0 1px rgba(0, 0, 0, 0.7), 0 0 4px rgba(0,0,0,0.5)'
                                 }} />
+                                {/* Horizontal Guide with contrast shadow */}
                                 <div style={{
                                     position: 'absolute', left: 0, right: 0, top: cursorPos.y,
                                     height: '1px', pointerEvents: 'none', zIndex: 50,
-                                    borderTop: '1px dashed rgba(255, 255, 255, 0.6)',
-                                    boxShadow: '0 0 2px rgba(0,0,0,0.5)'
+                                    borderTop: '1px dashed rgba(255, 255, 255, 1)',
+                                    boxShadow: '0 0 0 1px rgba(0, 0, 0, 0.7), 0 0 4px rgba(0,0,0,0.5)'
                                 }} />
                             </>
                         )}

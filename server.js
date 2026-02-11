@@ -25,9 +25,24 @@ process.on('unhandledRejection', (reason) => {
     console.error('[FATAL] Unhandled Rejection:', reason);
 });
 
-// Directories
-const PROJECTS_DIR = path.join(__dirname, 'projects');
-if (!fs.existsSync(PROJECTS_DIR)) fs.mkdirSync(PROJECTS_DIR);
+// --- DATA DIRECTORY LOGIC ---
+let PROJECTS_DIR;
+if (process.versions.electron) {
+    // If running in Electron, use the user's data directory to ensure it's writable
+    const { app } = require('electron');
+    // Note: server.js is required by main process, so app is available
+    PROJECTS_DIR = path.join(app.getPath('userData'), 'projects');
+} else {
+    PROJECTS_DIR = path.join(__dirname, 'projects');
+}
+
+if (!fs.existsSync(PROJECTS_DIR)) {
+    try {
+        fs.mkdirSync(PROJECTS_DIR, { recursive: true });
+    } catch (e) {
+        console.error('Failed to create projects directory:', e.message);
+    }
+}
 
 // --- MIGRATION LOGIC ---
 const LEGACY_UPLOADS = path.join(__dirname, 'uploads');
@@ -785,6 +800,14 @@ app.use((err, req, res, next) => {
     res.status(500).json({ error: 'Internal server error', details: err.message });
 });
 
-app.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-});
+const startServer = (port = PORT) => {
+    return app.listen(port, () => {
+        console.log(`Server running on http://localhost:${port}`);
+    });
+};
+
+if (require.main === module) {
+    startServer();
+}
+
+module.exports = { app, startServer };
