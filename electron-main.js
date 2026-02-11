@@ -25,24 +25,23 @@ function createWindow() {
         title: "Pose Annotator"
     });
 
-    const isDev = !app.isPackaged && process.env.VITE_DEV_SERVER_URL;
+    const isDev = !app.isPackaged;
     const prodPath = path.join(__dirname, 'client', 'dist', 'index.html');
 
-    if (fs.existsSync(prodPath)) {
+    if (isDev) {
+        log('Running in development mode, loading dev server (http://localhost:5173)...');
+        mainWindow.loadURL('http://localhost:5173');
+    } else if (fs.existsSync(prodPath)) {
         log(`Loading production build from: ${prodPath}`);
         mainWindow.loadFile(prodPath);
     } else {
-        log('Production build not found, falling back to dev server or URL detection');
-        if (app.isPackaged) {
-            log('WARNING: App is packaged but dist/index.html is missing!');
-            // Try one more path variation often used by electron-builder
-            const altPath = path.join(__dirname, '..', 'client', 'dist', 'index.html');
-            if (fs.existsSync(altPath)) {
-                mainWindow.loadFile(altPath);
-            } else {
-                mainWindow.loadURL('http://localhost:5173');
-            }
+        log('Production build not found, checking alternate paths...');
+        // Try alternate path variation often used by electron-builder
+        const altPath = path.join(__dirname, '..', 'client', 'dist', 'index.html');
+        if (fs.existsSync(altPath)) {
+            mainWindow.loadFile(altPath);
         } else {
+            // Last resort
             mainWindow.loadURL('http://localhost:5173');
         }
     }
