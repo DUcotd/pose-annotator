@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Download, X, Shuffle } from 'lucide-react';
+import { Download, X, Shuffle, FolderOpen } from 'lucide-react';
 
 export const ExportModal = ({ isOpen, onClose, onExport }) => {
     const [includeVisibility, setIncludeVisibility] = useState(true);
@@ -19,6 +19,18 @@ export const ExportModal = ({ isOpen, onClose, onExport }) => {
 
     const totalRatio = trainRatio + valRatio + testRatio;
     const isRatioValid = totalRatio === 100;
+
+    const handleSelectFolder = async () => {
+        try {
+            const res = await fetch('http://localhost:5000/api/utils/select-folder', { method: 'POST' });
+            const data = await res.json();
+            if (data.path) {
+                setCustomPath(data.path);
+            }
+        } catch (err) {
+            console.error('Failed to select folder:', err);
+        }
+    };
 
     const handleExport = async () => {
         if (!isRatioValid) return;
@@ -188,13 +200,23 @@ export const ExportModal = ({ isOpen, onClose, onExport }) => {
                     {/* Custom Path */}
                     <div>
                         <label className="form-label" style={{ fontSize: '13px' }}>自定义导出路径 (可选)</label>
-                        <input
-                            type="text"
-                            placeholder="例如: C:/Datasets/MyExport"
-                            value={customPath}
-                            onChange={(e) => setCustomPath(e.target.value)}
-                            className="input-sm"
-                        />
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                            <input
+                                type="text"
+                                placeholder="未选择路径 (默认为项目目录)"
+                                value={customPath}
+                                readOnly
+                                className="input-sm"
+                                style={{ flex: 1, background: 'var(--bg-tertiary)', border: '1px solid var(--border-subtle)' }}
+                            />
+                            <button
+                                onClick={handleSelectFolder}
+                                className="btn-secondary"
+                                style={{ padding: '8px 12px', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '6px' }}
+                            >
+                                <FolderOpen size={16} /> 选择文件夹
+                            </button>
+                        </div>
                     </div>
 
                     <div className="modal-footer">

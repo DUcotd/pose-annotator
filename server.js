@@ -266,6 +266,31 @@ app.post('/api/projects/:projectId/annotations/:imageId', (req, res) => {
 });
 
 
+// --- API: UTILS ---
+
+// Open Folder Selection Dialog (Electron only)
+app.post('/api/utils/select-folder', (req, res) => {
+    if (process.versions.electron) {
+        try {
+            const { dialog } = require('electron');
+            const result = dialog.showOpenDialogSync({
+                properties: ['openDirectory']
+            });
+            if (result && result.length > 0) {
+                res.json({ path: result[0] });
+            } else {
+                res.json({ path: null });
+            }
+        } catch (err) {
+            console.error('Failed to open folder dialog:', err);
+            res.status(500).json({ error: 'Failed to open folder dialog' });
+        }
+    } else {
+        res.status(400).json({ error: 'Folder picker is only available in Desktop version' });
+    }
+});
+
+
 // --- API: EXPORT ---
 
 // Get Dataset Stats for Training Preview

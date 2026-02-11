@@ -53,24 +53,48 @@ export function AnnotationEditor({ image, projectId, onBack }) {
         return { groups, unassignedKeypoints: unassigned };
     }, [annotations]);
 
+    const handleImageLoad = useCallback(() => {
+        if (imageRef.current) {
+            const { width, height, naturalWidth, naturalHeight } = imageRef.current;
+            setImageDims({ width, height, naturalWidth, naturalHeight });
+            setIsImageLoaded(true);
+        }
+    }, []);
+
     // Load existing annotations
     useEffect(() => {
+        let isCancelled = false;
         setIsLoaded(false);
         setIsImageLoaded(false);
         setImageDims({ width: 0, height: 0, naturalWidth: 0, naturalHeight: 0 });
         setAnnotations([]); // Clear old annotations immediately
         setMode('bbox');
+        setSelectedId(null); // Reset selection on image change
+
+        // Check if image is already loaded (from cache)
+        if (imageRef.current && imageRef.current.complete) {
+            handleImageLoad();
+        }
+
         fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/annotations/${encodeURIComponent(image)}`)
             .then(res => res.json())
             .then(data => {
-                setAnnotations(data || []);
-                setIsLoaded(true);
+                if (!isCancelled) {
+                    setAnnotations(data || []);
+                    setIsLoaded(true);
+                }
             })
             .catch(err => {
                 console.error('Error loading annotations:', err);
-                setIsLoaded(true);
+                if (!isCancelled) {
+                    setIsLoaded(true);
+                }
             });
-    }, [image, projectId]);
+
+        return () => {
+            isCancelled = true;
+        };
+    }, [image, projectId, handleImageLoad]);
 
 
     // Save Helper
@@ -197,13 +221,6 @@ export function AnnotationEditor({ image, projectId, onBack }) {
         };
     }, [isImageLoaded, imageDims]);
 
-    const handleImageLoad = () => {
-        if (imageRef.current) {
-            const { width, height, naturalWidth, naturalHeight } = imageRef.current;
-            setImageDims({ width, height, naturalWidth, naturalHeight });
-            setIsImageLoaded(true);
-        }
-    };
 
     const clamp = (val, min, max) => Math.min(Math.max(val, min), max);
 
@@ -543,6 +560,10 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                             src={`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/uploads/${encodeURIComponent(image)}`}
                             alt="Target"
                             onLoad={handleImageLoad}
+                            onError={() => {
+                                console.error('Image failed to load');
+                                setIsImageLoaded(true); // Allow UI to show (and fail gracefully)
+                            }}
                         />
 
                         {/* Crosshair Guides */}
@@ -611,8 +632,7 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                                             background: isChildOfSelected || isSelected ? 'var(--warning)' : 'var(--success)',
                                             border: '2px solid var(--bg-primary)',
                                             boxShadow: isSelected ? '0 0 0 2px var(--warning)' : 'none',
-                                            pointerEvents: 'none',
-                                            transition: 'all 0.2s ease'
+                                            pointerEvents: 'none'
                                         }}>
                                             <span style={{ position: 'absolute', top: -16, left: 0, fontSize: '10px', color: 'var(--text-primary)', fontWeight: 'bold', textShadow: '0 1px 2px black' }}>
                                                 {ann.keypointIndex ?? 0}
