@@ -325,6 +325,58 @@ app.post('/api/utils/select-folder', (req, res) => {
     }
 });
 
+// Open File Selection Dialog (Electron only)
+app.post('/api/utils/select-file', async (req, res) => {
+    console.log('[API] Received request to select-file');
+
+    // Check if we are in Electron or if we can require it
+    let electron;
+    try {
+        electron = require('electron');
+    } catch (e) {
+        console.error('[API] Electron module not found:', e.message);
+    }
+
+    if (electron && electron.dialog) {
+        try {
+            const { dialog, BrowserWindow } = electron;
+            console.log('[API] Opening file dialog...');
+
+            // Try to get main window to make dialog modal/on-top
+            const win = BrowserWindow.getFocusedWindow();
+
+            const result = await dialog.showOpenDialog(win, {
+                properties: ['openFile'],
+                filters: [
+                    { name: 'YAML Configuration', extensions: ['yaml', 'yml'] },
+                    { name: 'All Files', extensions: ['*'] }
+                ]
+            });
+
+            if (!result.canceled && result.filePaths.length > 0) {
+                console.log('[API] File selected:', result.filePaths[0]);
+                res.json({ path: result.filePaths[0] });
+            } else {
+                console.log('[API] File selection canceled');
+                res.json({ path: null });
+            }
+        } catch (err) {
+            console.error('[API] Failed to open file dialog:', err);
+            res.status(500).json({ error: 'Failed to open file dialog: ' + err.message });
+        }
+    } else {
+        console.warn('[API] File picker called outside of Electron environment');
+        res.status(400).json({
+            error: 'File picker is only available in Desktop version.',
+            details: {
+                hasElectron: !!electron,
+                hasDialog: electron ? !!electron.dialog : false,
+                versions: process.versions
+            }
+        });
+    }
+});
+
 
 // --- API: EXPORT ---
 
@@ -445,6 +497,10 @@ app.post('/api/projects/:projectId/export/yolo', (req, res) => {
 
         try {
             const images = files.filter(file => /\.(jpg|jpeg|png|gif|webp)$/i.test(file));
+
+            let maxClassIndex = -1;
+            let totalKeypoints = 0;
+            let totalBBoxes = 0;
 
             images.forEach(imageFile => {
                 const annotationFile = path.join(paths.annotations, `${imageFile}.json`);
@@ -705,6 +761,9 @@ ${namesYaml}`;
 
         } catch (error) {
             console.error('Export failed:', error);
+            const logPath = path.join(__dirname, 'server_error_log.txt');
+            const logEntry = `[${new Date().toISOString()}] Export Error:\n${error.stack}\n\n`;
+            fs.appendFileSync(logPath, logEntry);
             res.status(500).json({ error: 'Export failed', details: error.message });
         }
     });
@@ -715,17 +774,19 @@ ${namesYaml}`;
 
 app.post('/api/projects/:projectId/train', (req, res) => {
     const { projectId } = req.params;
-    const { model = 'yolov8n.pt', epochs = 100, batch = 16, imgsz = 640, device = '0' } = req.body;
+    const { model = 'yolov8n.pt', data, epochs = 100, batch = 16, imgsz = 640, device = '0' } = req.body;
 
     if (trainingProcesses[projectId] && trainingProcesses[projectId].status === 'running') {
         return res.status(400).json({ error: 'Training is already in progress for this project.' });
     }
 
     const paths = getProjectPaths(projectId);
-    const dataYamlPath = path.join(paths.dataset, 'data.yaml');
+    const dataYamlPath = data && typeof data === 'string' && data.trim() !== ''
+        ? (path.isAbsolute(data) ? data : path.join(paths.root, data))
+        : path.join(paths.dataset, 'data.yaml');
 
     if (!fs.existsSync(dataYamlPath)) {
-        return res.status(400).json({ error: 'Dataset not found. Please export the dataset first.' });
+        return res.status(400).json({ error: `Dataset config not found at: ${dataYamlPath}. Please ensure the path is correct or export the dataset first.` });
     }
 
     const projectDir = paths.root; // Save runs inside the project folder
@@ -867,6 +928,12 @@ app.post('/api/projects/:projectId/train/stop', (req, res) => {
 });
 
 function str(v) { return String(v); }
+
+// Express 404 handler - handle routes that don't exist
+app.use((req, res, next) => {
+    console.warn('[Express 404]', req.method, req.path);
+    res.status(404).json({ error: 'Route not found', method: req.method, path: req.path });
+});
 
 // Express error handler - catch any unhandled route errors
 app.use((err, req, res, next) => {

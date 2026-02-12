@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Play, Square, Terminal, Settings, CheckCircle, AlertTriangle, RefreshCw, Database } from 'lucide-react';
+import { Play, Square, Terminal, Settings, CheckCircle, AlertTriangle, RefreshCw, Database, Image as ImageIcon, FileText, FolderOpen } from 'lucide-react';
 import { useProject } from '../context/ProjectContext';
 
 export const TrainingConfig = () => {
     const { currentProject } = useProject();
     const [config, setConfig] = useState({
         model: 'yolov8n.pt',
+        data: '',
         epochs: 100,
         batch: 16,
         imgsz: 640,
@@ -16,12 +17,41 @@ export const TrainingConfig = () => {
     const [stats, setStats] = useState(null);
     const logEndRef = useRef(null);
     const pollIntervalRef = useRef(null);
+    const [dropdownOpen, setDropdownOpen] = useState(false);
+    const dropdownRef = useRef(null);
+
+    const modelOptions = [
+        { id: 'yolov8n.pt', label: 'YOLOv8n (Nano)' },
+        { id: 'yolov8s.pt', label: 'YOLOv8s (Small)' },
+        { id: 'yolov8m.pt', label: 'YOLOv8m (Medium)' },
+        { id: 'yolov8l.pt', label: 'YOLOv8l (Large)' },
+        { id: 'yolov8x.pt', label: 'YOLOv8x (XLarge)' }
+    ];
 
     // Initial status check
     useEffect(() => {
         checkStatus();
         fetchStats();
-        return () => stopPolling();
+
+        // Initialize default data path
+        if (currentProject) {
+            // We use a relative path that the server can resolve to the project directory
+            // or we just default it to empty and let the server decide unless user overrides
+            setConfig(prev => ({ ...prev, data: '' }));
+        }
+
+        // Close dropdown when clicking outside
+        const handleClickOutside = (event) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+                setDropdownOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+
+        return () => {
+            stopPolling();
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
     }, [currentProject]);
 
     const fetchStats = async () => {
@@ -62,6 +92,23 @@ export const TrainingConfig = () => {
             }
         } catch (err) {
             console.error("Failed to check status", err);
+        }
+    };
+
+    const handleBrowseData = async () => {
+        try {
+            const res = await fetch('http://localhost:5000/api/utils/select-file', { method: 'POST' });
+            if (!res.ok) {
+                const errData = await res.json();
+                throw new Error(errData.error || 'Failed to open file picker');
+            }
+            const data = await res.json();
+            if (data.path) {
+                setConfig({ ...config, data: data.path });
+            }
+        } catch (err) {
+            console.error("Failed to browse file", err);
+            alert(`无法打开文件选择器: ${err.message}\n请确保您正在使用桌面版应用程序。`);
         }
     };
 
@@ -162,75 +209,132 @@ export const TrainingConfig = () => {
                         )}
                     </div>
 
-                    <div className="config-card">
-                        <h3><Settings size={18} /> 参数配置</h3>
+                    <div className="config-card glass-panel-modern">
+                        <h3><Settings size={20} className="icon-accent" /> 参数配置</h3>
 
                         <div className="form-group">
-                            <label>Base Model</label>
-                            <select
-                                value={config.model}
-                                onChange={e => setConfig({ ...config, model: e.target.value })}
-                                disabled={status === 'running'}
-                            >
-                                <option value="yolov8n.pt">YOLOv8n (Nano)</option>
-                                <option value="yolov8s.pt">YOLOv8s (Small)</option>
-                                <option value="yolov8m.pt">YOLOv8m (Medium)</option>
-                                <option value="yolov8l.pt">YOLOv8l (Large)</option>
-                                <option value="yolov8x.pt">YOLOv8x (XLarge)</option>
-                            </select>
-                        </div>
+                            <label className="label-modern">Base Model</label>
+                            <div className="select-wrapper-modern" ref={dropdownRef}>
+                                <div
+                                    className={`custom-select-trigger ${dropdownOpen ? 'open' : ''} ${status === 'running' ? 'disabled' : ''}`}
+                                    onClick={() => status !== 'running' && setDropdownOpen(!dropdownOpen)}
+                                >
+                                    <Database size={16} className="input-icon-left" />
+                                    <span className="selected-value">
+                                        {modelOptions.find(m => m.id === config.model)?.label}
+                                    </span>
+                                    <div className="arrow-icon"></div>
+                                </div>
 
-                        <div className="form-row">
-                            <div className="form-group">
-                                <label>Epochs</label>
-                                <input
-                                    type="number"
-                                    value={config.epochs}
-                                    onChange={e => setConfig({ ...config, epochs: parseInt(e.target.value) })}
-                                    disabled={status === 'running'}
-                                />
-                            </div>
-                            <div className="form-group">
-                                <label>Batch Size</label>
-                                <input
-                                    type="number"
-                                    value={config.batch}
-                                    onChange={e => setConfig({ ...config, batch: parseInt(e.target.value) })}
-                                    disabled={status === 'running'}
-                                />
+                                {dropdownOpen && (
+                                    <div className="custom-dropdown-menu">
+                                        {modelOptions.map(option => (
+                                            <div
+                                                key={option.id}
+                                                className={`dropdown-item-modern ${config.model === option.id ? 'active' : ''}`}
+                                                onClick={() => {
+                                                    setConfig({ ...config, model: option.id });
+                                                    setDropdownOpen(false);
+                                                }}
+                                            >
+                                                {option.label}
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
                             </div>
                         </div>
 
-                        <div className="form-row">
-                            <div className="form-group">
-                                <label>Img Size</label>
-                                <input
-                                    type="number"
-                                    value={config.imgsz}
-                                    onChange={e => setConfig({ ...config, imgsz: parseInt(e.target.value) })}
-                                    disabled={status === 'running'}
-                                />
-                            </div>
-                            <div className="form-group">
-                                <label>Device</label>
+                        <div className="form-group-modern">
+                            <label className="label-modern">Custom Data YAML (Optional)</label>
+                            <div className="input-wrapper-modern has-action">
+                                <FileText size={16} className="input-icon-left" />
                                 <input
                                     type="text"
-                                    value={config.device}
-                                    onChange={e => setConfig({ ...config, device: e.target.value })}
-                                    placeholder="0, 1, cpu"
+                                    value={config.data}
+                                    onChange={e => setConfig({ ...config, data: e.target.value })}
+                                    placeholder="Default: dataset/data.yaml"
                                     disabled={status === 'running'}
+                                    className="input-modern-field"
                                 />
+                                <button
+                                    className="input-action-btn"
+                                    onClick={handleBrowseData}
+                                    disabled={status === 'running'}
+                                    title="Browse YAML file"
+                                >
+                                    <FolderOpen size={16} />
+                                </button>
                             </div>
                         </div>
 
-                        <div className="train-actions">
+                        <div className="form-row-modern">
+                            <div className="form-group-modern">
+                                <label className="label-modern">Epochs</label>
+                                <div className="input-wrapper-modern">
+                                    <RefreshCw size={16} className="input-icon-left" />
+                                    <input
+                                        type="number"
+                                        value={config.epochs}
+                                        onChange={e => setConfig({ ...config, epochs: parseInt(e.target.value) })}
+                                        disabled={status === 'running'}
+                                        className="input-modern-field"
+                                    />
+                                </div>
+                            </div>
+                            <div className="form-group-modern">
+                                <label className="label-modern">Batch Size</label>
+                                <div className="input-wrapper-modern">
+                                    <CheckCircle size={16} className="input-icon-left" />
+                                    <input
+                                        type="number"
+                                        value={config.batch}
+                                        onChange={e => setConfig({ ...config, batch: parseInt(e.target.value) })}
+                                        disabled={status === 'running'}
+                                        className="input-modern-field"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="form-row-modern">
+                            <div className="form-group-modern">
+                                <label className="label-modern">Img Size</label>
+                                <div className="input-wrapper-modern">
+                                    <ImageIcon size={16} className="input-icon-left" />
+                                    <input
+                                        type="number"
+                                        value={config.imgsz}
+                                        onChange={e => setConfig({ ...config, imgsz: parseInt(e.target.value) })}
+                                        disabled={status === 'running'}
+                                        className="input-modern-field"
+                                    />
+                                </div>
+                            </div>
+                            <div className="form-group-modern">
+                                <label className="label-modern">Device</label>
+                                <div className="input-wrapper-modern">
+                                    <Terminal size={16} className="input-icon-left" />
+                                    <input
+                                        type="text"
+                                        value={config.device}
+                                        onChange={e => setConfig({ ...config, device: e.target.value })}
+                                        placeholder="0, 1, cpu"
+                                        disabled={status === 'running'}
+                                        className="input-modern-field"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="train-actions-modern">
                             {status !== 'running' ? (
-                                <button className="btn-primary full-width" onClick={handleStart} disabled={!stats || stats.annotated === 0}>
-                                    <Play size={18} /> 开始训练
+                                <button className="btn-modern-primary full-width" onClick={handleStart} disabled={!stats || stats.annotated === 0}>
+                                    <Play size={18} fill="currentColor" /> 开始训练
                                 </button>
                             ) : (
-                                <button className="btn-danger full-width" onClick={handleStop}>
-                                    <Square size={18} /> 停止训练
+                                <button className="btn-modern-danger full-width" onClick={handleStop}>
+                                    <Square size={18} fill="currentColor" /> 停止训练
                                 </button>
                             )}
                         </div>
@@ -361,104 +465,277 @@ export const TrainingConfig = () => {
 
                 /* Config Card Polish */
                 .config-card { 
-                    background: var(--bg-secondary); 
+                    background: rgba(22, 27, 34, 0.4); 
+                    backdrop-filter: blur(12px);
                     padding: 24px; 
-                    border-radius: 12px; 
-                    height: fit-content; 
-                    border: 1px solid var(--border-color);
-                    box-shadow: 0 4px 20px rgba(0,0,0,0.1);
-                    /* overflow-y: auto; handled by left-panel now */
+                    border-radius: 16px; 
+                    border: 1px solid rgba(255, 255, 255, 0.08);
+                    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
                 }
                 
                 .config-card h3 { 
                     display: flex; 
                     align-items: center; 
-                    gap: 10px; 
+                    gap: 12px; 
                     margin-top: 0; 
-                    margin-bottom: 20px; 
+                    margin-bottom: 24px; 
                     font-size: 1.1rem; 
                     color: var(--text-primary);
-                    font-weight: 600;
-                }
-                
-                /* Form Elements */
-                .form-group { margin-bottom: 16px; }
-                .form-group label { 
-                    display: block; 
-                    margin-bottom: 8px; 
-                    font-size: 0.85rem; 
-                    font-weight: 500;
-                    color: var(--text-secondary); 
-                    text-transform: uppercase;
+                    font-weight: 700;
                     letter-spacing: 0.5px;
                 }
+
+                .icon-accent { color: var(--accent-primary); }
                 
-                .form-group input, .form-group select { 
-                    width: 100%; 
-                    padding: 10px 14px; 
-                    background: var(--bg-tertiary); 
-                    border: 1px solid var(--border-color); 
-                    border-radius: 8px; 
-                    color: var(--text-primary); 
-                    font-size: 0.95rem;
-                    transition: all 0.2s;
-                    box-sizing: border-box; /* Explicitly set */
+                /* Form Elements */
+                .form-group, .form-group-modern { margin-bottom: 20px; }
+                .label-modern { 
+                    display: block; 
+                    margin-bottom: 8px; 
+                    font-size: 0.7rem; 
+                    font-weight: 800;
+                    color: var(--text-tertiary); 
+                    text-transform: uppercase;
+                    letter-spacing: 1.5px;
+                    padding-left: 4px;
                 }
                 
-                .form-group input:focus, .form-group select:focus {
-                    border-color: var(--accent-primary);
-                    box-shadow: 0 0 0 2px var(--accent-primary-alpha, rgba(59, 130, 246, 0.2));
-                    outline: none;
-                }
-                
-                /* Specific fix for select options in dark mode */
-                .form-group select option {
-                    background-color: var(--bg-secondary);
-                    color: var(--text-primary);
+                .input-wrapper-modern, .select-wrapper-modern {
+                    position: relative;
+                    display: flex;
+                    align-items: center;
+                    transition: all 0.3s ease;
                 }
 
-                .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+                .input-icon-left {
+                    position: absolute;
+                    left: 14px;
+                    color: var(--text-tertiary);
+                    pointer-events: none;
+                    transition: all 0.3s ease;
+                    z-index: 2;
+                }
+
+                .input-wrapper-modern:focus-within .input-icon-left {
+                    color: var(--accent-primary);
+                    transform: scale(1.1);
+                }
+
+                .input-wrapper-modern.has-action .input-modern-field {
+                    padding-right: 48px;
+                }
+
+                .input-action-btn {
+                    position: absolute;
+                    right: 8px;
+                    background: rgba(255, 255, 255, 0.05);
+                    border: 1px solid rgba(255, 255, 255, 0.1);
+                    color: var(--text-secondary);
+                    width: 32px;
+                    height: 32px;
+                    border-radius: 8px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    cursor: pointer;
+                    transition: all 0.2s;
+                    z-index: 2;
+                }
+
+                .input-action-btn:hover:not(:disabled) {
+                    background: rgba(88, 166, 255, 0.1);
+                    border-color: var(--accent-primary);
+                    color: var(--accent-primary);
+                    transform: translateY(-1px);
+                }
+
+                .input-action-btn:disabled {
+                    opacity: 0.3;
+                    cursor: not-allowed;
+                }
+
+                .input-modern-field, .custom-select-trigger { 
+                    width: 100%; 
+                    padding: 12px 14px 12px 42px; 
+                    background: rgba(0, 0, 0, 0.25); 
+                    border: 1px solid rgba(255, 255, 255, 0.08); 
+                    border-radius: 12px; 
+                    color: var(--text-primary); 
+                    font-size: 0.95rem;
+                    font-weight: 600;
+                    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+                    box-sizing: border-box;
+                }
+                
+                .input-modern-field:focus {
+                    border-color: var(--accent-primary);
+                    background: rgba(0, 0, 0, 0.4);
+                    box-shadow: 0 0 0 4px rgba(88, 166, 255, 0.15);
+                    outline: none;
+                }
+
+                .custom-select-trigger {
+                    width: 100%; 
+                    padding: 12px 14px 12px 42px; 
+                    background: rgba(0, 0, 0, 0.2); 
+                    border: 1px solid rgba(255, 255, 255, 0.1); 
+                    border-radius: 12px; 
+                    color: var(--text-primary); 
+                    font-size: 0.95rem;
+                    font-weight: 500;
+                    display: flex;
+                    align-items: center;
+                    cursor: pointer;
+                    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+                    position: relative;
+                }
+
+                .custom-select-trigger.disabled {
+                    opacity: 0.5;
+                    cursor: not-allowed;
+                }
+
+                .custom-select-trigger:hover:not(.disabled) {
+                    background: rgba(255, 255, 255, 0.05);
+                    border-color: rgba(255, 255, 255, 0.2);
+                }
+
+                .custom-select-trigger.open {
+                    border-color: var(--accent-primary);
+                    background: rgba(0, 0, 0, 0.3);
+                    box-shadow: 0 0 0 4px rgba(88, 166, 255, 0.1);
+                }
+
+                .arrow-icon {
+                    position: absolute;
+                    right: 16px;
+                    width: 8px;
+                    height: 8px;
+                    border-right: 2px solid var(--text-tertiary);
+                    border-bottom: 2px solid var(--text-tertiary);
+                    transform: rotate(45deg);
+                    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                }
+
+                .custom-select-trigger.open .arrow-icon {
+                    transform: rotate(-135deg) translateY(-2px);
+                    border-color: var(--accent-primary);
+                }
+
+                .custom-dropdown-menu {
+                    position: absolute;
+                    top: calc(100% + 8px);
+                    left: 0;
+                    right: 0;
+                    background: rgba(22, 27, 34, 0.95);
+                    backdrop-filter: blur(20px);
+                    border: 1px solid rgba(255, 255, 255, 0.1);
+                    border-radius: 12px;
+                    padding: 6px;
+                    z-index: 100;
+                    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+                    animation: dropdownFadeIn 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+                }
+
+                @keyframes dropdownFadeIn {
+                    from { opacity: 0; transform: translateY(-10px); }
+                    to { opacity: 1; transform: translateY(0); }
+                }
+
+                .dropdown-item-modern {
+                    padding: 10px 14px;
+                    border-radius: 8px;
+                    cursor: pointer;
+                    font-size: 0.9rem;
+                    color: var(--text-secondary);
+                    transition: all 0.2s;
+                }
+
+                .dropdown-item-modern:hover {
+                    background: rgba(255, 255, 255, 0.05);
+                    color: var(--text-primary);
+                    padding-left: 18px;
+                }
+
+                .dropdown-item-modern.active {
+                    background: var(--accent-primary);
+                    color: white;
+                    font-weight: 600;
+                }
+
+                .input-modern-field { 
+                    width: 100%; 
+                    padding: 12px 14px 12px 42px; 
+                    background: rgba(0, 0, 0, 0.2); 
+                    border: 1px solid rgba(255, 255, 255, 0.1); 
+                    border-radius: 12px; 
+                    color: var(--text-primary); 
+                    font-size: 0.95rem;
+                    font-weight: 500;
+                    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+                    box-sizing: border-box;
+                }
+
+                .select-modern { display: none; } /* Hide old select */
+
+                .form-row-modern { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
                 
                 /* Buttons */
-                .btn-primary { 
-                    background: linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-hover) 100%);
+                .train-actions-modern { margin-top: 8px; }
+
+                .btn-modern-primary { 
+                    background: linear-gradient(135deg, #4da1ff 0%, #2f81f7 100%);
                     color: white; 
-                    border: none; 
-                    padding: 12px; 
-                    border-radius: 8px; 
+                    border: 1px solid rgba(255, 255, 255, 0.1);
+                    padding: 14px; 
+                    border-radius: 12px; 
+                    cursor: pointer; 
+                    display: flex; 
+                    align-items: center; 
+                    justify-content: center; 
+                    gap: 12px; 
+                    font-weight: 700; 
+                    font-size: 1.05rem;
+                    transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); 
+                    box-shadow: 0 4px 15px rgba(47, 129, 247, 0.3);
+                    width: 100%;
+                }
+                
+                .btn-modern-primary:hover:not(:disabled) { 
+                    transform: translateY(-3px) scale(1.02);
+                    box-shadow: 0 12px 25px rgba(47, 129, 247, 0.4);
+                    filter: brightness(1.1);
+                }
+                
+                .btn-modern-primary:disabled {
+                    opacity: 0.5;
+                    cursor: not-allowed;
+                    filter: grayscale(1);
+                    transform: none !important;
+                    box-shadow: none;
+                }
+
+                .btn-modern-danger { 
+                    background: linear-gradient(135deg, #f85149 0%, #b91c1c 100%);
+                    color: white; 
+                    border: 1px solid rgba(255, 255, 255, 0.1);
+                    padding: 14px; 
+                    border-radius: 12px; 
                     cursor: pointer; 
                     display: flex; 
                     align-items: center; 
                     justify-content: center; 
                     gap: 10px; 
-                    font-weight: 600; 
-                    font-size: 1rem;
-                    transition: transform 0.1s, box-shadow 0.2s; 
-                    box-shadow: 0 4px 12px var(--accent-shadow, rgba(59, 130, 246, 0.3));
+                    font-weight: 700; 
+                    transition: all 0.3s ease;
+                    box-shadow: 0 4px 15px rgba(248, 81, 73, 0.3);
                     width: 100%;
                 }
-                
-                .btn-primary:hover:not(:disabled) { 
-                    transform: translateY(-1px);
-                    box-shadow: 0 6px 16px var(--accent-shadow, rgba(59, 130, 246, 0.4));
-                }
-                
-                .btn-primary:active:not(:disabled) { transform: translateY(0); }
-                
-                .btn-danger { 
-                    background: linear-gradient(135deg, var(--danger) 0%, #b91c1c 100%); /* Adjust manually if variable missing */
-                    color: white; 
-                    border: none; 
-                    padding: 12px; 
-                    border-radius: 8px; 
-                    cursor: pointer; 
-                    display: flex; 
-                    align-items: center; 
-                    justify-content: center; 
-                    gap: 8px; 
-                    font-weight: 600; 
-                    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
-                    width: 100%;
+
+                .btn-modern-danger:hover {
+                    transform: translateY(-2px);
+                    filter: brightness(1.1);
+                    box-shadow: 0 8px 20px rgba(248, 81, 73, 0.4);
                 }
                 
                 /* Log Card */

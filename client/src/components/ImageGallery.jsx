@@ -1,10 +1,51 @@
-
 import React, { useState, useMemo } from 'react';
 import { ChevronLeft, ChevronRight, Image as ImageIcon } from 'lucide-react';
+import { ImageUpload } from './ImageUpload';
 
-const PAGE_SIZE = 24;
+const PAGE_SIZE = 60;
 
-export const ImageGallery = ({ images = [], projectId, onSelectImage }) => {
+const ThumbnailCard = ({ img, projectId, index, onSelectImage }) => {
+    const [isLoaded, setIsLoaded] = useState(false);
+    const [errorCount, setErrorCount] = useState(0);
+
+    const thumbnailUrl = `http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/thumbnails/${encodeURIComponent(img)}`;
+    const fallbackUrl = `http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/uploads/${encodeURIComponent(img)}`;
+
+    const currentSrc = errorCount > 0 ? fallbackUrl : thumbnailUrl;
+
+    return (
+        <div
+            className="image-card"
+            style={{ transitionDelay: `${(index % 8) * 0.05}s` }}
+            onClick={() => onSelectImage(img)}
+        >
+            <div className="image-card-container">
+                {/* Skeleton Loader */}
+                {!isLoaded && <div className="skeleton" style={{ position: 'absolute', inset: 0, zIndex: 1 }} />}
+
+                <img
+                    src={currentSrc}
+                    alt={img}
+                    loading="lazy"
+                    decoding="async"
+                    className={`fade-in-image ${isLoaded ? 'loaded' : ''}`}
+                    style={{ zIndex: 2 }}
+                    onLoad={() => setIsLoaded(true)}
+                    onError={() => {
+                        if (errorCount === 0) {
+                            setErrorCount(1);
+                        }
+                    }}
+                />
+            </div>
+            <div className="image-card-label">
+                {img}
+            </div>
+        </div>
+    );
+};
+
+export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload }) => {
     const [page, setPage] = useState(0);
     const [search, setSearch] = useState('');
 
@@ -15,121 +56,174 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage }) => {
         return images.filter(img => img.toLowerCase().includes(q));
     }, [images, search]);
 
-    const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
-    const pageImages = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+    const displayList = useMemo(() => {
+        const list = [...filtered];
+        if (!search.trim()) {
+            list.unshift('__UPLOAD__');
+        }
+        return list;
+    }, [filtered, search]);
+
+    const totalPages = Math.ceil(displayList.length / PAGE_SIZE);
+    const pageItems = displayList.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
     // Reset page when images or search changes
     React.useEffect(() => { setPage(0); }, [images, search]);
 
-    if (!images.length) {
-        return (
-            <div className="gallery-empty">
-                <p>该项目中暂无图片。</p>
-            </div>
-        );
-    }
-
     return (
-        <div>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflowY: 'auto', overflowX: 'hidden' }} className="custom-scrollbar">
             {/* Search & Info Bar */}
             <div style={{
                 display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                marginBottom: '12px', gap: '12px', flexWrap: 'wrap'
+                marginBottom: '2rem', gap: '1.5rem', flexWrap: 'wrap', flexShrink: 0
             }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-secondary)', fontSize: '13px' }}>
-                    <ImageIcon size={16} />
-                    <span>共 {filtered.length} 张图片</span>
-                    {search && filtered.length !== images.length && (
-                        <span style={{ color: 'var(--text-tertiary)' }}>（筛选自 {images.length} 张）</span>
-                    )}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', color: 'var(--text-secondary)', fontSize: '0.9rem', fontWeight: 500 }}>
+                    <div style={{
+                        background: 'rgba(77, 161, 255, 0.1)',
+                        padding: '8px 12px',
+                        borderRadius: '12px',
+                        color: '#4da1ff',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        border: '1px solid rgba(77, 161, 255, 0.2)'
+                    }}>
+                        <ImageIcon size={16} />
+                        <span style={{ fontWeight: 700 }}>{filtered.length}</span>
+                    </div>
                 </div>
-                <input
-                    type="text"
-                    placeholder="搜索图片..."
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    className="input-sm"
-                    style={{ maxWidth: '200px' }}
-                />
+                <div style={{ position: 'relative', flex: 1, maxWidth: '320px' }}>
+                    <input
+                        type="text"
+                        placeholder="搜索图片名称..."
+                        value={search}
+                        onChange={(e) => setSearch(e.target.value)}
+                        className="input-modern"
+                        style={{
+                            height: '46px',
+                            paddingLeft: '44px',
+                            fontSize: '0.95rem',
+                            background: 'rgba(0, 0, 0, 0.2)',
+                            borderColor: 'var(--border-subtle)',
+                            borderRadius: '12px'
+                        }}
+                    />
+                    <div style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-tertiary)', pointerEvents: 'none' }}>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                    </div>
+                </div>
             </div>
 
             {/* Image Grid */}
-            <div className="image-grid">
-                {pageImages.map((img, index) => (
-                    <div
-                        key={img}
-                        className="image-card"
-                        onClick={() => onSelectImage(img)}
-                    >
-                        <img
-                            src={`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/thumbnails/${encodeURIComponent(img)}`}
-                            alt={img}
-                            loading="lazy"
-                            decoding="async"
-                            onError={(e) => {
-                                // Fallback to full image if thumbnail fails
-                                if (e.target.src !== `http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/uploads/${encodeURIComponent(img)}`) {
-                                    e.target.src = `http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/uploads/${encodeURIComponent(img)}`;
-                                }
-                            }}
+            <div className="image-grid" style={{ paddingBottom: '2rem' }}>
+                {pageItems.map((item, index) => {
+                    if (item === '__UPLOAD__') {
+                        return (
+                            <div key="__UPLOAD__" style={{ height: '100%' }}>
+                                <ImageUpload
+                                    projectId={projectId}
+                                    onUploadComplete={onUpload}
+                                    variant="card"
+                                />
+                            </div>
+                        );
+                    }
+
+                    return (
+                        <ThumbnailCard
+                            key={item}
+                            img={item}
+                            projectId={projectId}
+                            index={index}
+                            onSelectImage={onSelectImage}
                         />
-                        <div className="image-card-label">
-                            {img}
-                        </div>
-                    </div>
-                ))}
+                    );
+                })}
             </div>
 
-            {/* Pagination */}
+            {/* Pagination Floating Pill */}
             {totalPages > 1 && (
                 <div style={{
-                    display: 'flex', justifyContent: 'center', alignItems: 'center',
-                    gap: '12px', marginTop: '16px', padding: '8px 0'
+                    display: 'flex',
+                    justifyContent: 'center',
+                    padding: '1rem 0 1rem 0'
                 }}>
-                    <button
-                        className="icon-btn"
-                        onClick={() => setPage(p => Math.max(0, p - 1))}
-                        disabled={page === 0}
-                        style={{ opacity: page === 0 ? 0.3 : 1 }}
-                    >
-                        <ChevronLeft size={20} />
-                    </button>
+                    <div className="glass-panel" style={{
+                        pointerEvents: 'auto',
+                        padding: '8px 12px',
+                        borderRadius: '20px',
+                        background: 'rgba(22, 27, 34, 0.85)',
+                        backdropFilter: 'blur(12px)',
+                        border: '1px solid rgba(255, 255, 255, 0.1)',
+                        boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '1rem',
+                        zIndex: 10
+                    }}>
+                        <button
+                            className="icon-btn"
+                            onClick={() => setPage(p => Math.max(0, p - 1))}
+                            disabled={page === 0}
+                            style={{
+                                borderRadius: '12px', width: '36px', height: '36px',
+                                background: page === 0 ? 'transparent' : 'rgba(255,255,255,0.05)',
+                                color: page === 0 ? 'var(--text-tertiary)' : 'var(--text-primary)'
+                            }}
+                        >
+                            <ChevronLeft size={18} />
+                        </button>
 
-                    <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-                        {Array.from({ length: totalPages }, (_, i) => {
-                            // Show max 7 page buttons with ellipsis
-                            if (totalPages <= 7 || i === 0 || i === totalPages - 1 ||
-                                Math.abs(i - page) <= 1) {
-                                return (
-                                    <button
-                                        key={i}
-                                        onClick={() => setPage(i)}
-                                        style={{
-                                            width: '32px', height: '32px', borderRadius: '6px', border: 'none',
-                                            background: i === page ? 'var(--accent-primary)' : 'var(--bg-tertiary)',
-                                            color: i === page ? '#fff' : 'var(--text-secondary)',
-                                            cursor: 'pointer', fontSize: '13px', fontWeight: i === page ? '600' : '400',
-                                            transition: 'all 0.15s ease'
-                                        }}
-                                    >
-                                        {i + 1}
-                                    </button>
-                                );
-                            } else if (i === 1 || i === totalPages - 2) {
-                                return <span key={i} style={{ color: 'var(--text-tertiary)', padding: '0 2px' }}>…</span>;
-                            }
-                            return null;
-                        })}
+                        <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                            {Array.from({ length: totalPages }, (_, i) => {
+                                if (totalPages <= 7 || i === 0 || i === totalPages - 1 ||
+                                    Math.abs(i - page) <= 1) {
+                                    const isActive = i === page;
+                                    return (
+                                        <button
+                                            key={i}
+                                            onClick={() => setPage(i)}
+                                            style={{
+                                                width: '32px', height: '32px', borderRadius: '10px',
+                                                border: isActive ? '1px solid rgba(77, 161, 255, 0.3)' : 'none',
+                                                background: isActive ? 'rgba(77, 161, 255, 0.15)' : 'transparent',
+                                                color: isActive ? '#4da1ff' : 'var(--text-secondary)',
+                                                cursor: 'pointer',
+                                                fontSize: '13px',
+                                                fontWeight: isActive ? '700' : '500',
+                                                transition: 'all 0.2s'
+                                            }}
+                                            className={!isActive ? "hover-text-primary" : ""}
+                                        >
+                                            {i + 1}
+                                        </button>
+                                    );
+                                } else if (i === 1 || i === totalPages - 2) {
+                                    return <span key={i} style={{ color: 'var(--text-tertiary)', padding: '0 2px', fontSize: '12px' }}>•••</span>;
+                                }
+                                return null;
+                            })}
+                        </div>
+
+                        <button
+                            className="icon-btn"
+                            onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
+                            disabled={page === totalPages - 1}
+                            style={{
+                                borderRadius: '12px', width: '36px', height: '36px',
+                                background: page === totalPages - 1 ? 'transparent' : 'rgba(255,255,255,0.05)',
+                                color: page === totalPages - 1 ? 'var(--text-tertiary)' : 'var(--text-primary)'
+                            }}
+                        >
+                            <ChevronRight size={18} />
+                        </button>
                     </div>
+                </div>
+            )}
 
-                    <button
-                        className="icon-btn"
-                        onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
-                        disabled={page === totalPages - 1}
-                        style={{ opacity: page === totalPages - 1 ? 0.3 : 1 }}
-                    >
-                        <ChevronRight size={20} />
-                    </button>
+            {filtered.length === 0 && search && (
+                <div style={{ margin: 'auto', textAlign: 'center', color: 'var(--text-secondary)', padding: '4rem' }}>
+                    <p>没有找到匹配 "{search}" 的图片</p>
                 </div>
             )}
         </div>

@@ -29,8 +29,13 @@ export const MainLayout = ({ children }) => {
             {/* Sidebar */}
             <aside className="sidebar">
                 <div className="sidebar-brand">
-                    <Box size={28} />
-                    <h1>数据标注平台</h1>
+                    <div className="brand-logo">
+                        <Box size={24} strokeWidth={2.5} />
+                    </div>
+                    <div className="brand-text">
+                        <h1>数据标注平台</h1>
+                        <span className="brand-tagline">AI Smart Labeling</span>
+                    </div>
                 </div>
 
                 <nav className="sidebar-nav">
@@ -38,13 +43,17 @@ export const MainLayout = ({ children }) => {
                         {currentProject ? (
                             <>
                                 <button onClick={goBack} className="nav-btn-back">
-                                    <ArrowLeft size={18} />
-                                    <span>返回</span>
+                                    <ArrowLeft size={16} strokeWidth={2.5} />
+                                    <span>返回项目列表</span>
                                 </button>
-                                <div style={{ marginTop: '1rem', padding: '0 5px' }}>
-                                    <small className="sidebar-label">当前项目</small>
-                                    <div className="sidebar-project">
-                                        <Layers size={16} color="var(--accent-primary)" />
+                                <div className="sidebar-project-card">
+                                    <div className="project-card-header">
+                                        <div className="project-card-icon">
+                                            <Layers size={14} strokeWidth={2.5} />
+                                        </div>
+                                        <span className="sidebar-label" style={{ margin: 0, fontSize: '10px' }}>CURRENT PROJECT</span>
+                                    </div>
+                                    <div className="project-card-name" title={currentProject}>
                                         {currentProject}
                                     </div>
                                 </div>
@@ -94,9 +103,10 @@ export const MainLayout = ({ children }) => {
                 </nav>
 
                 <div className="sidebar-footer">
+                    {/* Divider handled by CSS or removed for cleaner look */}
                     <button className="nav-btn">
-                        <Settings size={18} />
-                        <span>设置</span>
+                        <Settings size={18} strokeWidth={2} />
+                        <span>系统设置</span>
                     </button>
                 </div>
             </aside>

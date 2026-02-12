@@ -72,7 +72,7 @@ export const ExportModal = ({ isOpen, onClose, onExport }) => {
 
     return createPortal(
         <div className="modal-overlay" onClick={onClose}>
-            <div className="modal-panel" style={{ maxWidth: '540px', borderRadius: '24px', padding: '10px' }}>
+            <div className="modal-panel" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '540px', borderRadius: '24px', padding: '10px' }}>
                 <div className="modal-header-between" style={{ padding: '20px 24px 10px 24px', marginBottom: '0.5rem' }}>
                     <h3 className="flex-center" style={{ gap: '12px' }}>
                         <div className="modal-icon modal-icon-accent">

@@ -73,6 +73,7 @@ export const ProjectProvider = ({ children }) => {
     };
 
     const selectProject = (projectId) => {
+        setImages([]);
         setCurrentProject(projectId);
         setView('gallery');
         fetchImages(projectId);
@@ -90,6 +91,7 @@ export const ProjectProvider = ({ children }) => {
         } else if (view === 'gallery') {
             setView('dashboard');
             setCurrentProject(null);
+            setImages([]);
             fetchProjects(); // Refresh counts
         }
     };
@@ -102,7 +104,12 @@ export const ProjectProvider = ({ children }) => {
                 body: JSON.stringify(options)
             });
             const data = await res.json();
-            return { success: res.ok, message: data.message || data.error, path: data.path, stats: data.stats };
+            return {
+                success: res.ok,
+                message: data.details ? `${data.error || 'Export failed'}: ${data.details}` : (data.message || data.error),
+                path: data.path,
+                stats: data.stats
+            };
         } catch (err) {
             console.error("Failed to export project", err);
             return { success: false, message: 'Export failed due to network error' };

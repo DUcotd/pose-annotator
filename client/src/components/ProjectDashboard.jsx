@@ -18,28 +18,30 @@ export const ProjectDashboard = ({ projects = [], onCreateProject, onSelectProje
     const totalImages = projects.reduce((acc, p) => acc + (p.imageCount || 0), 0);
 
     return (
-        <div style={{ padding: '0 3rem 4rem 3rem', maxWidth: '1600px', margin: '0 auto' }}>
+        <div style={{ padding: '0 3rem 0 3rem', maxWidth: '1600px', margin: '0 auto', height: '100%', display: 'flex', flexDirection: 'column' }}>
             {/* Hero Section */}
-            <div className="hero-section animate-fade-in" style={{ padding: '80px 0 60px 0' }}>
-                <h1 className="hero-title">
-                    <span className="text-gradient">探索您的</span>
+            <div className="hero-section" style={{ padding: '64px 0 40px 0', flexShrink: 0 }}>
+                <h1 className="hero-title" style={{ fontSize: '3rem', marginBottom: '16px', lineHeight: 1.2 }}>
+                    <span className="text-gradient" style={{ letterSpacing: '-0.02em' }}>探索您的</span>
                     <br />
-                    <span style={{ color: 'var(--text-primary)', fontSize: '3.2rem', fontWeight: 800, letterSpacing: '-1.5px' }}>计算机视觉世界</span>
-                    <span className="badge-new">v1.2</span>
+                    <span style={{ color: 'var(--text-primary)', fontSize: '2.6rem', fontWeight: 800, letterSpacing: '-1.5px', display: 'inline-flex', alignItems: 'center', gap: '16px' }}>
+                        计算机视觉世界
+                        <span className="badge-new" style={{ fontSize: '0.9rem', padding: '4px 12px', verticalAlign: 'middle', marginTop: '4px' }}>v1.2</span>
+                    </span>
                 </h1>
-                <p className="hero-subtitle" style={{ fontSize: '1.25rem', marginTop: '1.5rem', maxWidth: '700px', color: 'var(--text-secondary)', fontWeight: 400 }}>
+                <p className="hero-subtitle" style={{ fontSize: '1.15rem', marginTop: '1.2rem', maxWidth: '800px', color: 'var(--text-secondary)', fontWeight: 400, lineHeight: 1.7, letterSpacing: '0.01em' }}>
                     AI 驱动的高级标注平台。简化您的数据集管理流程，
                     <br />
                     从模型训练到结果导出，一切尽在掌握。
                 </p>
 
-                <div style={{ marginTop: '3rem', display: 'flex', gap: '1.2rem' }}>
+                <div style={{ marginTop: '2rem', display: 'flex', gap: '1.2rem' }}>
                     <button className="btn-modern-primary" onClick={() => setIsCreating(true)}>
-                        <Plus size={20} />
+                        <Plus size={22} strokeWidth={2.5} />
                         立即开始
                     </button>
                     <button className="btn-modern-secondary" onClick={() => setIsGuideOpen(true)}>
-                        <Zap size={20} />
+                        <Zap size={22} strokeWidth={2} />
                         快速指南
                     </button>
                 </div>
@@ -52,12 +54,14 @@ export const ProjectDashboard = ({ projects = [], onCreateProject, onSelectProje
                         onClick={e => e.stopPropagation()}
                         className="animate-scale-in modal-panel"
                         style={{
-                            maxWidth: '440px',
-                            background: '#1c2128',
-                            border: '1px solid rgba(255, 255, 255, 0.15)',
-                            boxShadow: '0 30px 60px -12px rgba(0, 0, 0, 0.9)',
+                            maxWidth: '480px',
+                            background: '#0d1117',
+                            border: '1px solid rgba(255, 255, 255, 0.08)',
+                            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.05)',
                             padding: 0,
-                            position: 'relative'
+                            position: 'relative',
+                            borderRadius: '24px',
+                            overflow: 'hidden'
                         }}
                     >
                         {/* Close Icon */}
@@ -65,89 +69,95 @@ export const ProjectDashboard = ({ projects = [], onCreateProject, onSelectProje
                             onClick={() => setIsCreating(false)}
                             style={{
                                 position: 'absolute',
-                                right: '16px',
-                                top: '16px',
-                                background: 'rgba(255,255,255,0.05)',
-                                border: 'none',
-                                borderRadius: '8px',
-                                padding: '8px',
+                                right: '20px',
+                                top: '20px',
+                                background: 'rgba(255,255,255,0.03)',
+                                border: '1px solid rgba(255,255,255,0.05)',
+                                borderRadius: '12px',
+                                padding: '10px',
                                 cursor: 'pointer',
                                 color: 'var(--text-tertiary)',
                                 transition: 'all 0.2s',
                                 zIndex: 10
                             }}
+                            className="hover-card"
                         >
-                            <X size={18} />
+                            <X size={20} />
                         </button>
 
                         <div style={{
-                            height: '4px',
-                            background: 'linear-gradient(to right, #58a6ff, #34d399, #fbbf24)',
-                            width: '100%'
+                            height: '6px',
+                            background: 'linear-gradient(to right, #4da1ff, #34d399, #fbbf24)',
+                            width: '100%',
+                            opacity: 0.8
                         }} />
 
-                        <div style={{ padding: '2.5rem 2.5rem 1.5rem 2.5rem' }}>
+                        <div style={{ padding: '3.5rem 3rem 2rem 3rem' }}>
                             <div style={{
-                                width: '56px',
-                                height: '56px',
-                                borderRadius: '16px',
-                                background: 'linear-gradient(135deg, rgba(88, 166, 255, 0.15), rgba(88, 166, 255, 0.05))',
+                                width: '64px',
+                                height: '64px',
+                                borderRadius: '20px',
+                                background: 'rgba(77, 161, 255, 0.1)',
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
-                                marginBottom: '1.5rem',
-                                border: '1px solid rgba(88, 166, 255, 0.2)',
-                                color: '#58a6ff'
+                                marginBottom: '1.8rem',
+                                border: '1px solid rgba(77, 161, 255, 0.2)',
+                                color: '#4da1ff',
+                                boxShadow: '0 8px 16px rgba(0,0,0,0.2)'
                             }}>
-                                <Plus size={28} />
+                                <Plus size={32} strokeWidth={2.5} />
                             </div>
 
                             <h3 style={{
-                                margin: '0 0 0.8rem 0',
-                                fontSize: '1.75rem',
+                                margin: '0 0 1rem 0',
+                                fontSize: '2rem',
                                 fontWeight: 800,
-                                letterSpacing: '-0.5px',
-                                color: 'var(--text-primary)'
+                                letterSpacing: '-0.8px',
+                                color: 'var(--text-primary)',
+                                lineHeight: 1.1
                             }}>
                                 创建新项目
                             </h3>
                             <p style={{
                                 margin: 0,
                                 color: 'var(--text-secondary)',
-                                fontSize: '1rem',
+                                fontSize: '1.05rem',
                                 lineHeight: 1.6,
-                                fontWeight: 400
+                                fontWeight: 400,
+                                opacity: 0.9
                             }}>
                                 为您的数据集创建一个新的工作空间。稍后您可以添加图片并开始标注。
                             </p>
                         </div>
 
                         <form onSubmit={handleSubmit}>
-                            <div style={{ padding: '0 2.5rem 2.5rem 2.5rem' }}>
-                                <div style={{ marginBottom: '0.8rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    <label className="form-label" style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text-secondary)' }}>项目名称</label>
-                                    <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>必填</span>
+                            <div style={{ padding: '0 3rem 3rem 3rem' }}>
+                                <div style={{ marginBottom: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <label className="form-label" style={{ margin: 0, fontSize: '0.95rem', fontWeight: 600, color: 'var(--text-secondary)' }}>项目名称</label>
+                                    <span style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)', background: 'rgba(255,255,255,0.05)', padding: '2px 8px', borderRadius: '4px' }}>必填</span>
                                 </div>
                                 <div style={{ position: 'relative' }}>
                                     <div style={{
                                         position: 'absolute',
-                                        left: '16px',
+                                        left: '18px',
                                         top: '50%',
                                         transform: 'translateY(-50%)',
-                                        color: 'var(--text-tertiary)',
-                                        pointerEvents: 'none'
+                                        color: 'rgba(255,255,255,0.3)',
+                                        pointerEvents: 'none',
+                                        zIndex: 1
                                     }}>
-                                        <Folder size={18} />
+                                        <Folder size={20} />
                                     </div>
                                     <input
                                         type="text"
                                         className="input-modern"
                                         style={{
-                                            paddingLeft: '48px',
-                                            height: '56px',
-                                            fontSize: '1.05rem',
-                                            background: 'rgba(0,0,0,0.3)',
-                                            border: '1px solid rgba(255,255,255,0.1)'
+                                            paddingLeft: '54px',
+                                            height: '60px',
+                                            fontSize: '1.1rem',
+                                            background: 'rgba(0,0,0,0.4)',
+                                            boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.2)'
                                         }}
                                         placeholder="例如：施工人员安全检测"
                                         value={newProjectName}
@@ -158,18 +168,18 @@ export const ProjectDashboard = ({ projects = [], onCreateProject, onSelectProje
                             </div>
 
                             <div style={{
-                                padding: '1.5rem 2.5rem',
-                                background: 'rgba(0,0,0,0.2)',
+                                padding: '2rem 3rem',
+                                background: 'rgba(0,0,0,0.25)',
                                 borderTop: '1px solid rgba(255,255,255,0.05)',
                                 display: 'flex',
                                 justifyContent: 'flex-end',
-                                gap: '1rem'
+                                gap: '1.2rem'
                             }}>
                                 <button
                                     type="button"
                                     className="btn-modern-secondary"
                                     onClick={() => setIsCreating(false)}
-                                    style={{ height: '48px', padding: '0 1.5rem', background: 'transparent', border: 'none' }}
+                                    style={{ height: '52px', padding: '0 2rem' }}
                                 >
                                     取消
                                 </button>
@@ -177,9 +187,9 @@ export const ProjectDashboard = ({ projects = [], onCreateProject, onSelectProje
                                     type="submit"
                                     className="btn-modern-primary"
                                     style={{
-                                        height: '48px',
-                                        padding: '0 2rem',
-                                        minWidth: '120px'
+                                        height: '52px',
+                                        padding: '0 2.5rem',
+                                        minWidth: '140px'
                                     }}
                                     disabled={!newProjectName.trim()}
                                 >
@@ -250,118 +260,171 @@ export const ProjectDashboard = ({ projects = [], onCreateProject, onSelectProje
                 document.body
             )}
 
-            {/* Projects Grid */}
-            <div className="project-grid-modern">
-                {projects.length === 0 ? (
-                    <div className="empty-state-container animate-fade-in">
-                        <div className="empty-state-icon">
-                            <Folder size={40} />
-                        </div>
-                        <h2 style={{ fontSize: '1.8rem', fontWeight: 700, marginBottom: '1rem' }}>准备好开始了吗？</h2>
-                        <p style={{ color: 'var(--text-secondary)', maxWidth: '400px', margin: '0 auto 2.5rem auto', fontSize: '1.1rem' }}>
-                            目前还没有任何项目。创建一个新项目来开始您的标注之旅。
-                        </p>
-                        <button className="btn-modern-primary" onClick={() => setIsCreating(true)}>
-                            <Plus size={20} />
-                            创建第一个项目
-                        </button>
-                    </div>
-                ) : (
-                    <>
-                        {/* Inline Create Card */}
-                        <div
-                            className="glass-card animate-slide-up delay-1"
-                            style={{
-                                display: 'flex',
-                                flexDirection: 'column',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                cursor: 'pointer',
-                                borderStyle: 'dashed',
-                                borderColor: 'rgba(255,255,255,0.1)',
-                                height: '280px',
-                                padding: '32px',
-                                background: 'rgba(22, 27, 34, 0.3)'
-                            }}
-                            onClick={() => setIsCreating(true)}
-                        >
-                            <div style={{
-                                background: 'var(--bg-tertiary)',
-                                padding: '18px',
-                                borderRadius: '50%',
-                                marginBottom: '20px',
-                                color: 'var(--accent-primary)',
-                                border: '1px solid var(--border-subtle)'
-                            }}>
-                                <Plus size={32} />
+            {/* Projects Grid Container with independent scroll */}
+            <div style={{ flex: 1, overflowY: 'auto', paddingBottom: '3rem', paddingRight: '12px' }} className="custom-scrollbar">
+                <div className="project-grid-modern" style={{ marginTop: '1rem' }}>
+                    {projects.length === 0 ? (
+                        <div className="empty-state-container" style={{ padding: '60px 40px', minHeight: '400px', justifyContent: 'center' }}>
+                            <div className="empty-state-icon" style={{ width: '80px', height: '80px', marginBottom: '24px' }}>
+                                <Folder size={40} />
                             </div>
-                            <h3 style={{ margin: 0, fontWeight: 600, fontSize: '1.1rem' }}>创建新项目</h3>
-                            <p style={{ margin: '8px 0 0 0', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>管理更多数据集</p>
+                            <h2 style={{ fontSize: '1.8rem', fontWeight: 700, marginBottom: '1rem' }}>准备好开始了吗？</h2>
+                            <p style={{ color: 'var(--text-secondary)', maxWidth: '500px', margin: '0 auto 2.5rem auto', fontSize: '1.1rem', lineHeight: 1.6 }}>
+                                目前还没有任何项目。创建一个新项目来开始您的标注之旅。
+                                <br />
+                                您可以轻松地组织图片、标注目标并导出为标准的 YOLO 格式。
+                            </p>
+                            <button className="btn-modern-primary" onClick={() => setIsCreating(true)} style={{ padding: '14px 28px', fontSize: '1.1rem' }}>
+                                <Plus size={22} />
+                                创建第一个项目
+                            </button>
                         </div>
-
-                        {projects.map((project, index) => (
+                    ) : (
+                        <>
+                            {/* Inline Create Card */}
                             <div
-                                key={project.id}
-                                className={`glass-card glass-card-hover animate-slide-up`}
+                                className="glass-card glass-card-hover"
                                 style={{
-                                    height: '280px',
-                                    padding: '32px',
                                     display: 'flex',
                                     flexDirection: 'column',
-                                    position: 'relative',
-                                    animationDelay: `${(index % 4) * 0.1 + 0.2}s`
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    cursor: 'pointer',
+                                    borderStyle: 'dashed',
+                                    borderWidth: '2px',
+                                    borderColor: 'rgba(255,255,255,0.1)',
+                                    height: '260px',
+                                    padding: '32px',
+                                    background: 'rgba(255, 255, 255, 0.01)',
+                                    animationDelay: '0.1s'
                                 }}
-                                onClick={() => onSelectProject(project.id)}
+                                onClick={() => setIsCreating(true)}
                             >
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem' }}>
-                                    <div className="card-icon" style={{ background: 'rgba(88, 166, 255, 0.1)', color: 'var(--accent-primary)', padding: '12px', borderRadius: '12px' }}>
-                                        <Folder size={24} />
-                                    </div>
-                                    <button
-                                        onClick={(e) => { e.stopPropagation(); onDeleteProject(project.id); }}
-                                        className="icon-btn"
-                                        title="删除项目"
-                                        style={{ color: 'var(--text-tertiary)', padding: '6px' }}
-                                    >
-                                        <Trash2 size={18} />
-                                    </button>
+                                <div style={{
+                                    width: '64px',
+                                    height: '64px',
+                                    borderRadius: '22px',
+                                    background: 'rgba(255, 255, 255, 0.03)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    marginBottom: '20px',
+                                    color: 'var(--text-tertiary)',
+                                    border: '1px solid rgba(255, 255, 255, 0.05)',
+                                    transition: 'all 0.3s ease'
+                                }} className="create-card-icon">
+                                    <Plus size={32} strokeWidth={1.5} />
                                 </div>
-
-                                <div style={{ flex: 1 }}>
-                                    <h3 style={{ margin: '0 0 0.8rem 0', fontSize: '1.4rem', fontWeight: 700, letterSpacing: '-0.5px' }}>
-                                        {project.name}
-                                    </h3>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-secondary)', fontSize: '0.95rem' }}>
-                                        <div style={{ background: 'rgba(255,255,255,0.05)', padding: '4px 10px', borderRadius: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                            <ImageIcon size={14} />
-                                            <span>{project.imageCount || 0}</span>
-                                        </div>
-                                        <span className="card-tag">YOLO 格式</span>
-                                    </div>
-                                </div>
-
-                                <div style={{ marginTop: 'auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    <span style={{ fontSize: '0.85rem', color: 'var(--text-tertiary)', fontWeight: 500 }}>
-                                        {project.imageCount > 0 ? '已就绪' : '等待图片'}
-                                    </span>
-                                    <div style={{
-                                        width: '32px',
-                                        height: '32px',
-                                        borderRadius: '50%',
-                                        background: 'rgba(255,255,255,0.05)',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        transition: 'all 0.2s'
-                                    }}>
-                                        <ChevronRight size={18} color="var(--text-secondary)" />
-                                    </div>
-                                </div>
+                                <h3 style={{ margin: 0, fontWeight: 700, fontSize: '1.2rem', color: 'var(--text-primary)' }}>创建新项目</h3>
+                                <p style={{ margin: '8px 0 0 0', color: 'var(--text-tertiary)', fontSize: '0.9rem', fontWeight: 500 }}>开始您的标注之旅</p>
                             </div>
-                        ))}
-                    </>
-                )}
+
+                            {projects.map((project, index) => (
+                                <div
+                                    key={project.id}
+                                    className={`glass-card glass-card-hover`}
+                                    style={{
+                                        height: '260px',
+                                        padding: '32px',
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        position: 'relative',
+                                        animationDelay: `${(index % 4) * 0.1 + 0.2}s`
+                                    }}
+                                    onClick={() => onSelectProject(project.id)}
+                                >
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem' }}>
+                                        <div style={{
+                                            width: '48px',
+                                            height: '48px',
+                                            borderRadius: '14px',
+                                            background: 'rgba(77, 161, 255, 0.1)',
+                                            color: '#4da1ff',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            border: '1px solid rgba(77, 161, 255, 0.1)'
+                                        }}>
+                                            <Folder size={24} />
+                                        </div>
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); onDeleteProject(project.id); }}
+                                            className="icon-btn hover-card"
+                                            title="删除项目"
+                                            style={{
+                                                color: 'var(--text-tertiary)',
+                                                background: 'rgba(255,255,255,0.03)',
+                                                padding: '8px',
+                                                borderRadius: '10px'
+                                            }}
+                                        >
+                                            <Trash2 size={16} />
+                                        </button>
+                                    </div>
+
+                                    <div style={{ flex: 1 }}>
+                                        <h3 style={{
+                                            margin: '0 0 1rem 0',
+                                            fontSize: '1.4rem',
+                                            fontWeight: 800,
+                                            letterSpacing: '-0.5px',
+                                            color: 'var(--text-primary)',
+                                            lineHeight: 1.2
+                                        }}>
+                                            {project.name}
+                                        </h3>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                            <div style={{
+                                                background: 'rgba(255, 255, 255, 0.04)',
+                                                border: '1px solid rgba(255, 255, 255, 0.08)',
+                                                padding: '4px 10px',
+                                                borderRadius: '8px',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '6px',
+                                                color: 'var(--text-secondary)',
+                                                fontSize: '0.85rem',
+                                                fontWeight: 600
+                                            }}>
+                                                <ImageIcon size={14} />
+                                                <span>{project.imageCount || 0}</span>
+                                            </div>
+                                            <span className="card-tag">YOLO 格式</span>
+                                        </div>
+                                    </div>
+
+                                    <div style={{ marginTop: 'auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            <div style={{
+                                                width: '8px',
+                                                height: '8px',
+                                                borderRadius: '50%',
+                                                background: project.imageCount > 0 ? '#34d399' : '#fbbf24',
+                                                boxShadow: `0 0 10px ${project.imageCount > 0 ? 'rgba(52, 211, 153, 0.4)' : 'rgba(251, 191, 36, 0.4)'}`
+                                            }} />
+                                            <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                                                {project.imageCount > 0 ? '已就绪' : '等待图片'}
+                                            </span>
+                                        </div>
+                                        <div className="card-arrow-icon">
+                                            <ChevronRight size={18} />
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </>
+                    )}
+                </div>
             </div>
+
+            {/* Subtle Footer Divider */}
+            <div style={{
+                height: '1px',
+                background: 'linear-gradient(to right, transparent, var(--border-subtle), transparent)',
+                width: '100%',
+                opacity: 0.5,
+                marginTop: 'auto'
+            }} />
         </div>
     );
 };
