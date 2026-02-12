@@ -72,164 +72,207 @@ export const ExportModal = ({ isOpen, onClose, onExport }) => {
 
     return createPortal(
         <div className="modal-overlay" onClick={onClose}>
-            <div
-                className="animate-fade-in modal-panel modal-panel-md"
-                onClick={e => e.stopPropagation()}
-            >
-                <div className="modal-header-between">
-                    <h3>
-                        <Download size={20} color="var(--accent-primary)" /> 导出数据集
+            <div className="modal-panel" style={{ maxWidth: '540px', borderRadius: '24px', padding: '10px' }}>
+                <div className="modal-header-between" style={{ padding: '20px 24px 10px 24px', marginBottom: '0.5rem' }}>
+                    <h3 className="flex-center" style={{ gap: '12px' }}>
+                        <div className="modal-icon modal-icon-accent">
+                            <Download size={22} className="animate-float" />
+                        </div>
+                        <span style={{ fontSize: '1.4rem', fontWeight: 800, letterSpacing: '-0.5px' }}>导出数据集</span>
                     </h3>
-                    <button onClick={onClose} className="icon-btn"><X size={20} /></button>
+                    <button onClick={onClose} className="icon-btn" style={{ background: 'rgba(255,255,255,0.05)' }}><X size={20} /></button>
                 </div>
 
-                <div className="modal-body">
-                    {/* Visibility */}
-                    <label className="checkbox-label">
-                        <input
-                            type="checkbox"
-                            checked={includeVisibility}
-                            onChange={(e) => setIncludeVisibility(e.target.checked)}
-                        />
-                        <span>包含可见性 (v=2)</span>
-                    </label>
+                <div className="modal-body" style={{ gap: '1.25rem', padding: '0 24px 24px 24px' }}>
+                    {/* Section 1: Data Scope */}
+                    <div style={{
+                        background: 'rgba(255,255,255,0.03)',
+                        padding: '20px',
+                        borderRadius: '16px',
+                        border: '1px solid rgba(255,255,255,0.06)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '12px'
+                    }}>
+                        <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '4px' }}>
+                            导出选项
+                        </div>
+                        <label className="checkbox-label" style={{ background: 'transparent', border: 'none', padding: 0 }}>
+                            <input
+                                type="checkbox"
+                                checked={includeVisibility}
+                                onChange={(e) => setIncludeVisibility(e.target.checked)}
+                            />
+                            <span style={{ fontSize: '14px', fontWeight: 500 }}>包含可见性 (v=2)</span>
+                        </label>
 
-                    {/* Include Unannotated */}
-                    <label className="checkbox-label" style={{ marginTop: '4px' }}>
-                        <input
-                            type="checkbox"
-                            checked={includeUnannotated}
-                            onChange={(e) => setIncludeUnannotated(e.target.checked)}
-                        />
-                        <span>包含未标注数据 (生成空标签文件)</span>
-                    </label>
+                        <label className="checkbox-label" style={{ background: 'transparent', border: 'none', padding: 0 }}>
+                            <input
+                                type="checkbox"
+                                checked={includeUnannotated}
+                                onChange={(e) => setIncludeUnannotated(e.target.checked)}
+                            />
+                            <span style={{ fontSize: '14px', fontWeight: 500 }}>包含未标注数据 (生成空标签文件)</span>
+                        </label>
+                    </div>
 
-                    {/* Keypoint Count */}
-                    <div>
-                        <label className="form-label" style={{ fontSize: '13px' }}>关键点数量</label>
-                        <input
-                            type="number"
-                            min="1"
-                            max="100"
-                            value={numKeypoints}
-                            onChange={(e) => setNumKeypoints(parseInt(e.target.value) || 17)}
-                            className="input-sm"
-                        />
-                        <div className="form-hint">
-                            默认为 17 (COCO标准)。请设置为您的实际关键点数量。
+                    {/* Section 2: Keypoints */}
+                    <div style={{
+                        background: 'rgba(255,255,255,0.03)',
+                        padding: '20px',
+                        borderRadius: '16px',
+                        border: '1px solid rgba(255,255,255,0.06)'
+                    }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+                            <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+                                关键点配置
+                            </span>
+                            <span style={{ fontSize: '10px', background: 'var(--accent-dim)', color: 'var(--accent-primary)', padding: '2px 10px', borderRadius: '6px', fontWeight: 800 }}>
+                                YOLO POSE
+                            </span>
+                        </div>
+                        <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+                            <input
+                                type="number"
+                                min="1"
+                                max="100"
+                                value={numKeypoints}
+                                onChange={(e) => setNumKeypoints(parseInt(e.target.value) || 17)}
+                                className="input-sm"
+                                style={{ width: '90px', height: '50px', textAlign: 'center', background: 'rgba(0,0,0,0.4)', fontWeight: 800, fontSize: '1.25rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.1)' }}
+                            />
+                            <div style={{ flex: 1 }}>
+                                <div style={{ fontSize: '14px', fontWeight: 700, marginBottom: '2px' }}>点位数量</div>
+                                <div style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>默认为 17 (COCO标准)</div>
+                            </div>
                         </div>
                     </div>
 
-                    {/* Dataset Split */}
-                    <div style={{ marginTop: '4px' }}>
-                        <label className="form-label" style={{ fontSize: '13px', marginBottom: '8px', display: 'block' }}>
+                    {/* Section 3: Split Ratio */}
+                    <div style={{
+                        background: 'rgba(255,255,255,0.03)',
+                        padding: '20px',
+                        borderRadius: '16px',
+                        border: '1px solid rgba(255,255,255,0.06)'
+                    }}>
+                        <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '18px' }}>
                             数据集划分比例
-                        </label>
-
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
-                            <div>
-                                <label style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '4px', display: 'block' }}>
-                                    Train (%)
-                                </label>
-                                <input
-                                    type="number" min="0" max="100"
-                                    value={trainRatio}
-                                    onChange={(e) => handleTrainChange(e.target.value)}
-                                    className="input-sm"
-                                    style={{ width: '100%' }}
-                                />
-                            </div>
-                            <div>
-                                <label style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '4px', display: 'block' }}>
-                                    Val (%)
-                                </label>
-                                <input
-                                    type="number" min="0" max="100"
-                                    value={valRatio}
-                                    onChange={(e) => handleValChange(e.target.value)}
-                                    className="input-sm"
-                                    style={{ width: '100%' }}
-                                />
-                            </div>
-                            <div>
-                                <label style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '4px', display: 'block' }}>
-                                    Test (%)
-                                </label>
-                                <input
-                                    type="number" min="0" max="100"
-                                    value={testRatio}
-                                    onChange={(e) => handleTestChange(e.target.value)}
-                                    className="input-sm"
-                                    style={{ width: '100%' }}
-                                />
-                            </div>
                         </div>
 
-                        {/* Visual ratio bar */}
-                        <div style={{
-                            display: 'flex', height: '6px', borderRadius: '3px',
-                            overflow: 'hidden', marginTop: '8px', background: 'var(--bg-tertiary)'
-                        }}>
-                            {trainRatio > 0 && <div style={{ width: `${trainRatio}%`, background: 'var(--success)', transition: 'width 0.2s' }} />}
-                            {valRatio > 0 && <div style={{ width: `${valRatio}%`, background: 'var(--warning)', transition: 'width 0.2s' }} />}
-                            {testRatio > 0 && <div style={{ width: `${testRatio}%`, background: 'var(--accent-primary)', transition: 'width 0.2s' }} />}
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
+                            {[
+                                { label: 'Train', value: trainRatio, setter: handleTrainChange, color: '#4ade80' },
+                                { label: 'Val', value: valRatio, setter: handleValChange, color: '#fbbf24' },
+                                { label: 'Test', value: testRatio, setter: handleTestChange, color: '#3b82f6' }
+                            ].map(item => (
+                                <div key={item.label} style={{ background: 'rgba(0,0,0,0.3)', padding: '12px 8px', borderRadius: '12px', textAlign: 'center', border: '1px solid rgba(255,255,255,0.04)' }}>
+                                    <div style={{ fontSize: '11px', color: item.color, fontWeight: 900, marginBottom: '6px', textTransform: 'uppercase' }}>{item.label}</div>
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '2px' }}>
+                                        <input
+                                            type="number" min="0" max="100"
+                                            value={item.value}
+                                            onChange={(e) => item.setter(e.target.value)}
+                                            style={{
+                                                width: '40px', background: 'none', border: 'none', color: 'white',
+                                                textAlign: 'center', outline: 'none', fontSize: '16px', fontWeight: 800
+                                            }}
+                                        />
+                                        <span style={{ fontSize: '12px', color: 'var(--text-tertiary)', fontWeight: 600 }}>%</span>
+                                    </div>
+                                </div>
+                            ))}
                         </div>
 
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px' }}>
-                            <span style={{ color: 'var(--success)' }}>■ Train {trainRatio}%</span>
-                            <span style={{ color: 'var(--warning)' }}>■ Val {valRatio}%</span>
-                            <span style={{ color: 'var(--accent-primary)' }}>■ Test {testRatio}%</span>
+                        <div style={{ marginTop: '20px' }}>
+                            <div style={{
+                                width: '100%', height: '12px', background: 'rgba(255,255,255,0.05)', borderRadius: '6px',
+                                overflow: 'hidden', display: 'flex', boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.5)'
+                            }}>
+                                <div style={{ width: `${trainRatio}%`, background: '#4ade80', transition: 'width 0.5s cubic-bezier(0.4, 0, 0.2, 1)' }} />
+                                <div style={{ width: `${valRatio}%`, background: '#fbbf24', transition: 'width 0.5s cubic-bezier(0.4, 0, 0.2, 1)' }} />
+                                <div style={{ width: `${testRatio}%`, background: '#3b82f6', transition: 'width 0.5s cubic-bezier(0.4, 0, 0.2, 1)' }} />
+                            </div>
                         </div>
 
                         {!isRatioValid && (
-                            <div style={{ color: 'var(--error)', fontSize: '12px', marginTop: '4px' }}>
-                                ⚠ 比例总和必须等于 100% (当前: {totalRatio}%)
+                            <div style={{
+                                color: '#ff6b6b', fontSize: '12px', marginTop: '14px', padding: '10px',
+                                background: 'rgba(255, 107, 107, 0.1)', borderRadius: '8px', textAlign: 'center', fontWeight: 700
+                            }}>
+                                比例总和需为 100% (目前: {totalRatio}%)
                             </div>
                         )}
                     </div>
 
-                    {/* Shuffle */}
-                    <label className="checkbox-label" style={{ marginTop: '4px' }}>
-                        <input
-                            type="checkbox"
-                            checked={shuffleData}
-                            onChange={(e) => setShuffleData(e.target.checked)}
-                        />
-                        <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                            <Shuffle size={14} /> 随机打乱数据
-                        </span>
-                    </label>
+                    {/* Section 4: Output Settings */}
+                    <div style={{
+                        background: 'rgba(255,255,255,0.03)',
+                        padding: '20px',
+                        borderRadius: '16px',
+                        border: '1px solid rgba(255,255,255,0.06)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '14px'
+                    }}>
+                        <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+                            保存配置
+                        </div>
 
-                    {/* Custom Path */}
-                    <div>
-                        <label className="form-label" style={{ fontSize: '13px' }}>自定义导出路径 (可选)</label>
-                        <div style={{ display: 'flex', gap: '8px' }}>
+                        <label className="checkbox-label" style={{ background: 'rgba(0,0,0,0.25)', padding: '12px 16px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.08)' }}>
                             <input
-                                type="text"
-                                placeholder="未选择路径 (默认为项目目录)"
-                                value={customPath}
-                                readOnly
-                                className="input-sm"
-                                style={{ flex: 1, background: 'var(--bg-tertiary)', border: '1px solid var(--border-subtle)' }}
+                                type="checkbox"
+                                checked={shuffleData}
+                                onChange={(e) => setShuffleData(e.target.checked)}
                             />
-                            <button
-                                onClick={handleSelectFolder}
-                                className="btn-secondary"
-                                style={{ padding: '8px 12px', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '6px' }}
-                            >
-                                <FolderOpen size={16} /> 选择文件夹
-                            </button>
+                            <span style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '14px', fontWeight: 500 }}>
+                                <Shuffle size={16} className="text-accent" /> 随机打乱样本顺序
+                            </span>
+                        </label>
+
+                        <div className="form-group" style={{ marginTop: '2px' }}>
+                            <div style={{ display: 'flex', gap: '10px' }}>
+                                <div style={{ position: 'relative', flex: 1 }}>
+                                    <input
+                                        type="text"
+                                        placeholder="默认项目路径"
+                                        value={customPath}
+                                        readOnly
+                                        className="input-sm"
+                                        style={{ width: '100%', height: '46px', paddingLeft: '16px', fontSize: '13px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px' }}
+                                    />
+                                </div>
+                                <button
+                                    onClick={handleSelectFolder}
+                                    className="btn-secondary"
+                                    style={{
+                                        width: '46px', height: '46px', padding: 0,
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                        borderRadius: '12px', background: 'rgba(255,255,255,0.08)',
+                                        border: '1px solid rgba(255,255,255,0.1)'
+                                    }}
+                                    title="选择保存位置"
+                                >
+                                    <FolderOpen size={20} />
+                                </button>
+                            </div>
                         </div>
                     </div>
 
-                    <div className="modal-footer">
-                        <button onClick={onClose} className="btn-secondary">取消</button>
+                    <div className="modal-footer" style={{ marginTop: '0.5rem', gap: '20px' }}>
+                        <button
+                            onClick={onClose}
+                            className="btn-modern-secondary"
+                            style={{ flex: 1, height: '52px', fontSize: '16px', borderRadius: '14px', fontWeight: 700 }}
+                        >
+                            取消
+                        </button>
                         <button
                             onClick={handleExport}
-                            className="btn-primary"
+                            className="btn-modern-primary"
+                            style={{ flex: 2, height: '52px', fontSize: '16px', borderRadius: '14px', justifyContent: 'center', fontWeight: 800 }}
                             disabled={isExporting || !isRatioValid}
                         >
-                            {isExporting ? '导出中...' : '导出 YOLO 格式'}
+                            {isExporting ? '正在处理...' : '执行数据集导出'}
                         </button>
                     </div>
                 </div>
