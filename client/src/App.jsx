@@ -25,10 +25,7 @@ const AppContent = () => {
   if (view === 'dashboard') {
     return (
       <div className="animate-fade-in page-dashboard">
-        <header className="page-dashboard-header">
-          <h1>欢迎回来</h1>
-          <p>管理您的数据集项目</p>
-        </header>
+
         <ProjectDashboard
           projects={projects}
           onCreateProject={createProject}

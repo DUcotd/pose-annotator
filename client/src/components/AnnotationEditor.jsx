@@ -1,8 +1,9 @@
 
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { Save, ArrowLeft, Trash2, Crosshair, Box, MousePointer2, ChevronDown, ChevronRight, ChevronLeft, Layers, ZoomIn, ZoomOut, Maximize } from 'lucide-react';
+import { Save, ArrowLeft, Trash2, Crosshair, Box, MousePointer2, ChevronDown, ChevronRight, ChevronLeft, Layers, ZoomIn, ZoomOut, Maximize, Tag } from 'lucide-react';
 import { useProject } from '../context/ProjectContext';
 import { ClassInputModal } from './ClassInputModal';
+import { ClassManagerModal } from './ClassManagerModal';
 
 export function AnnotationEditor({ image, projectId, onBack }) {
     const { images, openEditor } = useProject();
@@ -24,6 +25,10 @@ export function AnnotationEditor({ image, projectId, onBack }) {
     const [imageDims, setImageDims] = useState({ width: 0, height: 0, naturalWidth: 0, naturalHeight: 0 });
     const [saveStatus, setSaveStatus] = useState('saved'); // 'saved' | 'saving' | 'error'
     const [showGuides, setShowGuides] = useState(false);
+    const [projectConfig, setProjectConfig] = useState({ classMapping: {} });
+    const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
+    const [editingLabelId, setEditingLabelId] = useState(null); // ID of bbox being renamed
+    const [editLabelValue, setEditLabelValue] = useState("");
 
     const imageRef = useRef(null);
     const containerRef = useRef(null);
@@ -95,6 +100,23 @@ export function AnnotationEditor({ image, projectId, onBack }) {
             isCancelled = true;
         };
     }, [image, projectId, handleImageLoad]);
+
+    // Load project config
+    useEffect(() => {
+        fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/config`)
+            .then(res => res.json())
+            .then(data => setProjectConfig(data || { classMapping: {} }))
+            .catch(err => console.error('Error loading config:', err));
+    }, [projectId]);
+
+    const saveConfig = (newConfig) => {
+        setProjectConfig(newConfig);
+        fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/config`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(newConfig)
+        }).catch(err => console.error('Error saving config:', err));
+    };
 
 
     // Save Helper
@@ -386,7 +408,7 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                 id: Date.now(),
                 type: 'bbox',
                 ...currentBox,
-                label: 'Object'
+                label: '' // Clear default 'Object' to allow mapped name or custom name to take precedence
             };
             setPendingBBox(newBBox);
             setIsClassModalOpen(true);
@@ -396,7 +418,12 @@ export function AnnotationEditor({ image, projectId, onBack }) {
 
     const confirmClassIndex = (index) => {
         if (pendingBBox) {
-            const finalizedBBox = { ...pendingBBox, classIndex: index };
+            const mappedName = projectConfig.classMapping[index];
+            const finalizedBBox = {
+                ...pendingBBox,
+                classIndex: index,
+                label: pendingBBox.label || mappedName || ''
+            };
             setAnnotations([...annotations, finalizedBBox]);
 
             setSelectedId(finalizedBBox.id);
@@ -542,6 +569,15 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                     <button title="复位视图" className="tool-btn">
                         <Maximize size={20} />
                     </button>
+                    <div className="toolbar-divider"></div>
+                    <button
+                        onClick={() => setIsConfigModalOpen(true)}
+                        title="类别管理器"
+                        className="tool-btn"
+                        style={{ color: 'var(--accent-primary)' }}
+                    >
+                        <Tag size={20} />
+                    </button>
                 </div>
 
                 {/* Canvas Area */}
@@ -595,30 +631,47 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                                 const ds = getDisplayScale();
 
                                 if (ann.type === 'bbox') {
+                                    const bboxColor = isSelected ? '#58a6ff' : '#00FF00';
                                     return (
                                         <div key={ann.id} style={{
-                                            position: 'absolute', left: ann.x * ds.sx, top: ann.y * ds.sy, width: ann.width * ds.sx, height: ann.height * ds.sy,
-                                            border: `2px solid ${isSelected ? 'var(--accent-primary)' : 'var(--success)'}`,
-                                            background: `rgba(88, 166, 255, ${isSelected ? 0.15 : 0.05})`,
-                                            pointerEvents: 'none'
+                                            position: 'absolute',
+                                            left: ann.x * ds.sx,
+                                            top: ann.y * ds.sy,
+                                            width: ann.width * ds.sx,
+                                            height: ann.height * ds.sy,
+                                            border: `2.5px solid ${bboxColor}`,
+                                            background: `rgba(88, 166, 255, ${isSelected ? 0.2 : 0.05})`,
+                                            boxShadow: isSelected
+                                                ? `0 0 0 1px black, 0 0 12px ${bboxColor}cc`
+                                                : '0 0 0 1px black',
+                                            pointerEvents: 'none',
+                                            zIndex: isSelected ? 40 : 10,
+                                            borderRadius: '2px'
                                         }}>
                                             <div style={{
-                                                position: 'absolute', top: -22, left: -2,
-                                                background: isSelected ? 'var(--accent-primary)' : 'var(--success)',
-                                                color: 'white', padding: '2px 6px', borderRadius: '4px',
-                                                fontSize: '11px', fontWeight: '600',
-                                                boxShadow: 'var(--shadow-sm)'
+                                                position: 'absolute', top: -24, left: -2.5,
+                                                background: bboxColor,
+                                                color: 'black', padding: '2px 8px', borderRadius: '4px 4px 0 0',
+                                                fontSize: '12px', fontWeight: '800',
+                                                boxShadow: '0 -2px 10px rgba(0,0,0,0.3)',
+                                                whiteSpace: 'nowrap',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '4px',
+                                                border: '1px solid black',
+                                                borderBottom: 'none'
                                             }}>
-                                                Class {ann.classIndex ?? 0}
+                                                {ann.label || projectConfig.classMapping[ann.classIndex] || `Class ${ann.classIndex ?? 0}`}
                                             </div>
                                             {isSelected && mode === 'select' && (
                                                 <>
                                                     {['tl', 'tr', 'bl', 'br'].map(h => (
                                                         <div key={h} style={{
-                                                            position: 'absolute', width: 10, height: 10, background: '#fff', border: '2px solid var(--accent-primary)', borderRadius: '50%',
-                                                            top: h.includes('t') ? -6 : 'auto', bottom: h.includes('b') ? -6 : 'auto',
-                                                            left: h.includes('l') ? -6 : 'auto', right: h.includes('r') ? -6 : 'auto',
-                                                            pointerEvents: 'none'
+                                                            position: 'absolute', width: 12, height: 12, background: '#fff', border: '2.5px solid #58a6ff', borderRadius: '50%',
+                                                            top: h.includes('t') ? -7 : 'auto', bottom: h.includes('b') ? -7 : 'auto',
+                                                            left: h.includes('l') ? -7 : 'auto', right: h.includes('r') ? -7 : 'auto',
+                                                            pointerEvents: 'none',
+                                                            boxShadow: '0 2px 4px rgba(0,0,0,0.5)'
                                                         }} />
                                                     ))}
                                                 </>
@@ -626,15 +679,35 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                                         </div>
                                     );
                                 } else {
+                                    const kpColor = isChildOfSelected || isSelected ? '#ffbd2e' : '#00FF00';
                                     return (
                                         <div key={ann.id} style={{
-                                            position: 'absolute', left: ann.x * ds.sx - 5, top: ann.y * ds.sy - 5, width: 10, height: 10, borderRadius: '50%',
-                                            background: isChildOfSelected || isSelected ? 'var(--warning)' : 'var(--success)',
-                                            border: '2px solid var(--bg-primary)',
-                                            boxShadow: isSelected ? '0 0 0 2px var(--warning)' : 'none',
-                                            pointerEvents: 'none'
+                                            position: 'absolute',
+                                            left: ann.x * ds.sx - 6,
+                                            top: ann.y * ds.sy - 6,
+                                            width: 12, height: 12, borderRadius: '50%',
+                                            background: kpColor,
+                                            border: '2px solid black',
+                                            boxShadow: isSelected
+                                                ? `0 0 0 2px white, 0 0 10px ${kpColor}`
+                                                : '0 0 0 2px white',
+                                            pointerEvents: 'none',
+                                            zIndex: isSelected ? 50 : 20,
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center'
                                         }}>
-                                            <span style={{ position: 'absolute', top: -16, left: 0, fontSize: '10px', color: 'var(--text-primary)', fontWeight: 'bold', textShadow: '0 1px 2px black' }}>
+                                            <span style={{
+                                                position: 'absolute',
+                                                top: -18,
+                                                left: 6,
+                                                transform: 'translateX(-50%)',
+                                                fontSize: '11px',
+                                                color: 'white',
+                                                fontWeight: '900',
+                                                textShadow: '0 0 2px black, 0 0 2px black, 0 0 2px black, 0 0 2px black',
+                                                whiteSpace: 'nowrap'
+                                            }}>
                                                 {ann.keypointIndex ?? 0}
                                             </span>
                                         </div>
@@ -645,8 +718,16 @@ export function AnnotationEditor({ image, projectId, onBack }) {
 
                         {currentBox && (
                             <div style={{
-                                position: 'absolute', left: currentBox.x * getDisplayScale().sx, top: currentBox.y * getDisplayScale().sy, width: currentBox.width * getDisplayScale().sx, height: currentBox.height * getDisplayScale().sy,
-                                border: '2px dashed var(--accent-primary)', background: 'var(--accent-dim)', pointerEvents: 'none'
+                                position: 'absolute',
+                                left: currentBox.x * getDisplayScale().sx,
+                                top: currentBox.y * getDisplayScale().sy,
+                                width: currentBox.width * getDisplayScale().sx,
+                                height: currentBox.height * getDisplayScale().sy,
+                                border: '2.5px dashed #58a6ff',
+                                background: 'rgba(88, 166, 255, 0.2)',
+                                boxShadow: '0 0 0 1px black',
+                                pointerEvents: 'none',
+                                zIndex: 100
                             }} />
                         )}
                     </div>
@@ -671,7 +752,38 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                                             {expandedGroups[group.id] ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                                         </div>
                                         <Box size={14} color="var(--accent-primary)" />
-                                        <span className="layer-group-name">对象 {idx + 1}</span>
+                                        {editingLabelId === group.id ? (
+                                            <input
+                                                autoFocus
+                                                className="input-inline"
+                                                style={{ fontSize: '13px', fontWeight: 600, width: '120px' }}
+                                                value={editLabelValue}
+                                                onChange={e => setEditLabelValue(e.target.value)}
+                                                onBlur={() => {
+                                                    setAnnotations(prev => prev.map(a => a.id === group.id ? { ...a, label: editLabelValue } : a));
+                                                    setEditingLabelId(null);
+                                                }}
+                                                onKeyDown={e => {
+                                                    if (e.key === 'Enter') {
+                                                        setAnnotations(prev => prev.map(a => a.id === group.id ? { ...a, label: editLabelValue } : a));
+                                                        setEditingLabelId(null);
+                                                    }
+                                                }}
+                                                onClick={e => e.stopPropagation()}
+                                            />
+                                        ) : (
+                                            <span
+                                                className="layer-group-name"
+                                                onDoubleClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setEditingLabelId(group.id);
+                                                    setEditLabelValue(group.label || projectConfig.classMapping[group.classIndex] || `对象 ${idx + 1}`);
+                                                }}
+                                                title="双击重命名"
+                                            >
+                                                {group.label || projectConfig.classMapping[group.classIndex] || `对象 ${idx + 1}`}
+                                            </span>
+                                        )}
                                     </div>
                                     <button onClick={(e) => { e.stopPropagation(); handleDelete(group.id); }} className="icon-btn" title="删除">
                                         <Trash2 size={14} />
@@ -752,6 +864,13 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                 isOpen={isClassModalOpen}
                 onClose={() => { setIsClassModalOpen(false); setPendingBBox(null); }}
                 onSubmit={confirmClassIndex}
+            />
+
+            <ClassManagerModal
+                isOpen={isConfigModalOpen}
+                onClose={() => setIsConfigModalOpen(false)}
+                config={projectConfig}
+                onSave={saveConfig}
             />
         </div >
     );

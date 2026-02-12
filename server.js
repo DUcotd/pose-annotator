@@ -109,6 +109,8 @@ app.get('/api/projects', (req, res) => {
     try {
         const projects = fs.readdirSync(PROJECTS_DIR).filter(file => {
             try {
+                // Filter out hidden folders and our Windows-specific temp deletion folders
+                if (file.startsWith('.') || file.startsWith('_to_delete_')) return false;
                 return fs.statSync(path.join(PROJECTS_DIR, file)).isDirectory();
             } catch (e) { return false; }
         });
@@ -141,6 +143,39 @@ app.post('/api/projects', (req, res) => {
     const paths = ensureProjectDirs(safeName);
 
     res.json({ message: 'Project created', id: safeName });
+});
+
+// Get Project Config
+app.get('/api/projects/:projectId/config', (req, res) => {
+    const { projectId } = req.params;
+    const paths = getProjectPaths(projectId);
+    const configPath = path.join(paths.root, 'config.json');
+
+    if (fs.existsSync(configPath)) {
+        try {
+            const config = JSON.parse(fs.readFileSync(configPath));
+            res.json(config);
+        } catch (e) {
+            res.status(500).json({ error: 'Failed to read project config' });
+        }
+    } else {
+        res.json({ classMapping: {} });
+    }
+});
+
+// Save Project Config
+app.post('/api/projects/:projectId/config', (req, res) => {
+    const { projectId } = req.params;
+    const config = req.body;
+    const paths = getProjectPaths(projectId);
+    const configPath = path.join(paths.root, 'config.json');
+
+    try {
+        fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+        res.json({ message: 'Project config saved' });
+    } catch (e) {
+        res.status(500).json({ error: 'Failed to save project config' });
+    }
 });
 
 // Delete Project
@@ -411,12 +446,6 @@ app.post('/api/projects/:projectId/export/yolo', (req, res) => {
         try {
             const images = files.filter(file => /\.(jpg|jpeg|png|gif|webp)$/i.test(file));
 
-            // Pass 1: Collect Class Names (Dynamic from data)
-            let maxClassIndex = 0;
-            const classNames = {};
-            let totalBBoxes = 0;
-            let totalKeypoints = 0;
-
             images.forEach(imageFile => {
                 const annotationFile = path.join(paths.annotations, `${imageFile}.json`);
                 if (fs.existsSync(annotationFile)) {
@@ -425,13 +454,33 @@ app.post('/api/projects/:projectId/export/yolo', (req, res) => {
                         annotations.filter(a => a.type === 'bbox').forEach(bbox => {
                             const idx = bbox.classIndex || 0;
                             if (idx > maxClassIndex) maxClassIndex = idx;
-                            // Use user-set label, but skip default "Object" in favor of class_N
-                            const label = (bbox.label && bbox.label !== 'Object') ? bbox.label : `class_${idx}`;
-                            if (!classNames[idx]) classNames[idx] = label;
                         });
                     } catch (e) { }
                 }
             });
+
+            // Pass 2: Finalize Class Names
+            const classNames = {};
+
+            // Load project config if exists
+            const configPath = path.join(paths.root, 'config.json');
+            let projectConfig = { classMapping: {} };
+            if (fs.existsSync(configPath)) {
+                try {
+                    projectConfig = JSON.parse(fs.readFileSync(configPath));
+                } catch (e) { console.error('Failed to read config.json:', e); }
+            }
+
+            // Fill classNames: use mapping first, then dynamic from data, then default
+            for (let i = 0; i <= maxClassIndex; i++) {
+                if (projectConfig.classMapping && projectConfig.classMapping[i]) {
+                    classNames[i] = projectConfig.classMapping[i].trim().replace(/\s+/g, '_') || `class_${i}`;
+                } else {
+                    classNames[i] = `class_${i}`;
+                }
+            }
+
+            // Also check if some classes are used but not in mapping (though they'll get default class_i)
 
             // Filter images based on annotation status and user preference
             let imagesToExport = images.filter(imageFile => {

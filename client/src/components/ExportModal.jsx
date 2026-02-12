@@ -1,5 +1,5 @@
-
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Download, X, Shuffle, FolderOpen } from 'lucide-react';
 
 export const ExportModal = ({ isOpen, onClose, onExport }) => {
@@ -70,9 +70,12 @@ export const ExportModal = ({ isOpen, onClose, onExport }) => {
         setValRatio(Math.max(0, 100 - trainRatio - t));
     };
 
-    return (
-        <div className="modal-overlay">
-            <div className="animate-fade-in modal-panel modal-panel-md">
+    return createPortal(
+        <div className="modal-overlay" onClick={onClose}>
+            <div
+                className="animate-fade-in modal-panel modal-panel-md"
+                onClick={e => e.stopPropagation()}
+            >
                 <div className="modal-header-between">
                     <h3>
                         <Download size={20} color="var(--accent-primary)" /> 导出数据集
@@ -231,6 +234,7 @@ export const ExportModal = ({ isOpen, onClose, onExport }) => {
                     </div>
                 </div>
             </div>
-        </div >
+        </div>,
+        document.body
     );
 };
