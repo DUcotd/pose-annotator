@@ -1,11 +1,26 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Folder, Trash2, Plus, Image as ImageIcon, ChevronRight, Zap, Target, Upload, Download, X } from 'lucide-react';
+import { useProject } from '../context/ProjectContext';
+import { Folder, Trash2, Plus, Image as ImageIcon, ChevronRight, Zap, Target, Upload, Download, X, AlertCircle, CheckCircle as CheckCircleIcon } from 'lucide-react';
 
 export const ProjectDashboard = ({ projects = [], onCreateProject, onSelectProject, onDeleteProject }) => {
+    const { importCollaboration, exportCollaboration } = useProject();
     const [newProjectName, setNewProjectName] = useState('');
     const [isCreating, setIsCreating] = useState(false);
     const [isGuideOpen, setIsGuideOpen] = useState(false);
+    const [notification, setNotification] = useState(null);
+
+    const handleImportProject = async () => {
+        const result = await importCollaboration();
+        if (result.success) {
+            setNotification({ type: 'success', message: result.message });
+        } else if (result.message !== '取消导入') {
+            setNotification({ type: 'error', message: result.message });
+        }
+        if (result.success || result.message !== '取消导入') {
+            setTimeout(() => setNotification(null), 5000);
+        }
+    };
 
     const handleSubmit = (e) => {
         e.preventDefault();
@@ -35,10 +50,14 @@ export const ProjectDashboard = ({ projects = [], onCreateProject, onSelectProje
                     从模型训练到结果导出，一切尽在掌握。
                 </p>
 
-                <div style={{ marginTop: '2rem', display: 'flex', gap: '1.2rem' }}>
+                <div style={{ marginTop: '2rem', display: 'flex', gap: '1.2rem', flexWrap: 'wrap' }}>
                     <button className="btn-modern-primary" onClick={() => setIsCreating(true)}>
                         <Plus size={22} strokeWidth={2.5} />
                         立即开始
+                    </button>
+                    <button className="btn-modern-secondary" onClick={handleImportProject} style={{ gap: '8px' }}>
+                        <Upload size={20} strokeWidth={2} />
+                        导入项目 (ZIP)
                     </button>
                     <button className="btn-modern-secondary" onClick={() => setIsGuideOpen(true)}>
                         <Zap size={22} strokeWidth={2} />
@@ -260,6 +279,32 @@ export const ProjectDashboard = ({ projects = [], onCreateProject, onSelectProje
                 document.body
             )}
 
+            {notification && createPortal(
+                <div style={{
+                    position: 'fixed',
+                    bottom: '40px',
+                    right: '40px',
+                    zIndex: 9999,
+                    animation: 'slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1)'
+                }}>
+                    <div style={{
+                        padding: '16px 24px',
+                        background: notification.type === 'success' ? '#065f46' : '#991b1b',
+                        border: `1px solid ${notification.type === 'success' ? '#10b981' : '#ef4444'}`,
+                        borderRadius: '16px',
+                        color: 'white',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '12px',
+                        boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.3)'
+                    }}>
+                        {notification.type === 'success' ? <CheckCircleIcon size={20} /> : <AlertCircle size={20} />}
+                        <span style={{ fontWeight: 600 }}>{notification.message}</span>
+                    </div>
+                </div>,
+                document.body
+            )}
+
             {/* Projects Grid Container with independent scroll */}
             <div style={{ flex: 1, overflowY: 'auto', paddingBottom: '3rem', paddingRight: '12px' }} className="custom-scrollbar">
                 <div className="project-grid-modern" style={{ marginTop: '1rem' }}>
@@ -347,19 +392,21 @@ export const ProjectDashboard = ({ projects = [], onCreateProject, onSelectProje
                                         }}>
                                             <Folder size={24} />
                                         </div>
-                                        <button
-                                            onClick={(e) => { e.stopPropagation(); onDeleteProject(project.id); }}
-                                            className="icon-btn hover-card"
-                                            title="删除项目"
-                                            style={{
-                                                color: 'var(--text-tertiary)',
-                                                background: 'rgba(255,255,255,0.03)',
-                                                padding: '8px',
-                                                borderRadius: '10px'
-                                            }}
-                                        >
-                                            <Trash2 size={16} />
-                                        </button>
+                                        <div style={{ display: 'flex', gap: '8px' }}>
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); onDeleteProject(project.id); }}
+                                                className="icon-btn hover-card"
+                                                title="删除项目"
+                                                style={{
+                                                    color: 'var(--text-tertiary)',
+                                                    background: 'rgba(255,255,255,0.03)',
+                                                    padding: '8px',
+                                                    borderRadius: '10px'
+                                                }}
+                                            >
+                                                <Trash2 size={16} />
+                                            </button>
+                                        </div>
                                     </div>
 
                                     <div style={{ flex: 1 }}>
@@ -389,6 +436,23 @@ export const ProjectDashboard = ({ projects = [], onCreateProject, onSelectProje
                                                 <ImageIcon size={14} />
                                                 <span>{project.imageCount || 0}</span>
                                             </div>
+                                            {project.imageCount > 0 && (
+                                                <div style={{
+                                                    background: 'rgba(52, 211, 153, 0.1)',
+                                                    border: '1px solid rgba(52, 211, 153, 0.2)',
+                                                    padding: '4px 10px',
+                                                    borderRadius: '8px',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '6px',
+                                                    color: '#34d399',
+                                                    fontSize: '0.85rem',
+                                                    fontWeight: 600
+                                                }}>
+                                                    <CheckCircleIcon size={14} />
+                                                    <span>{project.annotatedCount || 0}</span>
+                                                </div>
+                                            )}
                                             <span className="card-tag">YOLO 格式</span>
                                         </div>
                                     </div>
@@ -425,6 +489,12 @@ export const ProjectDashboard = ({ projects = [], onCreateProject, onSelectProje
                 opacity: 0.5,
                 marginTop: 'auto'
             }} />
+            <style>{`
+                @keyframes slideUp {
+                    from { transform: translateY(100px); opacity: 0; }
+                    to { transform: translateY(0); opacity: 1; }
+                }
+            `}</style>
         </div>
     );
 };

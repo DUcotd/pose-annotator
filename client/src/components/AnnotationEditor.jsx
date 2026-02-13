@@ -144,19 +144,21 @@ export function AnnotationEditor({ image, projectId, onBack }) {
 
 
     // Navigation Logic
-    const currentIndex = useMemo(() => images.indexOf(image), [images, image]);
+    const currentIndex = useMemo(() => images.findIndex(img => (typeof img === 'string' ? img === image : img.name === image)), [images, image]);
 
     const goToNext = useCallback(async () => {
         if (currentIndex < images.length - 1) {
             await saveAnnotations(annotations);
-            openEditor(images[currentIndex + 1]);
+            const nextImg = images[currentIndex + 1];
+            openEditor(typeof nextImg === 'string' ? nextImg : nextImg.name);
         }
     }, [currentIndex, images, annotations, openEditor, saveAnnotations]);
 
     const goToPrev = useCallback(async () => {
         if (currentIndex > 0) {
             await saveAnnotations(annotations);
-            openEditor(images[currentIndex - 1]);
+            const prevImg = images[currentIndex - 1];
+            openEditor(typeof prevImg === 'string' ? prevImg : prevImg.name);
         }
     }, [currentIndex, images, annotations, openEditor, saveAnnotations]);
 

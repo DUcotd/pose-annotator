@@ -5,7 +5,6 @@ import { ExportModal } from './ExportModal';
 
 export const MainLayout = ({ children }) => {
     const { currentProject, view, goBack, setView, exportProject } = useProject();
-    const [isExportModalOpen, setIsExportModalOpen] = useState(false);
     const [notification, setNotification] = useState(null);
 
     const handleExport = async (options) => {
@@ -85,8 +84,8 @@ export const MainLayout = ({ children }) => {
                             )}
 
                             <NavButton
-                                active={false}
-                                onClick={() => setIsExportModalOpen(true)}
+                                active={view === 'export'}
+                                onClick={() => setView('export')}
                                 icon={<Download size={18} />}
                                 label="导出数据集"
                             />
@@ -123,11 +122,6 @@ export const MainLayout = ({ children }) => {
                 )}
             </main>
 
-            <ExportModal
-                isOpen={isExportModalOpen}
-                onClose={() => setIsExportModalOpen(false)}
-                onExport={handleExport}
-            />
         </div>
     );
 };

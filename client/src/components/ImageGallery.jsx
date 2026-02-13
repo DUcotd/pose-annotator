@@ -1,12 +1,15 @@
 import React, { useState, useMemo } from 'react';
-import { ChevronLeft, ChevronRight, Image as ImageIcon } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Image as ImageIcon, CheckCircle, RefreshCw } from 'lucide-react';
 import { ImageUpload } from './ImageUpload';
 
 const PAGE_SIZE = 60;
 
-const ThumbnailCard = ({ img, projectId, index, onSelectImage }) => {
+const ThumbnailCard = ({ imageObj, projectId, index, onSelectImage }) => {
     const [isLoaded, setIsLoaded] = useState(false);
     const [errorCount, setErrorCount] = useState(0);
+
+    const img = typeof imageObj === 'string' ? imageObj : imageObj.name;
+    const hasAnnotation = typeof imageObj === 'string' ? false : imageObj.hasAnnotation;
 
     const thumbnailUrl = `http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/thumbnails/${encodeURIComponent(img)}`;
     const fallbackUrl = `http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/uploads/${encodeURIComponent(img)}`;
@@ -16,7 +19,10 @@ const ThumbnailCard = ({ img, projectId, index, onSelectImage }) => {
     return (
         <div
             className="image-card"
-            style={{ transitionDelay: `${(index % 8) * 0.05}s` }}
+            style={{
+                transitionDelay: `${(index % 8) * 0.05}s`,
+                position: 'relative'
+            }}
             onClick={() => onSelectImage(img)}
         >
             <div className="image-card-container">
@@ -37,6 +43,28 @@ const ThumbnailCard = ({ img, projectId, index, onSelectImage }) => {
                         }
                     }}
                 />
+
+                {/* Status Badge */}
+                {hasAnnotation && (
+                    <div style={{
+                        position: 'absolute',
+                        top: '8px',
+                        right: '8px',
+                        zIndex: 10,
+                        background: 'rgba(16, 185, 129, 0.9)',
+                        color: 'white',
+                        padding: '4px',
+                        borderRadius: '50%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                        backdropFilter: 'blur(4px)',
+                        border: '1px solid rgba(255,255,255,0.2)'
+                    }} title="已标注">
+                        <CheckCircle size={14} fill="currentColor" />
+                    </div>
+                )}
             </div>
             <div className="image-card-label">
                 {img}
@@ -53,7 +81,10 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload }
     const filtered = useMemo(() => {
         if (!search.trim()) return images;
         const q = search.toLowerCase();
-        return images.filter(img => img.toLowerCase().includes(q));
+        return images.filter(img => {
+            const name = typeof img === 'string' ? img : img.name;
+            return name.toLowerCase().includes(q);
+        });
     }, [images, search]);
 
     const displayList = useMemo(() => {
@@ -77,7 +108,7 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload }
                 display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                 marginBottom: '2rem', gap: '1.5rem', flexWrap: 'wrap', flexShrink: 0
             }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', color: 'var(--text-secondary)', fontSize: '0.9rem', fontWeight: 500 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <div style={{
                         background: 'rgba(77, 161, 255, 0.1)',
                         padding: '8px 12px',
@@ -91,6 +122,19 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload }
                         <ImageIcon size={16} />
                         <span style={{ fontWeight: 700 }}>{filtered.length}</span>
                     </div>
+                    <button
+                        onClick={onUpload}
+                        className="icon-btn hover-card"
+                        title="刷新图库"
+                        style={{
+                            background: 'rgba(255,255,255,0.03)',
+                            padding: '8px',
+                            borderRadius: '10px',
+                            border: '1px solid rgba(255,255,255,0.05)'
+                        }}
+                    >
+                        <RefreshCw size={16} />
+                    </button>
                 </div>
                 <div style={{ position: 'relative', flex: 1, maxWidth: '320px' }}>
                     <input
@@ -131,8 +175,8 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload }
 
                     return (
                         <ThumbnailCard
-                            key={item}
-                            img={item}
+                            key={typeof item === 'string' ? item : item.name}
+                            imageObj={item}
                             projectId={projectId}
                             index={index}
                             onSelectImage={onSelectImage}

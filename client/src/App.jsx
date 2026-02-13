@@ -7,6 +7,7 @@ import { ImageGallery } from './components/ImageGallery';
 import { AnnotationEditor } from './components/AnnotationEditor';
 import { ImageUpload } from './components/ImageUpload';
 import { TrainingConfig } from './components/TrainingConfig';
+import { DatasetExport } from './components/DatasetExport';
 
 
 function App() {
@@ -90,6 +91,14 @@ const AppContent = () => {
     return (
       <div style={{ height: '100%', overflow: 'hidden' }}>
         <TrainingConfig />
+      </div>
+    );
+  }
+
+  if (view === 'export') {
+    return (
+      <div style={{ height: '100%', overflow: 'hidden' }}>
+        <DatasetExport />
       </div>
     );
   }

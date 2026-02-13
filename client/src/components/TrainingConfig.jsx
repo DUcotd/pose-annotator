@@ -7,13 +7,16 @@ export const TrainingConfig = () => {
     const [config, setConfig] = useState({
         model: 'yolov8n.pt',
         data: '',
-        epochs: 100,
-        batch: 16,
+        epochs: 10,
+        batch: 8,
         imgsz: 640,
-        device: '0'
+        device: '0',
+        project: '', // Custom output directory
+        name: 'exp_auto' // Custom experiment name
     });
     const [status, setStatus] = useState('idle'); // idle, running, completed, failed
     const [logs, setLogs] = useState([]);
+    const [metrics, setMetrics] = useState([]);
     const [stats, setStats] = useState(null);
     const logEndRef = useRef(null);
     const pollIntervalRef = useRef(null);
@@ -84,6 +87,7 @@ export const TrainingConfig = () => {
             const data = await res.json();
             setStatus(data.status);
             setLogs(data.logs || []);
+            setMetrics(data.metrics || []);
 
             if (data.status === 'running') {
                 if (!pollIntervalRef.current) startPolling();
@@ -109,6 +113,23 @@ export const TrainingConfig = () => {
         } catch (err) {
             console.error("Failed to browse file", err);
             alert(`无法打开文件选择器: ${err.message}\n请确保您正在使用桌面版应用程序。`);
+        }
+    };
+
+    const handleBrowseProject = async () => {
+        try {
+            const res = await fetch('http://localhost:5000/api/utils/select-folder', { method: 'POST' });
+            if (!res.ok) {
+                const errData = await res.json();
+                throw new Error(errData.error || 'Failed to open folder picker');
+            }
+            const data = await res.json();
+            if (data.path) {
+                setConfig({ ...config, project: data.path });
+            }
+        } catch (err) {
+            console.error("Failed to browse folder", err);
+            alert(`无法打开文件夹选择器: ${err.message}\n请确保您正在使用桌面版应用程序。`);
         }
     };
 
@@ -145,6 +166,125 @@ export const TrainingConfig = () => {
         }
     };
 
+    const LineChart = ({ data, dataKey, color, label, unit = "" }) => {
+        const width = 300;
+        const height = 120;
+        const padding = 20;
+
+        if (!data || data.length === 0) return (
+            <div className="chart-placeholder">等待数据累积...</div>
+        );
+
+        const latestValue = data[data.length - 1][dataKey];
+
+        // Handle single data point or no data for key
+        if (latestValue === undefined || (data.length < 2)) {
+            return (
+                <div className="metrics-chart">
+                    <div className="chart-header">
+                        <span className="chart-label">{label}</span>
+                        <span className="chart-value" style={{ color }}>
+                            {latestValue !== undefined ? (dataKey === 'mAP50' ? (latestValue * 100).toFixed(1) : latestValue.toFixed(4)) : '--'}{unit}
+                        </span>
+                    </div>
+                    <div className="chart-placeholder mini">正在收集训练趋势...</div>
+                </div>
+            );
+        }
+
+        const values = data.map(d => d[dataKey] || 0);
+        const minVal = Math.min(...values) * 0.9;
+        const maxVal = Math.max(...values) * 1.1;
+        const range = maxVal - minVal || 1;
+
+        const points = data.map((d, i) => {
+            const x = padding + (i / (data.length - 1)) * (width - 2 * padding);
+            const y = height - padding - (((d[dataKey] || 0) - minVal) / range) * (height - 2 * padding);
+            return `${x},${y}`;
+        }).join(' ');
+
+        return (
+            <div className="metrics-chart">
+                <div className="chart-header">
+                    <span className="chart-label">{label}</span>
+                    <span className="chart-value" style={{ color }}>
+                        {dataKey === 'mAP50' ? (latestValue * 100).toFixed(1) : latestValue.toFixed(4)}{unit}
+                    </span>
+                </div>
+                <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
+                    <polyline
+                        fill="none"
+                        stroke={color}
+                        strokeWidth="3"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        points={points}
+                        style={{ transition: 'all 0.5s ease' }}
+                    />
+                    <line x1={padding} y1={height - padding} x2={width - padding} y2={height - padding} stroke="rgba(255,255,255,0.1)" strokeWidth="1" />
+                </svg>
+            </div>
+        );
+    };
+
+    const TrainingDashboard = ({ metrics, status }) => {
+        if (metrics.length === 0 && (status !== 'running' && status !== 'starting')) return null;
+
+        const latest = metrics[metrics.length - 1] || {};
+        const progress = (latest.epoch && latest.totalEpochs) ? (latest.epoch / latest.totalEpochs) * 100 : 0;
+        const mapVal = latest.mAP50 !== undefined ? (latest.mAP50 * 100).toFixed(1) : '--';
+
+        return (
+            <div className="dashboard-grid fade-in">
+                <div className="dashboard-card glass-panel-modern main-metrics">
+                    <div className="progress-overview">
+                        <div className="progress-info">
+                            <span className="label-modern">正在训练第 {latest.epoch || 0} 轮</span>
+                            <div className="progress-values">
+                                <span className="current-epoch">{latest.epoch || 0}</span>
+                                <span className="total-epoch">/ {latest.totalEpochs || '--'} Epochs</span>
+                            </div>
+                        </div>
+                        <div className="progress-bar-container">
+                            <div className="progress-bar-fill" style={{ width: `${progress}%` }}></div>
+                        </div>
+                    </div>
+
+                    <div className="metrics-summary-row">
+                        <div className="summary-item">
+                            <label>GPU 显存</label>
+                            <span className="value">{latest.gpu_mem || '--'}</span>
+                        </div>
+                        <div className="summary-item">
+                            <label>当前精度 (mAP50)</label>
+                            <span className="value accent">{mapVal}{mapVal !== '--' ? '%' : ''}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="charts-container">
+                    <div className="dashboard-card glass-panel-modern chart-card">
+                        <LineChart
+                            data={metrics}
+                            dataKey="box_loss"
+                            color="#ff7b72"
+                            label="Box Loss (定位损失)"
+                        />
+                    </div>
+                    <div className="dashboard-card glass-panel-modern chart-card">
+                        <LineChart
+                            data={metrics}
+                            dataKey="mAP50"
+                            color="#79c0ff"
+                            label="mAP@50 (准确度趋势)"
+                            unit="%"
+                        />
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
     return (
         <div className="train-panel fade-in">
             <div className="train-header">
@@ -161,8 +301,13 @@ export const TrainingConfig = () => {
             </div>
 
             <div className="train-layout">
-                {/* Configuration Panel */}
-                <div className="left-panel">
+                {/* Left Column: Stats & Parameters */}
+                <div className="train-controls">
+                    {/* Real-time Visualization Dashboard */}
+                    {status === 'running' || metrics.length > 0 ? (
+                        <TrainingDashboard metrics={metrics} status={status} />
+                    ) : null}
+
                     {/* Dataset Info Card */}
                     <div className="info-card">
                         <h3><Database size={18} /> 数据集概览</h3>
@@ -210,119 +355,172 @@ export const TrainingConfig = () => {
                     </div>
 
                     <div className="config-card glass-panel-modern">
-                        <h3><Settings size={20} className="icon-accent" /> 参数配置</h3>
+                        <div className="card-header-modern">
+                            <Settings size={20} className="icon-accent" />
+                            <h3>模型与参数配置</h3>
+                        </div>
 
-                        <div className="form-group">
-                            <label className="label-modern">Base Model</label>
-                            <div className="select-wrapper-modern" ref={dropdownRef}>
-                                <div
-                                    className={`custom-select-trigger ${dropdownOpen ? 'open' : ''} ${status === 'running' ? 'disabled' : ''}`}
-                                    onClick={() => status !== 'running' && setDropdownOpen(!dropdownOpen)}
-                                >
-                                    <Database size={16} className="input-icon-left" />
-                                    <span className="selected-value">
-                                        {modelOptions.find(m => m.id === config.model)?.label}
-                                    </span>
-                                    <div className="arrow-icon"></div>
-                                </div>
-
-                                {dropdownOpen && (
-                                    <div className="custom-dropdown-menu">
-                                        {modelOptions.map(option => (
-                                            <div
-                                                key={option.id}
-                                                className={`dropdown-item-modern ${config.model === option.id ? 'active' : ''}`}
-                                                onClick={() => {
-                                                    setConfig({ ...config, model: option.id });
-                                                    setDropdownOpen(false);
-                                                }}
-                                            >
-                                                {option.label}
-                                            </div>
-                                        ))}
+                        {/* Section: Base Model */}
+                        <div className="config-section">
+                            <h4 className="section-title">基础模型 (Base Model)</h4>
+                            <div className="form-group-modern">
+                                <label className="label-modern">选择权重文件</label>
+                                <div className="select-wrapper-modern" ref={dropdownRef}>
+                                    <div
+                                        className={`custom-select-trigger ${dropdownOpen ? 'open' : ''} ${status === 'running' ? 'disabled' : ''}`}
+                                        onClick={() => status !== 'running' && setDropdownOpen(!dropdownOpen)}
+                                    >
+                                        <Database size={16} className="input-icon-left" />
+                                        <span className="selected-value">
+                                            {modelOptions.find(m => m.id === config.model)?.label}
+                                        </span>
+                                        <div className="arrow-icon"></div>
                                     </div>
-                                )}
-                            </div>
-                        </div>
 
-                        <div className="form-group-modern">
-                            <label className="label-modern">Custom Data YAML (Optional)</label>
-                            <div className="input-wrapper-modern has-action">
-                                <FileText size={16} className="input-icon-left" />
-                                <input
-                                    type="text"
-                                    value={config.data}
-                                    onChange={e => setConfig({ ...config, data: e.target.value })}
-                                    placeholder="Default: dataset/data.yaml"
-                                    disabled={status === 'running'}
-                                    className="input-modern-field"
-                                />
-                                <button
-                                    className="input-action-btn"
-                                    onClick={handleBrowseData}
-                                    disabled={status === 'running'}
-                                    title="Browse YAML file"
-                                >
-                                    <FolderOpen size={16} />
-                                </button>
-                            </div>
-                        </div>
-
-                        <div className="form-row-modern">
-                            <div className="form-group-modern">
-                                <label className="label-modern">Epochs</label>
-                                <div className="input-wrapper-modern">
-                                    <RefreshCw size={16} className="input-icon-left" />
-                                    <input
-                                        type="number"
-                                        value={config.epochs}
-                                        onChange={e => setConfig({ ...config, epochs: parseInt(e.target.value) })}
-                                        disabled={status === 'running'}
-                                        className="input-modern-field"
-                                    />
-                                </div>
-                            </div>
-                            <div className="form-group-modern">
-                                <label className="label-modern">Batch Size</label>
-                                <div className="input-wrapper-modern">
-                                    <CheckCircle size={16} className="input-icon-left" />
-                                    <input
-                                        type="number"
-                                        value={config.batch}
-                                        onChange={e => setConfig({ ...config, batch: parseInt(e.target.value) })}
-                                        disabled={status === 'running'}
-                                        className="input-modern-field"
-                                    />
+                                    {dropdownOpen && (
+                                        <div className="custom-dropdown-menu">
+                                            {modelOptions.map(option => (
+                                                <div
+                                                    key={option.id}
+                                                    className={`dropdown-item-modern ${config.model === option.id ? 'active' : ''}`}
+                                                    onClick={() => {
+                                                        setConfig({ ...config, model: option.id });
+                                                        setDropdownOpen(false);
+                                                    }}
+                                                >
+                                                    {option.label}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         </div>
 
-                        <div className="form-row-modern">
+                        {/* Section: Output Settings */}
+                        <div className="config-section">
+                            <h4 className="section-title">保存设置 (Output Settings)</h4>
                             <div className="form-group-modern">
-                                <label className="label-modern">Img Size</label>
-                                <div className="input-wrapper-modern">
-                                    <ImageIcon size={16} className="input-icon-left" />
-                                    <input
-                                        type="number"
-                                        value={config.imgsz}
-                                        onChange={e => setConfig({ ...config, imgsz: parseInt(e.target.value) })}
-                                        disabled={status === 'running'}
-                                        className="input-modern-field"
-                                    />
-                                </div>
-                            </div>
-                            <div className="form-group-modern">
-                                <label className="label-modern">Device</label>
-                                <div className="input-wrapper-modern">
-                                    <Terminal size={16} className="input-icon-left" />
+                                <label className="label-modern">输出项目目录 (Project)</label>
+                                <div className="input-wrapper-modern has-action">
+                                    <FolderOpen size={16} className="input-icon-left" />
                                     <input
                                         type="text"
-                                        value={config.device}
-                                        onChange={e => setConfig({ ...config, device: e.target.value })}
-                                        placeholder="0, 1, cpu"
+                                        value={config.project}
+                                        onChange={e => setConfig({ ...config, project: e.target.value })}
+                                        placeholder="默认保存至项目目录下"
                                         disabled={status === 'running'}
                                         className="input-modern-field"
                                     />
+                                    <button
+                                        className="input-action-btn"
+                                        onClick={handleBrowseProject}
+                                        disabled={status === 'running'}
+                                        title="选择输出目录"
+                                    >
+                                        <FolderOpen size={16} />
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="form-group-modern">
+                                <label className="label-modern">实验运行名称 (Name)</label>
+                                <div className="input-wrapper-modern">
+                                    <FileText size={16} className="input-icon-left" />
+                                    <input
+                                        type="text"
+                                        value={config.name}
+                                        onChange={e => setConfig({ ...config, name: e.target.value })}
+                                        placeholder="例如: exp_fish_v1"
+                                        disabled={status === 'running'}
+                                        className="input-modern-field"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="form-group-modern">
+                                <label className="label-modern">自定义数据配置 (Optional YAML)</label>
+                                <div className="input-wrapper-modern has-action">
+                                    <FileText size={16} className="input-icon-left" />
+                                    <input
+                                        type="text"
+                                        value={config.data}
+                                        onChange={e => setConfig({ ...config, data: e.target.value })}
+                                        placeholder="默认: dataset/data.yaml"
+                                        disabled={status === 'running'}
+                                        className="input-modern-field"
+                                    />
+                                    <button
+                                        className="input-action-btn"
+                                        onClick={handleBrowseData}
+                                        disabled={status === 'running'}
+                                        title="选择 YAML 文件"
+                                    >
+                                        <FolderOpen size={16} />
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Section: Training Parameters */}
+                        <div className="config-section no-border">
+                            <h4 className="section-title">性能参数 (Parameters)</h4>
+                            <div className="form-row-modern">
+                                <div className="form-group-modern">
+                                    <label className="label-modern">训练轮数 (Epochs)</label>
+                                    <div className="input-wrapper-modern">
+                                        <RefreshCw size={16} className="input-icon-left" />
+                                        <input
+                                            type="number"
+                                            value={config.epochs}
+                                            onChange={e => setConfig({ ...config, epochs: parseInt(e.target.value) })}
+                                            disabled={status === 'running'}
+                                            className="input-modern-field"
+                                        />
+                                    </div>
+                                </div>
+                                <div className="form-group-modern">
+                                    <label className="label-modern">批次大小 (Batch)</label>
+                                    <div className="input-wrapper-modern">
+                                        <CheckCircle size={16} className="input-icon-left" />
+                                        <input
+                                            type="number"
+                                            value={config.batch}
+                                            onChange={e => setConfig({ ...config, batch: parseInt(e.target.value) })}
+                                            disabled={status === 'running'}
+                                            className="input-modern-field"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="form-row-modern">
+                                <div className="form-group-modern">
+                                    <label className="label-modern">输入尺寸 (Img Size)</label>
+                                    <div className="input-wrapper-modern">
+                                        <ImageIcon size={16} className="input-icon-left" />
+                                        <input
+                                            type="number"
+                                            value={config.imgsz}
+                                            onChange={e => setConfig({ ...config, imgsz: parseInt(e.target.value) })}
+                                            disabled={status === 'running'}
+                                            className="input-modern-field"
+                                        />
+                                    </div>
+                                </div>
+                                <div className="form-group-modern">
+                                    <label className="label-modern">计算设备 (Device)</label>
+                                    <div className="input-wrapper-modern">
+                                        <Terminal size={16} className="input-icon-left" />
+                                        <input
+                                            type="text"
+                                            value={config.device}
+                                            onChange={e => setConfig({ ...config, device: e.target.value })}
+                                            placeholder="0, 1, 或 cpu"
+                                            disabled={status === 'running'}
+                                            className="input-modern-field"
+                                        />
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -399,19 +597,39 @@ export const TrainingConfig = () => {
                 
                 .train-layout { 
                     display: grid; 
-                    grid-template-columns: 340px 1fr; 
+                    grid-template-columns: 460px 1fr; 
                     gap: 24px; 
                     flex: 1; 
                     min-height: 0; /* Important for nested scrolling */
                     overflow: hidden;
                 }
                 
-                .left-panel {
+                .train-controls {
                     display: flex;
                     flex-direction: column;
-                    gap: 16px;
+                    gap: 24px;
                     overflow-y: auto;
-                    max-height: 100%;
+                    height: 100%;
+                    padding-right: 12px;
+                    scrollbar-width: thin;
+                    scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+                }
+
+                .train-controls::-webkit-scrollbar {
+                    width: 6px;
+                }
+
+                .train-controls::-webkit-scrollbar-track {
+                    background: transparent;
+                }
+
+                .train-controls::-webkit-scrollbar-thumb {
+                    background: rgba(255, 255, 255, 0.1);
+                    border-radius: 10px;
+                }
+
+                .train-controls::-webkit-scrollbar-thumb:hover {
+                    background: rgba(255, 255, 255, 0.2);
                 }
 
                 /* Info Card */
@@ -465,39 +683,66 @@ export const TrainingConfig = () => {
 
                 /* Config Card Polish */
                 .config-card { 
-                    background: rgba(22, 27, 34, 0.4); 
-                    backdrop-filter: blur(12px);
-                    padding: 24px; 
+                    padding: 0; 
+                    background: var(--bg-secondary); 
                     border-radius: 16px; 
-                    border: 1px solid rgba(255, 255, 255, 0.08);
-                    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+                    border: 1px solid var(--border-color);
+                    display: flex;
+                    flex-direction: column;
+                    box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+                    overflow: hidden;
                 }
-                
-                .config-card h3 { 
-                    display: flex; 
-                    align-items: center; 
-                    gap: 12px; 
-                    margin-top: 0; 
-                    margin-bottom: 24px; 
-                    font-size: 1.1rem; 
+
+                .card-header-modern {
+                    padding: 20px 24px;
+                    border-bottom: 1px solid var(--border-color);
+                    display: flex;
+                    align-items: center;
+                    gap: 12px;
+                    background: rgba(255,255,255,0.02);
+                }
+
+                .card-header-modern h3 {
+                    margin: 0;
+                    font-size: 1.1rem;
+                    font-weight: 600;
                     color: var(--text-primary);
+                }
+
+                .config-section {
+                    padding: 20px 24px;
+                    border-bottom: 1px solid rgba(255,255,255,0.06);
+                }
+
+                .config-section.no-border {
+                    border-bottom: none;
+                }
+
+                .section-title {
+                    font-size: 0.8rem;
                     font-weight: 700;
-                    letter-spacing: 0.5px;
+                    text-transform: uppercase;
+                    letter-spacing: 0.05em;
+                    color: var(--text-secondary);
+                    margin-top: 0;
+                    margin-bottom: 16px;
+                    display: flex;
+                    align-items: center;
+                    opacity: 0.7;
                 }
 
                 .icon-accent { color: var(--accent-primary); }
                 
                 /* Form Elements */
-                .form-group, .form-group-modern { margin-bottom: 20px; }
+                .form-group, .form-group-modern { margin-bottom: 16px; }
+                .form-group-modern:last-child { margin-bottom: 0; }
+                
                 .label-modern { 
                     display: block; 
-                    margin-bottom: 8px; 
-                    font-size: 0.7rem; 
-                    font-weight: 800;
-                    color: var(--text-tertiary); 
-                    text-transform: uppercase;
-                    letter-spacing: 1.5px;
-                    padding-left: 4px;
+                    font-size: 0.85rem; 
+                    color: var(--text-secondary); 
+                    margin-bottom: 8px;
+                    font-weight: 500;
                 }
                 
                 .input-wrapper-modern, .select-wrapper-modern {
@@ -681,7 +926,12 @@ export const TrainingConfig = () => {
                 .form-row-modern { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
                 
                 /* Buttons */
-                .train-actions-modern { margin-top: 8px; }
+                .train-actions-modern { 
+                    padding: 20px 24px;
+                    background: rgba(255,255,255,0.02);
+                    border-top: 1px solid var(--border-color);
+                    margin-top: auto;
+                }
 
                 .btn-modern-primary { 
                     background: linear-gradient(135deg, #4da1ff 0%, #2f81f7 100%);
@@ -823,6 +1073,44 @@ export const TrainingConfig = () => {
                     margin-bottom: 10px;
                     opacity: 0.2;
                 }
+                /* Dashboard & Charts */
+                .dashboard-grid { 
+                    display: flex; 
+                    flex-direction: column; 
+                    gap: 16px; 
+                    margin-bottom: 24px; 
+                }
+                .dashboard-card { 
+                    padding: 20px; 
+                    border-radius: 16px; 
+                    background: rgba(22, 27, 34, 0.4); 
+                    border: 1px solid rgba(255, 255, 255, 0.1); 
+                }
+                
+                .progress-overview { margin-bottom: 20px; }
+                .progress-info { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 12px; }
+                .current-epoch { font-size: 2rem; font-weight: 800; color: var(--text-primary); line-height: 1; }
+                .total-epoch { font-size: 1rem; color: var(--text-tertiary); margin-left: 8px; }
+                
+                .progress-bar-container { height: 8px; background: rgba(255, 255, 255, 0.05); border-radius: 4px; overflow: hidden; }
+                .progress-bar-fill { height: 100%; background: linear-gradient(90deg, #2f81f7, #60a5fa); border-radius: 4px; transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1); }
+                
+                .metrics-summary-row { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; padding-top: 15px; border-top: 1px solid rgba(255, 255, 255, 0.05); }
+                .summary-item label { display: block; font-size: 0.75rem; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+                .summary-item .value { font-size: 1.25rem; font-weight: 700; color: var(--text-primary); }
+                .summary-item .value.accent { color: #79c0ff; }
+
+                .charts-container { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+                .chart-card { background: rgba(0, 0, 0, 0.2); }
+                
+                .metrics-chart { width: 100%; }
+                .chart-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+                .chart-label { font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); }
+                .chart-value { font-family: 'JetBrains Mono', monospace; font-size: 1.1rem; font-weight: 700; }
+                
+                .chart-placeholder { height: 120px; display: flex; align-items: center; justify-content: center; font-size: 0.85rem; color: #444; font-style: italic; }
+                .chart-placeholder.mini { height: 80px; font-size: 0.75rem; color: #666; opacity: 0.7; }
+
             `}</style>
         </div>
     );

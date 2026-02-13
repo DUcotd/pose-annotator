@@ -8,7 +8,7 @@ export const ProjectProvider = ({ children }) => {
     const [projects, setProjects] = useState([]);
     const [currentProject, setCurrentProject] = useState(null); // String ID
     const [images, setImages] = useState([]);
-    const [view, setView] = useState('dashboard'); // 'dashboard', 'gallery', 'editor'
+    const [view, setView] = useState('dashboard'); // 'dashboard', 'gallery', 'editor', 'export', 'training'
     const [selectedImage, setSelectedImage] = useState(null);
     const [loading, setLoading] = useState(false);
 
@@ -88,6 +88,10 @@ export const ProjectProvider = ({ children }) => {
         if (view === 'editor') {
             setView('gallery');
             setSelectedImage(null);
+            if (currentProject) fetchImages(currentProject);
+        } else if (view === 'export' || view === 'training') {
+            setView('gallery');
+            if (currentProject) fetchImages(currentProject);
         } else if (view === 'gallery') {
             setView('dashboard');
             setCurrentProject(null);
@@ -116,6 +120,53 @@ export const ProjectProvider = ({ children }) => {
         }
     };
 
+    const exportCollaboration = async (projectId) => {
+        try {
+            const url = `http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/collaboration/export`;
+            const link = document.createElement('a');
+            link.href = url;
+            link.setAttribute('download', `${projectId}_collaboration.zip`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        } catch (err) {
+            console.error("Failed to export collaboration package", err);
+        }
+    };
+
+    const importCollaboration = async () => {
+        try {
+            // First select a file via Electron if possible
+            const resDir = await fetch('http://localhost:5000/api/utils/select-file', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    filters: [{ name: '项目协作包 (ZIP)', extensions: ['zip'] }]
+                })
+            });
+            const dirData = await resDir.json();
+
+            if (dirData.path) {
+                const res = await fetch('http://localhost:5000/api/projects/collaboration/import', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path: dirData.path })
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    await fetchProjects();
+                    return { success: true, message: '项目导入成功' };
+                } else {
+                    return { success: false, message: data.error || '项目导入失败' };
+                }
+            }
+        } catch (err) {
+            console.error("Failed to import collaboration package", err);
+            return { success: false, message: '导入失败：网络错误' };
+        }
+        return { success: false, message: '取消导入' };
+    };
+
     // Initial Load
     useEffect(() => {
         fetchProjects();
@@ -135,7 +186,9 @@ export const ProjectProvider = ({ children }) => {
         openEditor,
         goBack,
         refreshImages: () => fetchImages(currentProject),
-        exportProject
+        exportProject,
+        exportCollaboration,
+        importCollaboration
     };
 
     return (

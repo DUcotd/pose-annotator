@@ -39,7 +39,21 @@
 
 ---
 
-## 🛠️ 环境准备
+## � 界面预览
+
+| 项目工作台 (Dashboard) | 标注编辑器 (Editor) |
+| :---: | :---: |
+| ![Dashboard](./docs/images/dashboard.png) | ![Editor](./docs/images/editor.png) |
+| 现代化项目管理界面，支持 ZIP 持续协作。 | 强大的标注工具，支持垂直辅助线与实时保存。 |
+
+| 数据集导出 (Dataset Export) |
+| :---: |
+| ![Export](./docs/images/export.png) |
+| 独立的导出配置页面，支持 Train/Val/Test 自由划分。 |
+
+---
+
+## �🛠️ 环境准备
 
 在开始之前，请确保您的环境满足以下要求：
 

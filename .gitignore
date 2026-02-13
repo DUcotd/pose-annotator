@@ -15,6 +15,7 @@ thumbnails/
 *.jpg
 *.jpeg
 *.png
+!docs/images/*.png
 *.gif
 *.webp
 *.json

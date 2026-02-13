@@ -7,6 +7,8 @@ const fs = require('fs');
 const { imageSize: sizeOf } = require('image-size');
 const { spawn } = require('child_process');
 const sharp = require('sharp');
+const AdmZip = require('adm-zip');
+const archiver = require('archiver');
 
 const app = express();
 const PORT = 5000;
@@ -118,12 +120,27 @@ app.get('/api/projects', (req, res) => {
         const projectList = projects.map(p => {
             const paths = getProjectPaths(p);
             let imageCount = 0;
+            let annotatedCount = 0;
             try {
                 if (fs.existsSync(paths.uploads)) {
-                    imageCount = fs.readdirSync(paths.uploads).filter(f => /\.(jpg|jpeg|png|gif|webp)$/i.test(f)).length;
+                    const files = fs.readdirSync(paths.uploads).filter(f => /\.(jpg|jpeg|png|gif|webp)$/i.test(f));
+                    imageCount = files.length;
+
+                    // Count annotated images
+                    files.forEach(file => {
+                        const annotationPath = path.join(paths.annotations, `${file}.json`);
+                        if (fs.existsSync(annotationPath)) {
+                            try {
+                                const data = JSON.parse(fs.readFileSync(annotationPath));
+                                if (data.some(a => a.type === 'bbox' || a.type === 'keypoint')) {
+                                    annotatedCount++;
+                                }
+                            } catch (e) { }
+                        }
+                    });
                 }
             } catch (e) { /* ignore */ }
-            return { id: p, name: p, imageCount };
+            return { id: p, name: p, imageCount, annotatedCount };
         });
 
         res.json(projectList);
@@ -268,8 +285,29 @@ app.get('/api/projects/:projectId/images', (req, res) => {
 
     fs.readdir(paths.uploads, (err, files) => {
         if (err) return res.status(500).json({ error: 'Unable to scan directory' });
-        const images = files.filter(file => /\.(jpg|jpeg|png|gif|webp)$/i.test(file));
-        res.json(images);
+
+        const imageFiles = files.filter(file => /\.(jpg|jpeg|png|gif|webp)$/i.test(file));
+
+        // Map each image to an object containing its name and annotation status
+        const imageList = imageFiles.map(file => {
+            const annotationPath = path.join(paths.annotations, `${file}.json`);
+            let hasAnnotation = false;
+            if (fs.existsSync(annotationPath)) {
+                try {
+                    const data = JSON.parse(fs.readFileSync(annotationPath));
+                    // Check if it contains actual bounding boxes or keypoints
+                    hasAnnotation = data.some(a => a.type === 'bbox' || a.type === 'keypoint');
+                } catch (e) {
+                    console.error(`Error parsing annotation for ${file}:`, e.message);
+                }
+            }
+            return {
+                name: file,
+                hasAnnotation: hasAnnotation
+            };
+        });
+
+        res.json(imageList);
     });
 });
 
@@ -304,15 +342,21 @@ app.post('/api/projects/:projectId/annotations/:imageId', (req, res) => {
 // --- API: UTILS ---
 
 // Open Folder Selection Dialog (Electron only)
-app.post('/api/utils/select-folder', (req, res) => {
-    if (process.versions.electron) {
+app.post('/api/utils/select-folder', async (req, res) => {
+    let electron;
+    try {
+        electron = require('electron');
+    } catch (e) { }
+
+    if (electron && electron.dialog) {
         try {
-            const { dialog } = require('electron');
-            const result = dialog.showOpenDialogSync({
+            const { dialog, BrowserWindow } = electron;
+            const win = BrowserWindow.getFocusedWindow();
+            const result = await dialog.showOpenDialog(win, {
                 properties: ['openDirectory']
             });
-            if (result && result.length > 0) {
-                res.json({ path: result[0] });
+            if (!result.canceled && result.filePaths.length > 0) {
+                res.json({ path: result.filePaths[0] });
             } else {
                 res.json({ path: null });
             }
@@ -345,12 +389,16 @@ app.post('/api/utils/select-file', async (req, res) => {
             // Try to get main window to make dialog modal/on-top
             const win = BrowserWindow.getFocusedWindow();
 
+            const { filters } = req.body;
+            const defaultFilters = [
+                { name: 'ZIP Archive', extensions: ['zip'] },
+                { name: 'YAML Configuration', extensions: ['yaml', 'yml'] },
+                { name: 'All Files', extensions: ['*'] }
+            ];
+
             const result = await dialog.showOpenDialog(win, {
                 properties: ['openFile'],
-                filters: [
-                    { name: 'YAML Configuration', extensions: ['yaml', 'yml'] },
-                    { name: 'All Files', extensions: ['*'] }
-                ]
+                filters: filters || defaultFilters
             });
 
             if (!result.canceled && result.filePaths.length > 0) {
@@ -546,7 +594,7 @@ app.post('/api/projects/:projectId/export/yolo', (req, res) => {
                 if (!fs.existsSync(annotationFile)) return false;
                 try {
                     const annotations = JSON.parse(fs.readFileSync(annotationFile));
-                    return annotations.some(a => a.type === 'bbox');
+                    return annotations.some(a => a.type === 'bbox' || a.type === 'keypoint');
                 } catch (e) { return false; }
             });
 
@@ -772,9 +820,22 @@ ${namesYaml}`;
 
 // --- API: TRAINING ---
 
+const stripAnsi = (str) => {
+    return str.replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, '');
+};
+
 app.post('/api/projects/:projectId/train', (req, res) => {
     const { projectId } = req.params;
-    const { model = 'yolov8n.pt', data, epochs = 100, batch = 16, imgsz = 640, device = '0' } = req.body;
+    const {
+        model = 'yolov8n.pt',
+        data,
+        epochs = 100,
+        batch = 16,
+        imgsz = 640,
+        device = '0',
+        project: customProject, // Override project directory
+        name: customName       // Override run name
+    } = req.body;
 
     if (trainingProcesses[projectId] && trainingProcesses[projectId].status === 'running') {
         return res.status(400).json({ error: 'Training is already in progress for this project.' });
@@ -789,13 +850,14 @@ app.post('/api/projects/:projectId/train', (req, res) => {
         return res.status(400).json({ error: `Dataset config not found at: ${dataYamlPath}. Please ensure the path is correct or export the dataset first.` });
     }
 
-    const projectDir = paths.root; // Save runs inside the project folder
-    const runName = `train_${Date.now()}`;
+    const projectDir = customProject || paths.root; // Use custom or project folder
+    const runName = customName || `train_${Date.now()}`;
 
     // Initialize process state
     trainingProcesses[projectId] = {
         status: 'running',
         logs: [],
+        metrics: [], // Structured training metrics: { epoch, box_loss, cls_loss, kpt_loss, mAP50, gpu_mem }
         pid: null
     };
 
@@ -842,13 +904,57 @@ app.post('/api/projects/:projectId/train', (req, res) => {
         trainingProcesses[projectId].pid = child.pid;
 
         child.stdout.on('data', (data) => {
-            const lines = data.toString().split('\n');
+            const rawOutput = data.toString();
+            // ANSI escape code stripper
+            const cleanOutput = rawOutput.replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, '');
+            const lines = cleanOutput.split('\n');
+
             lines.forEach(line => {
-                if (line.trim()) {
-                    console.log(`[Train ${projectId}] ${line}`);
+                const trimmed = line.trim();
+                if (trimmed) {
+                    console.log(`[Train ${projectId}] ${trimmed}`);
                     if (trainingProcesses[projectId]) {
-                        trainingProcesses[projectId].logs.push({ type: 'stdout', msg: line, time: Date.now() });
-                        // Keep log size manageable
+                        trainingProcesses[projectId].logs.push({ type: 'stdout', msg: trimmed, time: Date.now() });
+
+                        // Parse metrics from YOLO output (Simplified and more robust)
+                        // This regex targets the "Epoch GPU_mem box_loss cls_loss dfl_loss" sequence
+                        const metricMatch = trimmed.match(/^(\d+)\/(\d+)\s+([\d.]+G)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)/);
+
+                        if (metricMatch) {
+                            const [full, epoch, totalEpochs, gpuMem, boxLoss, clsLoss, dflLoss] = metricMatch;
+                            const metricEntry = {
+                                epoch: parseInt(epoch),
+                                totalEpochs: parseInt(totalEpochs),
+                                gpu_mem: gpuMem,
+                                box_loss: parseFloat(boxLoss),
+                                cls_loss: parseFloat(clsLoss),
+                                dfl_loss: parseFloat(dflLoss),
+                                time: Date.now()
+                            };
+
+                            const existingIdx = trainingProcesses[projectId].metrics.findIndex(m => m.epoch === metricEntry.epoch);
+                            if (existingIdx !== -1) {
+                                trainingProcesses[projectId].metrics[existingIdx] = {
+                                    ...trainingProcesses[projectId].metrics[existingIdx],
+                                    ...metricEntry
+                                };
+                            } else {
+                                trainingProcesses[projectId].metrics.push(metricEntry);
+                            }
+                        }
+
+                        // Validation row regex (for mAP)
+                        // Expected: "all images instances P R mAP50 mAP50-95"
+                        const mapMatch = trimmed.match(/^all\s+\d+\s+\d+\s+[\d.]+\s+[\d.]+\s+([\d.]+)\s+([\d.]+)/);
+                        if (mapMatch && trainingProcesses[projectId].metrics.length > 0) {
+                            const map50 = parseFloat(mapMatch[1]);
+                            const map50_95 = parseFloat(mapMatch[2]);
+
+                            const lastIdx = trainingProcesses[projectId].metrics.length - 1;
+                            trainingProcesses[projectId].metrics[lastIdx].mAP50 = map50;
+                            trainingProcesses[projectId].metrics[lastIdx].mAP50_95 = map50_95;
+                        }
+
                         if (trainingProcesses[projectId].logs.length > 1000) trainingProcesses[projectId].logs.shift();
                     }
                 }
@@ -902,7 +1008,8 @@ app.get('/api/projects/:projectId/train/status', (req, res) => {
 
     res.json({
         status: processState.status,
-        logs: processState.logs
+        logs: processState.logs,
+        metrics: processState.metrics || []
     });
 });
 
@@ -928,6 +1035,120 @@ app.post('/api/projects/:projectId/train/stop', (req, res) => {
 });
 
 function str(v) { return String(v); }
+
+// --- COLLABORATION: ZIP EXPORT/IMPORT ---
+
+// Export project as ZIP for collaboration
+app.get('/api/projects/:projectId/collaboration/export', (req, res) => {
+    const { projectId } = req.params;
+    const paths = getProjectPaths(projectId);
+
+    if (!fs.existsSync(paths.root)) {
+        return res.status(404).json({ error: 'Project not found' });
+    }
+
+    try {
+        const archive = archiver('zip', {
+            zlib: { level: 9 } // Sets the compression level.
+        });
+
+        // Set the headers
+        res.set('Content-Type', 'application/zip');
+        // Use encodeURIComponent to support non-ASCII characters in filename
+        const safeFilename = encodeURIComponent(`${projectId}_collaboration.zip`);
+        res.set('Content-Disposition', `attachment; filename="${safeFilename}"; filename*=UTF-8''${safeFilename}`);
+
+        // Listen for all archive data to be written
+        // 'close' event is fired only when a file descriptor is involved
+        res.on('close', function () {
+            console.log(archive.pointer() + ' total bytes');
+            console.log('archiver has been finalized and the output file descriptor has closed.');
+        });
+
+        // Good practice to catch warnings (ie stat failures and other non-blocking errors)
+        archive.on('warning', function (err) {
+            if (err.code === 'ENOENT') {
+                console.warn('Archiver warning:', err);
+            } else {
+                throw err;
+            }
+        });
+
+        // Good practice to catch this error explicitly
+        archive.on('error', function (err) {
+            console.error('Archiver error:', err);
+            res.status(500).send({ error: err.message });
+        });
+
+        // Pipe archive data to the response
+        archive.pipe(res);
+
+        // Add uploads folder
+        if (fs.existsSync(paths.uploads)) {
+            archive.directory(paths.uploads, 'uploads');
+        }
+
+        // Add annotations folder
+        if (fs.existsSync(paths.annotations)) {
+            archive.directory(paths.annotations, 'annotations');
+        }
+
+        // Add config.json if it exists
+        const configPath = path.join(paths.root, 'config.json');
+        if (fs.existsSync(configPath)) {
+            archive.file(configPath, { name: 'config.json' });
+        }
+
+        // Finalize the archive (ie we are done appending files but streams have to finish yet)
+        archive.finalize();
+
+    } catch (err) {
+        console.error('Failed to export collaboration ZIP:', err);
+        if (!res.headersSent) {
+            res.status(500).json({ error: 'Failed to create collaboration package', details: err.message });
+        }
+    }
+});
+
+// Import project from ZIP for collaboration
+app.post('/api/projects/collaboration/import', upload.single('file'), async (req, res) => {
+    // Check for file path (from Electron) or uploaded file (Multer)
+    const filePath = req.body.path || (req.file ? req.file.path : null);
+
+    if (!filePath) {
+        return res.status(400).json({ error: 'No file provided for import' });
+    }
+
+    try {
+        const zip = new AdmZip(filePath);
+        const zipEntries = zip.getEntries();
+
+        // Determine project name from file name or generic
+        let projectName = req.body.name || path.basename(filePath, path.extname(filePath)).replace('_collaboration', '');
+
+        // Ensure project name is unique
+        let finalProjectName = projectName;
+        let counter = 1;
+        while (fs.existsSync(path.join(PROJECTS_DIR, finalProjectName))) {
+            finalProjectName = `${projectName}_${counter++}`;
+        }
+
+        const paths = ensureProjectDirs(finalProjectName);
+
+        // Extract contents
+        zip.extractAllTo(paths.root, true);
+
+        // Clean up uploaded file if it was a temp upload
+        if (req.file) {
+            fs.unlinkSync(req.file.path);
+        }
+
+        res.json({ message: 'Project imported successfully', id: finalProjectName });
+    } catch (err) {
+        console.error('Failed to import collaboration ZIP:', err);
+        res.status(500).json({ error: 'Failed to import collaboration package', details: err.message });
+    }
+});
 
 // Express 404 handler - handle routes that don't exist
 app.use((req, res, next) => {
