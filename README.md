@@ -1,6 +1,6 @@
 # 🤸‍♂️ Pose Annotator: 智能姿态与目标检测标注平台
 
-![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)
+![Version](https://img.shields.io/badge/version-1.2.0-blue.svg)
 ![License](https://img.shields.io/badge/license-ISC-green.svg)
 ![React](https://img.shields.io/badge/Frontend-React-61DAFB.svg)
 ![Node](https://img.shields.io/badge/Backend-Node.js-339933.svg)
