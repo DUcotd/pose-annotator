@@ -167,6 +167,24 @@ export const ProjectProvider = ({ children }) => {
         return { success: false, message: '取消导入' };
     };
 
+    const renumberProject = async (projectId) => {
+        try {
+            const res = await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/renumber-all`, {
+                method: 'POST'
+            });
+            const data = await res.json();
+            if (res.ok) {
+                await fetchProjects();
+                return { success: true, message: data.message };
+            } else {
+                return { success: false, message: data.error || '重命名失败' };
+            }
+        } catch (err) {
+            console.error("Failed to renumber project", err);
+            return { success: false, message: '重命名失败：网络错误' };
+        }
+    };
+
     // Initial Load
     useEffect(() => {
         fetchProjects();
@@ -188,7 +206,8 @@ export const ProjectProvider = ({ children }) => {
         refreshImages: () => fetchImages(currentProject),
         exportProject,
         exportCollaboration,
-        importCollaboration
+        importCollaboration,
+        renumberProject
     };
 
     return (

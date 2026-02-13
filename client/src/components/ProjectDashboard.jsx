@@ -4,11 +4,17 @@ import { useProject } from '../context/ProjectContext';
 import { Folder, Trash2, Plus, Image as ImageIcon, ChevronRight, Zap, Target, Upload, Download, X, AlertCircle, CheckCircle as CheckCircleIcon } from 'lucide-react';
 
 export const ProjectDashboard = ({ projects = [], onCreateProject, onSelectProject, onDeleteProject }) => {
-    const { importCollaboration, exportCollaboration } = useProject();
+    const { importCollaboration, exportCollaboration, renumberProject } = useProject();
     const [newProjectName, setNewProjectName] = useState('');
     const [isCreating, setIsCreating] = useState(false);
     const [isGuideOpen, setIsGuideOpen] = useState(false);
     const [notification, setNotification] = useState(null);
+
+    const handleRenumber = async (projectId) => {
+        const result = await renumberProject(projectId);
+        setNotification({ type: result.success ? 'success' : 'error', message: result.message });
+        setTimeout(() => setNotification(null), 5000);
+    };
 
     const handleImportProject = async () => {
         const result = await importCollaboration();
@@ -393,6 +399,20 @@ export const ProjectDashboard = ({ projects = [], onCreateProject, onSelectProje
                                             <Folder size={24} />
                                         </div>
                                         <div style={{ display: 'flex', gap: '8px' }}>
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); handleRenumber(project.id); }}
+                                                className="icon-btn hover-card"
+                                                title="对现有图片重新编号 (解决乱序问题)"
+                                                style={{
+                                                    color: '#fbbf24',
+                                                    background: 'rgba(251, 191, 36, 0.05)',
+                                                    padding: '8px',
+                                                    borderRadius: '10px',
+                                                    border: '1px solid rgba(251, 191, 36, 0.1)'
+                                                }}
+                                            >
+                                                <Zap size={16} fill="currentColor" />
+                                            </button>
                                             <button
                                                 onClick={(e) => { e.stopPropagation(); onDeleteProject(project.id); }}
                                                 className="icon-btn hover-card"

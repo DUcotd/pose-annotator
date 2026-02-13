@@ -89,6 +89,31 @@ const ensureProjectDirs = (projectId) => {
     return paths;
 };
 
+// Helper: Robust Directory Removal (Windows-friendly)
+const robustRemoveDir = (dirPath) => {
+    if (!fs.existsSync(dirPath)) return;
+    try {
+        // Option 1: Try recursive delete directly
+        fs.rmSync(dirPath, { recursive: true, force: true });
+    } catch (e) {
+        if (e.code === 'EPERM' || e.code === 'EBUSY') {
+            console.warn(`[RobustRemove] ${dirPath} is busy, trying rename fallback...`);
+            try {
+                // Option 2: Rename to temp name and try to remove after a short delay
+                const tempPath = dirPath + '_to_delete_' + Date.now();
+                fs.renameSync(dirPath, tempPath);
+                fs.rm(tempPath, { recursive: true, force: true }, (err) => {
+                    if (err) console.error(`[RobustRemove] Background cleanup failed for ${tempPath}:`, err.message);
+                });
+            } catch (renameErr) {
+                console.error(`[RobustRemove] Failed to remove ${dirPath} even with rename:`, renameErr.message);
+            }
+        } else {
+            console.error(`[RobustRemove] Failed to remove ${dirPath}:`, e.message);
+        }
+    }
+};
+
 // Multer Storage (Dynamic Destination)
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
@@ -195,6 +220,42 @@ app.post('/api/projects/:projectId/config', (req, res) => {
     }
 });
 
+const projectCounters = {}; // In-memory cache for nextImageId to optimize I/O
+
+// Helper: Get and Increment Next Image ID
+const getNextImageId = (projectId) => {
+    const paths = getProjectPaths(projectId);
+    const configPath = path.join(paths.root, 'config.json');
+
+    // Initialize from disk if not in cache
+    if (projectCounters[projectId] === undefined) {
+        let config = { nextImageId: 1 };
+        if (fs.existsSync(configPath)) {
+            try {
+                config = JSON.parse(fs.readFileSync(configPath));
+            } catch (e) { }
+        }
+        projectCounters[projectId] = config.nextImageId || 1;
+    }
+
+    const currentId = projectCounters[projectId];
+    projectCounters[projectId] = currentId + 1;
+
+    // Persist to disk
+    try {
+        let config = { classMapping: {} };
+        if (fs.existsSync(configPath)) {
+            config = JSON.parse(fs.readFileSync(configPath));
+        }
+        config.nextImageId = projectCounters[projectId];
+        fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+    } catch (e) {
+        console.error('Failed to update config for nextImageId:', e.message);
+    }
+
+    return currentId;
+};
+
 // Delete Project
 app.delete('/api/projects/:projectId', (req, res) => {
     const { projectId } = req.params;
@@ -275,7 +336,24 @@ app.get('/api/projects/:projectId/thumbnails/:filename', async (req, res) => {
 // Upload Image
 app.post('/api/projects/:projectId/upload', upload.single('image'), (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-    res.json({ message: 'File uploaded successfully', filename: req.file.filename });
+
+    const { projectId } = req.params;
+    const paths = getProjectPaths(projectId);
+    const ext = path.extname(req.file.originalname) || '.jpg';
+
+    // Get next internal ID and format it (e.g., 000001)
+    const nextId = getNextImageId(projectId);
+    const newFilename = String(nextId).padStart(6, '0') + ext;
+    const newPath = path.join(paths.uploads, newFilename);
+
+    // Rename the uploaded file from its current multer name to the internal sequential name
+    fs.rename(req.file.path, newPath, (err) => {
+        if (err) {
+            console.error('Failed to rename uploaded file:', err.message);
+            return res.status(500).json({ error: 'Internal renumbering failed' });
+        }
+        res.json({ message: 'File uploaded successfully', filename: newFilename });
+    });
 });
 
 // List Images
@@ -336,6 +414,66 @@ app.post('/api/projects/:projectId/annotations/:imageId', (req, res) => {
         if (err) return res.status(500).json({ error: 'Failed to save annotations' });
         res.json({ message: 'Annotations saved successfully' });
     });
+});
+
+// Bulk Renumber All Images in Project
+app.post('/api/projects/:projectId/renumber-all', async (req, res) => {
+    const { projectId } = req.params;
+    const paths = ensureProjectDirs(projectId);
+
+    try {
+        const files = fs.readdirSync(paths.uploads)
+            .filter(f => /\.(jpg|jpeg|png|gif|webp)$/i.test(f))
+            .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+
+        console.log(`Renumbering ${files.length} images for project: ${projectId}`);
+
+        const results = [];
+        for (let i = 0; i < files.length; i++) {
+            const oldName = files[i];
+            const ext = path.extname(oldName);
+            const newName = String(i + 1).padStart(6, '0') + ext;
+            const newId = String(i + 1).padStart(6, '0');
+
+            if (oldName === newName) continue;
+
+            const oldPath = path.join(paths.uploads, oldName);
+            const newPath = path.join(paths.uploads, newName);
+
+            // Rename image
+            fs.renameSync(oldPath, newPath);
+
+            // Sync annotation if exists
+            const oldAnnPath = path.join(paths.annotations, `${oldName}.json`);
+            const newAnnPath = path.join(paths.annotations, `${newName}.json`);
+            if (fs.existsSync(oldAnnPath)) {
+                fs.renameSync(oldAnnPath, newAnnPath);
+            }
+
+            // Sync thumbnail if exists
+            const oldThumbPath = path.join(paths.thumbnails, oldName);
+            const newThumbPath = path.join(paths.thumbnails, newName);
+            if (fs.existsSync(oldThumbPath)) {
+                fs.renameSync(oldThumbPath, newThumbPath);
+            }
+
+            results.push({ old: oldName, new: newName });
+        }
+
+        // Update config nextImageId
+        const configPath = path.join(paths.root, 'config.json');
+        let config = { classMapping: {} };
+        if (fs.existsSync(configPath)) {
+            config = JSON.parse(fs.readFileSync(configPath));
+        }
+        config.nextImageId = files.length + 1;
+        fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+
+        res.json({ message: `Renumbered ${results.length} files successfully`, count: results.length });
+    } catch (err) {
+        console.error('Renumbering failed:', err.message);
+        res.status(500).json({ error: 'Failed to renumber files', details: err.message });
+    }
 });
 
 
@@ -507,15 +645,14 @@ app.post('/api/projects/:projectId/export/yolo', (req, res) => {
 
     // Determine Export Directory
     let exportDir = paths.dataset;
-    // Use absolute path for dataset root to avoid YOLO path resolution issues
-    // Normalize to forward slashes to ensure compatibility with Python/YAML
-    let datasetRootPath = exportDir.replace(/\\/g, '/');
 
     if (customPath && typeof customPath === 'string' && customPath.trim() !== '') {
-        const absolutePath = path.resolve(customPath.trim());
-        exportDir = absolutePath;
-        datasetRootPath = absolutePath.replace(/\\/g, '/');
+        // When a custom path is provided, we always create a 'dataset' subdirectory inside it
+        exportDir = path.join(path.resolve(customPath.trim()), 'dataset');
     }
+
+    // Normalize to forward slashes to ensure compatibility with Python/YAML
+    let datasetRootPath = exportDir.replace(/\\/g, '/');
 
     // Determine which splits are active
     const splits = [];
@@ -525,15 +662,15 @@ app.post('/api/projects/:projectId/export/yolo', (req, res) => {
 
     // Clear/Create Dataset Dirs
     if (exportDir === paths.dataset) {
-        if (fs.existsSync(exportDir)) fs.rmSync(exportDir, { recursive: true, force: true });
+        robustRemoveDir(exportDir);
     }
     if (!fs.existsSync(exportDir)) fs.mkdirSync(exportDir, { recursive: true });
 
     // Create split subdirectories: images/train, images/val, images/test, labels/train, labels/val, labels/test
     const imagesBaseDir = path.join(exportDir, 'images');
     const labelsBaseDir = path.join(exportDir, 'labels');
-    if (fs.existsSync(imagesBaseDir)) fs.rmSync(imagesBaseDir, { recursive: true, force: true });
-    if (fs.existsSync(labelsBaseDir)) fs.rmSync(labelsBaseDir, { recursive: true, force: true });
+    robustRemoveDir(imagesBaseDir);
+    robustRemoveDir(labelsBaseDir);
 
     splits.forEach(s => {
         fs.mkdirSync(path.join(imagesBaseDir, s.name), { recursive: true });
@@ -655,6 +792,12 @@ app.post('/api/projects/:projectId/export/yolo', (req, res) => {
                 const keypoints = annotations.filter(a => a.type === 'keypoint');
                 let lines = [];
 
+                // Renumber the exported filename to match its sequence index (0-padded)
+                const exportedName = String(idx).padStart(6, '0');
+                const ext = path.extname(imageFile) || '.jpg';
+                const newImageFile = exportedName + ext;
+                const newLabelFile = exportedName + ".txt";
+
                 const processedBBoxes = bboxes.map(bbox => ({
                     ...bbox,
                     cx: bbox.x + bbox.width / 2,
@@ -760,9 +903,9 @@ app.post('/api/projects/:projectId/export/yolo', (req, res) => {
                 });
 
                 // Write to the correct split directory
-                const labelPath = path.join(labelsBaseDir, splitName, imageFile.replace(/\.[^/.]+$/, "") + ".txt");
+                const labelPath = path.join(labelsBaseDir, splitName, newLabelFile);
                 fs.writeFileSync(labelPath, lines.join('\n'));
-                fs.copyFileSync(imagePath, path.join(imagesBaseDir, splitName, imageFile));
+                fs.copyFileSync(imagePath, path.join(imagesBaseDir, splitName, newImageFile));
                 exportedImages++;
                 splitCounts[splitName]++;
             });
