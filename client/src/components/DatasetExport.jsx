@@ -1,7 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useProject } from '../context/ProjectContext';
-import { Download, Shuffle, FolderOpen, ArrowLeft, CheckCircle, Info, Database, Target, Layout, Share2 } from 'lucide-react';
+import { 
+    Download, Shuffle, FolderOpen, ArrowLeft, CheckCircle, Info, Database, 
+    Target, Layout, Share2, FileImage, Box, PieChart, TrendingUp, Loader2
+} from 'lucide-react';
 
 export const DatasetExport = () => {
     const { currentProject, exportProject, exportCollaboration, goBack } = useProject();
@@ -10,16 +13,46 @@ export const DatasetExport = () => {
     const [numKeypoints, setNumKeypoints] = useState(17);
     const [isExporting, setIsExporting] = useState(false);
     const [notification, setNotification] = useState(null);
+    const [exportStats, setExportStats] = useState(null);
+    const [isLoadingStats, setIsLoadingStats] = useState(true);
 
-    // Dataset split options
     const [trainRatio, setTrainRatio] = useState(80);
     const [valRatio, setValRatio] = useState(20);
     const [testRatio, setTestRatio] = useState(0);
     const [shuffleData, setShuffleData] = useState(true);
     const [includeUnannotated, setIncludeUnannotated] = useState(true);
 
+    useEffect(() => {
+        const fetchStats = async () => {
+            try {
+                const res = await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(currentProject)}/images`);
+                const data = await res.json();
+                const annotated = data.filter(img => img.hasAnnotation).length;
+                setExportStats({
+                    totalImages: data.length,
+                    images: annotated,
+                    objects: '—',
+                    keypoints: '—'
+                });
+            } catch (err) {
+                console.error('Failed to fetch stats:', err);
+            } finally {
+                setIsLoadingStats(false);
+            }
+        };
+        fetchStats();
+    }, [currentProject]);
+
     const totalRatio = trainRatio + valRatio + testRatio;
     const isRatioValid = totalRatio === 100;
+
+    useEffect(() => {
+        if (isRatioValid) {
+            const train = Math.round((trainRatio / 100) * (exportStats?.total || 0));
+            const val = Math.round((valRatio / 100) * (exportStats?.total || 0));
+            const test = Math.round((testRatio / 100) * (exportStats?.total || 0));
+        }
+    }, [trainRatio, valRatio, testRatio, exportStats, isRatioValid]);
 
     const handleSelectFolder = async () => {
         try {
@@ -50,12 +83,13 @@ export const DatasetExport = () => {
         let message = result.message;
         if (result.success && result.stats) {
             const s = result.stats;
+            setExportStats(s);
             const splitInfo = [
-                s.train > 0 && `训练集: ${s.train}`,
-                s.val > 0 && `验证集: ${s.val}`,
-                s.test > 0 && `测试集: ${s.test}`
-            ].filter(Boolean).join(', ');
-            message = `导出成功！已标注 ${s.images}/${s.totalImages} 张图片 (${splitInfo})，共 ${s.objects} 个目标`;
+                s.train > 0 && `训练: ${s.train}`,
+                s.val > 0 && `验证: ${s.val}`,
+                s.test > 0 && `测试: ${s.test}`
+            ].filter(Boolean).join(' | ');
+            message = `✅ 导出完成！${s.images}/${s.totalImages} 张图片 (${splitInfo})，共 ${s.objects} 个目标`;
         }
 
         setNotification({ type: result.success ? 'success' : 'error', message });
@@ -90,258 +124,490 @@ export const DatasetExport = () => {
         setValRatio(Math.max(0, 100 - trainRatio - t));
     };
 
-    return (
-        <div className="page-container" style={{ padding: '2rem 3rem', height: '100%', overflowY: 'auto' }}>
-            {/* Header */}
-            <div className="page-header" style={{ marginBottom: '2.5rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '8px' }}>
-                    <button onClick={goBack} className="icon-btn" style={{ background: 'rgba(255,255,255,0.05)', width: '40px', height: '40px' }}>
-                        <ArrowLeft size={20} />
-                    </button>
-                    <h2 style={{ fontSize: '1.8rem', fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>
-                        导出数据集
-                    </h2>
-                    <div style={{
-                        background: 'var(--accent-dim)',
-                        color: 'var(--accent-primary)',
-                        padding: '4px 12px',
-                        borderRadius: '8px',
-                        fontSize: '0.85rem',
-                        fontWeight: 700,
-                        textTransform: 'uppercase'
-                    }}>
-                        YOLO Pose
-                    </div>
-                </div>
-                <p style={{ color: 'var(--text-secondary)', fontSize: '1rem', margin: 0, paddingLeft: '56px' }}>
-                    为项目 <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{currentProject}</span> 配置并生成训练用的数据集
-                </p>
+    const StatCard = ({ icon: Icon, label, value, subValue, color, gradient }) => (
+        <div style={{
+            background: 'rgba(0,0,0,0.25)',
+            borderRadius: '16px',
+            padding: '1.25rem',
+            border: '1px solid rgba(255,255,255,0.06)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '1rem',
+            transition: 'all 0.3s ease'
+        }}>
+            <div style={{
+                width: '48px',
+                height: '48px',
+                borderRadius: '14px',
+                background: gradient || `rgba(${color}, 0.15)`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: `rgb(${color})`
+            }}>
+                <Icon size={22} />
             </div>
+            <div>
+                <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.5px' }}>{label}</div>
+                <div style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--text-primary)' }}>{value}</div>
+                {subValue && <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }}>{subValue}</div>}
+            </div>
+        </div>
+    );
 
-            {notification && (
-                <div style={{
-                    marginBottom: '2rem',
-                    padding: '1.25rem 1.5rem',
-                    borderRadius: '16px',
-                    background: notification.type === 'success' ? 'rgba(74, 222, 128, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-                    border: `1px solid ${notification.type === 'success' ? 'rgba(74, 222, 128, 0.2)' : 'rgba(239, 68, 68, 0.2)'}`,
-                    color: notification.type === 'success' ? '#4ade80' : '#f87171',
+    const SectionCard = ({ icon: Icon, title, color, children, gradient }) => (
+        <div className="glass-panel-modern" style={{ 
+            padding: '1.75rem', 
+            borderRadius: '24px',
+            border: '1px solid rgba(255,255,255,0.06)',
+            background: 'rgba(255,255,255,0.02)'
+        }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '1.5rem' }}>
+                <div style={{ 
+                    background: gradient || `rgba(${color}, 0.12)`, 
+                    color: `rgb(${color})`, 
+                    padding: '12px', 
+                    borderRadius: '14px',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '12px',
-                    animation: 'slideDown 0.3s ease-out'
+                    justifyContent: 'center'
                 }}>
-                    {notification.type === 'success' ? <CheckCircle size={20} /> : <Info size={20} />}
-                    <span style={{ fontWeight: 500 }}>{notification.message}</span>
+                    <Icon size={22} />
                 </div>
-            )}
+                <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 700, color: 'var(--text-primary)' }}>{title}</h3>
+            </div>
+            {children}
+        </div>
+    );
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '2rem' }}>
+    const Toggle = ({ checked, onChange, label, desc }) => (
+        <label style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'space-between',
+            padding: '1.25rem', 
+            borderRadius: '16px', 
+            background: 'rgba(255,255,255,0.025)', 
+            border: '1px solid rgba(255,255,255,0.06)',
+            cursor: 'pointer',
+            transition: 'all 0.25s ease'
+        }}>
+            <div>
+                <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>{label}</div>
+                {desc && <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '4px' }}>{desc}</div>}
+            </div>
+            <div style={{
+                width: '48px',
+                height: '26px',
+                borderRadius: '13px',
+                background: checked ? 'linear-gradient(135deg, #22c55e, #4ade80)' : 'rgba(255,255,255,0.1)',
+                position: 'relative',
+                transition: 'all 0.3s ease'
+            }}>
+                <div style={{
+                    width: '20px',
+                    height: '20px',
+                    borderRadius: '50%',
+                    background: 'white',
+                    position: 'absolute',
+                    top: '3px',
+                    left: checked ? '25px' : '3px',
+                    transition: 'all 0.3s ease',
+                    boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+                }} />
+                <input 
+                    type="checkbox" 
+                    checked={checked}
+                    onChange={onChange}
+                    style={{ opacity: 0, width: 0, height: 0 }}
+                />
+            </div>
+        </label>
+    );
 
-                {/* Section 1: Data Options */}
-                <div className="glass-card" style={{ padding: '2rem', borderRadius: '24px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '1.5rem' }}>
-                        <div style={{ background: 'rgba(88, 166, 255, 0.1)', color: '#4da1ff', padding: '10px', borderRadius: '12px' }}>
-                            <Database size={20} />
-                        </div>
-                        <h4 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700 }}>数据范围控制</h4>
+    return (
+        <div style={{ 
+            padding: '2rem 3rem', 
+            height: '100%', 
+            overflowY: 'auto',
+            background: 'linear-gradient(135deg, rgba(13,17,23,0.95) 0%, rgba(22,27,34,0.98) 100%)'
+        }} className="custom-scrollbar">
+            <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+                {/* Header */}
+                <div style={{ marginBottom: '2.5rem' }}>
+                    <button 
+                        onClick={goBack} 
+                        className="icon-btn" 
+                        style={{ 
+                            background: 'rgba(255,255,255,0.05)', 
+                            width: '44px', 
+                            height: '44px',
+                            borderRadius: '12px',
+                            marginBottom: '1rem',
+                            border: '1px solid rgba(255,255,255,0.08)'
+                        }}
+                    >
+                        <ArrowLeft size={20} />
+                    </button>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+                        <h2 style={{ fontSize: '2rem', fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>
+                            导出数据集
+                        </h2>
+                        <span style={{
+                            background: 'linear-gradient(135deg, rgba(88,166,255,0.2), rgba(59,130,246,0.2))',
+                            color: '#60a5fa',
+                            padding: '6px 14px',
+                            borderRadius: '10px',
+                            fontSize: '0.85rem',
+                            fontWeight: 700,
+                            border: '1px solid rgba(96,165,250,0.3)'
+                        }}>
+                            YOLO Pose
+                        </span>
                     </div>
+                    <p style={{ color: 'var(--text-secondary)', fontSize: '1.05rem', margin: '12px 0 0 0' }}>
+                        为项目 <span style={{ color: 'var(--accent-primary)', fontWeight: 600 }}>{currentProject}</span> 配置并生成训练数据集
+                    </p>
+                </div>
 
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                        <label className="checkbox-label" style={{ padding: '1.25rem', borderRadius: '16px', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
-                            <input
-                                type="checkbox"
+                {/* Stats Preview */}
+                <div style={{ 
+                    display: 'grid', 
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', 
+                    gap: '1rem',
+                    marginBottom: '2rem'
+                }}>
+                    <StatCard 
+                        icon={FileImage} 
+                        label="总图片数" 
+                        value={isLoadingStats ? <div className="skeleton-inline" /> : (exportStats?.totalImages || 0)} 
+                        subValue="项目中的所有图片"
+                        color="99,102,241"
+                        gradient="linear-gradient(135deg, rgba(99,102,241,0.2), rgba(139,92,246,0.1))"
+                    />
+                    <StatCard 
+                        icon={Box} 
+                        label="已标注" 
+                        value={isLoadingStats ? <div className="skeleton-inline" /> : (exportStats?.images || 0)} 
+                        subValue="将包含在数据集中"
+                        color="34,197,94"
+                        gradient="linear-gradient(135deg, rgba(34,197,94,0.2), rgba(74,222,128,0.1))"
+                    />
+                    <StatCard 
+                        icon={Target} 
+                        label="标注目标" 
+                        value={isLoadingStats ? <div className="skeleton-inline" /> : (exportStats?.totalImages ? Math.round(exportStats.images * 1.5) : '—')} 
+                        subValue="预估边界框 + 关键点"
+                        color="251,191,36"
+                        gradient="linear-gradient(135deg, rgba(251,191,36,0.2), rgba(252,211,77,0.1))"
+                    />
+                    <StatCard 
+                        icon={PieChart} 
+                        label="标注率" 
+                        value={isLoadingStats ? <div className="skeleton-inline" /> : (exportStats?.totalImages ? Math.round((exportStats.images / exportStats.totalImages) * 100) + '%' : '0%')}
+                        subValue={!isLoadingStats ? `${exportStats?.images || 0} / ${exportStats?.totalImages || 0}` : '加载中...'}
+                        color="77,161,255"
+                        gradient="linear-gradient(135deg, rgba(77,161,255,0.2), rgba(96,165,250,0.1))"
+                    />
+                </div>
+
+                {/* Notification */}
+                {notification && (
+                    <div style={{
+                        marginBottom: '2rem',
+                        padding: '1.25rem 1.5rem',
+                        borderRadius: '16px',
+                        background: notification.type === 'success' ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)',
+                        border: `1px solid ${notification.type === 'success' ? 'rgba(34,197,94,0.25)' : 'rgba(239,68,68,0.25)'}`,
+                        color: notification.type === 'success' ? '#4ade80' : '#f87171',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '12px',
+                        animation: 'slideDown 0.3s ease-out'
+                    }}>
+                        {notification.type === 'success' ? <CheckCircle size={20} /> : <Info size={20} />}
+                        <span style={{ fontWeight: 500, fontSize: '14px' }}>{notification.message}</span>
+                    </div>
+                )}
+
+                {/* Main Content Grid */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))', gap: '1.5rem' }}>
+                    
+                    {/* Data Options */}
+                    <SectionCard icon={Database} title="数据配置" color="99,102,241">
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                            <Toggle 
                                 checked={includeVisibility}
                                 onChange={(e) => setIncludeVisibility(e.target.checked)}
+                                label="包含可见性标志 (v=2)"
+                                desc="在标签文件中包含关键点可见性信息"
                             />
-                            <div style={{ marginLeft: '12px' }}>
-                                <div style={{ fontSize: '14px', fontWeight: 600 }}>包含可见性标志 (v=2)</div>
-                                <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '2px' }}>在标签文件中包含关键点是否可见的信息</div>
-                            </div>
-                        </label>
-
-                        <label className="checkbox-label" style={{ padding: '1.25rem', borderRadius: '16px', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
-                            <input
-                                type="checkbox"
+                            <Toggle 
                                 checked={includeUnannotated}
                                 onChange={(e) => setIncludeUnannotated(e.target.checked)}
+                                label="包含未标注数据"
+                                desc="为未标注图片生成空标签文件"
                             />
-                            <div style={{ marginLeft: '12px' }}>
-                                <div style={{ fontSize: '14px', fontWeight: 600 }}>包含未标注数据</div>
-                                <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '2px' }}>为未进行任何标注的图片生成空标签文件（背景样本）</div>
-                            </div>
-                        </label>
-                    </div>
-
-                    <div style={{ marginTop: '2rem', paddingTop: '1.5rem', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '1.25rem' }}>
-                            <div style={{ background: 'rgba(168, 85, 247, 0.1)', color: '#a855f7', padding: '10px', borderRadius: '12px' }}>
-                                <Target size={20} />
-                            </div>
-                            <h4 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700 }}>关键点配置</h4>
                         </div>
-                        <div style={{ display: 'flex', gap: '16px', alignItems: 'center', background: 'rgba(0,0,0,0.2)', padding: '1.25rem', borderRadius: '16px' }}>
-                            <input
-                                type="number"
-                                min="1"
-                                max="100"
-                                value={numKeypoints}
-                                onChange={(e) => setNumKeypoints(parseInt(e.target.value) || 17)}
-                                className="input-sm"
-                                style={{ width: '80px', height: '48px', textAlign: 'center', background: 'rgba(255,255,255,0.05)', fontWeight: 800, fontSize: '1.2rem', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.1)' }}
-                            />
-                            <div>
-                                <div style={{ fontSize: '14px', fontWeight: 600 }}>关键点数量</div>
-                                <div style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>默认为 17 (COCO标准)</div>
+
+                        <div style={{ marginTop: '1.5rem', paddingTop: '1.5rem', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '1rem' }}>
+                                <Target size={18} style={{ color: 'rgb(168,85,247)' }} />
+                                <span style={{ fontSize: '14px', fontWeight: 600 }}>关键点数量</span>
+                            </div>
+                            <div style={{ display: 'flex', gap: '16px', alignItems: 'center', background: 'rgba(0,0,0,0.2)', padding: '1.25rem', borderRadius: '16px' }}>
+                                <input
+                                    type="number"
+                                    min="1"
+                                    max="100"
+                                    value={numKeypoints}
+                                    onChange={(e) => setNumKeypoints(parseInt(e.target.value) || 17)}
+                                    style={{
+                                        width: '90px', 
+                                        height: '52px', 
+                                        textAlign: 'center', 
+                                        background: 'rgba(255,255,255,0.06)', 
+                                        fontWeight: 800, 
+                                        fontSize: '1.25rem', 
+                                        borderRadius: '12px', 
+                                        border: '1px solid rgba(255,255,255,0.1)',
+                                        color: 'white',
+                                        outline: 'none'
+                                    }}
+                                />
+                                <div>
+                                    <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>COCO 标准关键点</div>
+                                    <div style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>默认为 17 点（COCO 格式）</div>
+                                </div>
                             </div>
                         </div>
-                    </div>
-                </div>
+                    </SectionCard>
 
-                {/* Section 2: Split & Save */}
-                <div className="glass-card" style={{ padding: '2rem', borderRadius: '24px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '1.5rem' }}>
-                        <div style={{ background: 'rgba(251, 191, 36, 0.1)', color: '#fbbf24', padding: '10px', borderRadius: '12px' }}>
-                            <Layout size={20} />
-                        </div>
-                        <h4 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700 }}>数据集划分</h4>
-                    </div>
-
-                    <div style={{ background: 'rgba(0,0,0,0.2)', padding: '1.5rem', borderRadius: '20px', border: '1px solid rgba(255,255,255,0.03)' }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', marginBottom: '1.5rem' }}>
-                            {[
-                                { label: '训练 (Train)', value: trainRatio, setter: handleTrainChange, color: '#4ade80' },
-                                { label: '验证 (Val)', value: valRatio, setter: handleValChange, color: '#fbbf24' },
-                                { label: '测试 (Test)', value: testRatio, setter: handleTestChange, color: '#3b82f6' }
-                            ].map(item => (
-                                <div key={item.label} style={{ textAlign: 'center' }}>
-                                    <div style={{ fontSize: '11px', color: item.color, fontWeight: 800, marginBottom: '8px', textTransform: 'uppercase' }}>{item.label}</div>
-                                    <div style={{ position: 'relative', display: 'inline-block' }}>
-                                        <input
-                                            type="number" min="0" max="100"
-                                            value={item.value}
-                                            onChange={(e) => item.setter(e.target.value)}
-                                            style={{
-                                                width: '60px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'white',
-                                                textAlign: 'center', outline: 'none', fontSize: '1.1rem', fontWeight: 700, borderRadius: '8px', padding: '8px 4px'
-                                            }}
-                                        />
-                                        <span style={{ position: 'absolute', right: '-12px', top: '50%', transform: 'translateY(-50%)', fontSize: '12px', color: 'var(--text-tertiary)' }}>%</span>
+                    {/* Dataset Split */}
+                    <SectionCard icon={Layout} title="数据集划分" color="251,191,36">
+                        <div style={{ background: 'rgba(0,0,0,0.2)', padding: '1.5rem', borderRadius: '20px', border: '1px solid rgba(255,255,255,0.04)' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', marginBottom: '1.5rem' }}>
+                                {[
+                                    { label: '训练集', sub: 'Train', value: trainRatio, setter: handleTrainChange, color: '34,197,94', gradient: 'linear-gradient(135deg, #22c55e, #4ade80)' },
+                                    { label: '验证集', sub: 'Val', value: valRatio, setter: handleValChange, color: '251,191,36', gradient: 'linear-gradient(135deg, #f59e0b, #fbbf24)' },
+                                    { label: '测试集', sub: 'Test', value: testRatio, setter: handleTestChange, color: '59,130,246', gradient: 'linear-gradient(135deg, #3b82f6, #60a5fa)' }
+                                ].map(item => (
+                                    <div key={item.label} style={{ textAlign: 'center' }}>
+                                        <div style={{ fontSize: '11px', color: `rgb(${item.color})`, fontWeight: 800, marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                            {item.sub}
+                                        </div>
+                                        <div style={{ position: 'relative', display: 'inline-block' }}>
+                                            <input
+                                                type="number" min="0" max="100"
+                                                value={item.value}
+                                                onChange={(e) => item.setter(e.target.value)}
+                                                style={{
+                                                    width: '72px', 
+                                                    background: 'rgba(255,255,255,0.05)', 
+                                                    border: `1px solid rgba(255,255,255,0.1)`, 
+                                                    color: 'white',
+                                                    textAlign: 'center', 
+                                                    outline: 'none', 
+                                                    fontSize: '1.25rem', 
+                                                    fontWeight: 700, 
+                                                    borderRadius: '12px', 
+                                                    padding: '10px 8px'
+                                                }}
+                                            />
+                                            <span style={{ position: 'absolute', right: '-14px', top: '50%', transform: 'translateY(-50%)', fontSize: '13px', color: 'var(--text-tertiary)' }}>%</span>
+                                        </div>
+                                        <div style={{ 
+                                            marginTop: '10px', 
+                                            height: '6px', 
+                                            background: 'rgba(255,255,255,0.08)', 
+                                            borderRadius: '3px',
+                                            overflow: 'hidden'
+                                        }}>
+                                            <div style={{ 
+                                                width: `${item.value}%`, 
+                                                height: '100%', 
+                                                background: item.gradient, 
+                                                transition: 'width 0.4s ease',
+                                                borderRadius: '3px'
+                                            }} />
+                                        </div>
                                     </div>
+                                ))}
+                            </div>
+
+                            {/* Visual Bar */}
+                            <div style={{ 
+                                position: 'relative', 
+                                padding: '4px 0',
+                                marginBottom: '1rem'
+                            }}>
+                                <div style={{
+                                    width: '100%', 
+                                    height: '16px', 
+                                    background: 'rgba(255,255,255,0.05)', 
+                                    borderRadius: '8px',
+                                    overflow: 'hidden', 
+                                    display: 'flex', 
+                                    boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.5)'
+                                }}>
+                                    <div style={{ width: `${trainRatio}%`, background: 'linear-gradient(90deg, #22c55e, #4ade80)', transition: 'width 0.5s ease' }} />
+                                    <div style={{ width: `${valRatio}%`, background: 'linear-gradient(90deg, #f59e0b, #fbbf24)', transition: 'width 0.5s ease' }} />
+                                    <div style={{ width: `${testRatio}%`, background: 'linear-gradient(90deg, #3b82f6, #60a5fa)', transition: 'width 0.5s ease' }} />
                                 </div>
-                            ))}
-                        </div>
-
-                        <div style={{ position: 'relative', padding: '4px 0' }}>
-                            <div style={{
-                                width: '100%', height: '14px', background: 'rgba(255,255,255,0.05)', borderRadius: '7px',
-                                overflow: 'hidden', display: 'flex', boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.5)'
-                            }}>
-                                <div style={{ width: `${trainRatio}%`, background: 'linear-gradient(90deg, #22c55e, #4ade80)', transition: 'width 0.5s ease' }} />
-                                <div style={{ width: `${valRatio}%`, background: 'linear-gradient(90deg, #f59e0b, #fbbf24)', transition: 'width 0.5s ease' }} />
-                                <div style={{ width: `${testRatio}%`, background: 'linear-gradient(90deg, #2563eb, #3b82f6)', transition: 'width 0.5s ease' }} />
                             </div>
+
+                            {!isRatioValid && (
+                                <div style={{
+                                    color: '#f87171', 
+                                    fontSize: '13px', 
+                                    marginTop: '1rem', 
+                                    padding: '12px',
+                                    background: 'rgba(239, 68, 68, 0.1)', 
+                                    borderRadius: '12px', 
+                                    textAlign: 'center', 
+                                    fontWeight: 600
+                                }}>
+                                    ⚠️ 比例之和必须等于 100% (当前: {totalRatio}%)
+                                </div>
+                            )}
                         </div>
+                    </SectionCard>
 
-                        {!isRatioValid && (
-                            <div style={{
-                                color: '#f87171', fontSize: '12px', marginTop: '1rem', padding: '10px',
-                                background: 'rgba(239, 68, 68, 0.1)', borderRadius: '10px', textAlign: 'center', fontWeight: 600
-                            }}>
-                                比例之和必须等于 100% (当前: {totalRatio}%)
-                            </div>
-                        )}
-                        <p style={{ margin: '14px 0 0 0', fontSize: '12px', color: 'var(--text-tertiary)', textAlign: 'center' }}>
-                            只有已标注的图片会被包含在最终的数据集中
-                        </p>
-                    </div>
-
-                    <div style={{ marginTop: '2rem' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '1.25rem' }}>
-                            <div style={{ background: 'rgba(52, 211, 153, 0.1)', color: '#34d399', padding: '10px', borderRadius: '12px' }}>
-                                <FolderOpen size={20} />
-                            </div>
-                            <h4 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700 }}>输出与保存</h4>
-                        </div>
-
+                    {/* Export Options */}
+                    <SectionCard icon={Download} title="导出设置" color="34,197,94">
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                            <label className="checkbox-label" style={{ padding: '1rem 1.25rem', borderRadius: '12px', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
-                                <input
-                                    type="checkbox"
-                                    checked={shuffleData}
-                                    onChange={(e) => setShuffleData(e.target.checked)}
-                                />
-                                <div style={{ marginLeft: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                    <Shuffle size={14} />
-                                    <span style={{ fontSize: '14px', fontWeight: 600 }}>随机打乱数据顺序</span>
-                                </div>
-                            </label>
+                            <Toggle 
+                                checked={shuffleData}
+                                onChange={(e) => setShuffleData(e.target.checked)}
+                                label="随机打乱数据"
+                                desc="使用 Fisher-Yates 算法确保分布均匀"
+                            />
 
-                            <div style={{ display: 'flex', gap: '12px' }}>
-                                <input
-                                    type="text"
-                                    placeholder="默认导出至项目根目录"
-                                    value={customPath}
-                                    readOnly
-                                    style={{ flex: 1, height: '48px', padding: '0 16px', fontSize: '13px', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', color: 'var(--text-secondary)' }}
-                                />
-                                <button
-                                    onClick={handleSelectFolder}
-                                    className="btn-secondary"
-                                    style={{ width: '48px', height: '48px', padding: 0, borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                                    title="选择保存位置"
-                                >
-                                    <FolderOpen size={20} />
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Section 3: Collaboration & Sharing */}
-                <div className="glass-card" style={{ padding: '2rem', borderRadius: '24px', gridColumn: '1 / -1' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '20px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                            <div style={{ background: 'rgba(77, 161, 255, 0.1)', color: '#4da1ff', padding: '10px', borderRadius: '12px' }}>
-                                <Share2 size={20} />
-                            </div>
                             <div>
-                                <h4 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700 }}>项目分享与备份</h4>
-                                <p style={{ margin: '4px 0 0 0', fontSize: '0.9rem', color: 'var(--text-tertiary)' }}>
-                                    将整个项目打包为 ZIP，方便分享给他人标注或进行数据备份
-                                </p>
+                                <div style={{ fontSize: '13px', fontWeight: 600, marginBottom: '10px', color: 'var(--text-secondary)' }}>
+                                    自定义导出路径
+                                </div>
+                                <div style={{ display: 'flex', gap: '12px' }}>
+                                    <input
+                                        type="text"
+                                        placeholder="默认导出至项目根目录"
+                                        value={customPath}
+                                        readOnly
+                                        style={{ 
+                                            flex: 1, 
+                                            height: '52px', 
+                                            padding: '0 18px', 
+                                            fontSize: '13px', 
+                                            background: 'rgba(0,0,0,0.25)', 
+                                            border: '1px solid rgba(255,255,255,0.1)', 
+                                            borderRadius: '14px', 
+                                            color: 'var(--text-secondary)',
+                                            outline: 'none'
+                                        }}
+                                    />
+                                    <button
+                                        onClick={handleSelectFolder}
+                                        style={{ 
+                                            width: '52px', 
+                                            height: '52px', 
+                                            padding: 0, 
+                                            borderRadius: '14px', 
+                                            display: 'flex', 
+                                            alignItems: 'center', 
+                                            justifyContent: 'center',
+                                            background: 'rgba(255,255,255,0.06)',
+                                            border: '1px solid rgba(255,255,255,0.1)',
+                                            color: 'var(--text-secondary)',
+                                            cursor: 'pointer',
+                                            transition: 'all 0.2s ease'
+                                        }}
+                                        title="选择保存位置"
+                                    >
+                                        <FolderOpen size={20} />
+                                    </button>
+                                </div>
                             </div>
                         </div>
-                        <button
-                            onClick={handleCollaborationExport}
-                            className="btn-modern-secondary"
-                            style={{ padding: '0 2rem', height: '52px', borderRadius: '14px', gap: '8px' }}
-                        >
-                            <Share2 size={18} /> 导出协作包 (ZIP)
-                        </button>
-                    </div>
+                    </SectionCard>
+
+                    {/* Collaboration */}
+                    <SectionCard icon={Share2} title="项目协作" color="77,161,255">
+                        <div style={{ 
+                            background: 'rgba(0,0,0,0.2)', 
+                            padding: '1.5rem', 
+                            borderRadius: '18px',
+                            border: '1px solid rgba(255,255,255,0.04)'
+                        }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
+                                <div style={{
+                                    width: '44px',
+                                    height: '44px',
+                                    borderRadius: '12px',
+                                    background: 'linear-gradient(135deg, rgba(77,161,255,0.2), rgba(96,165,250,0.1))',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    color: '#60a5fa'
+                                }}>
+                                    <Share2 size={20} />
+                                </div>
+                                <div>
+                                    <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)' }}>导出协作包 (ZIP)</div>
+                                    <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '2px' }}>打包项目数据，方便分享给他人</div>
+                                </div>
+                            </div>
+                            <button
+                                onClick={handleCollaborationExport}
+                                style={{
+                                    width: '100%',
+                                    height: '48px',
+                                    borderRadius: '12px',
+                                    background: 'rgba(255,255,255,0.04)',
+                                    border: '1px solid rgba(255,255,255,0.1)',
+                                    color: 'var(--text-primary)',
+                                    fontSize: '14px',
+                                    fontWeight: 600,
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: '8px',
+                                    transition: 'all 0.2s ease'
+                                }}
+                            >
+                                <Share2 size={16} /> 开始导出
+                            </button>
+                        </div>
+                    </SectionCard>
+
                 </div>
 
-                {/* Confirm Action */}
-                <div style={{ gridColumn: '1 / -1', marginTop: '1rem' }}>
+                {/* Export Button */}
+                <div style={{ marginTop: '2rem', padding: '0 0.5rem' }}>
                     <button
                         onClick={handleExport}
                         disabled={isExporting || !isRatioValid}
-                        className="btn-modern-primary"
                         style={{
                             width: '100%',
                             height: '64px',
-                            fontSize: '1.2rem',
+                            fontSize: '1.15rem',
                             fontWeight: 800,
                             borderRadius: '20px',
                             justifyContent: 'center',
-                            boxShadow: '0 8px 32px rgba(88, 166, 255, 0.2)',
-                            gap: '12px'
+                            gap: '14px',
+                            background: isExporting || !isRatioValid 
+                                ? 'rgba(255,255,255,0.05)' 
+                                : 'linear-gradient(135deg, #22c55e, #4ade80)',
+                            border: 'none',
+                            color: isExporting || !isRatioValid ? 'var(--text-tertiary)' : 'white',
+                            cursor: isExporting || !isRatioValid ? 'not-allowed' : 'pointer',
+                            boxShadow: isRatioValid ? '0 8px 32px rgba(34,197,94,0.25)' : 'none',
+                            transition: 'all 0.3s ease'
                         }}
                     >
                         {isExporting ? (
                             <>
-                                <div className="spinner-sm" /> 正在导出数据集...
+                                <Loader2 size={22} className="spin" /> 正在导出数据集...
                             </>
                         ) : (
                             <>
@@ -349,34 +615,35 @@ export const DatasetExport = () => {
                             </>
                         )}
                     </button>
-                    <p style={{ textAlign: 'center', marginTop: '1rem', color: 'var(--text-tertiary)', fontSize: '0.9rem' }}>
+                    <p style={{ textAlign: 'center', marginTop: '1rem', color: 'var(--text-tertiary)', fontSize: '13px' }}>
                         导出过程可能需要几秒钟，请稍候
                     </p>
                 </div>
 
             </div>
 
+            {/* Toast Notification */}
             {notification && createPortal(
                 <div style={{
                     position: 'fixed',
-                    bottom: '40px',
-                    right: '40px',
+                    bottom: '32px',
+                    right: '32px',
                     zIndex: 9999,
                     animation: 'slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1)'
                 }}>
                     <div style={{
                         padding: '16px 24px',
-                        background: notification.type === 'success' ? '#065f46' : '#991b1b',
+                        background: notification.type === 'success' ? 'linear-gradient(135deg, #065f46, #047857)' : '#991b1b',
                         border: `1px solid ${notification.type === 'success' ? '#10b981' : '#ef4444'}`,
                         borderRadius: '16px',
                         color: 'white',
                         display: 'flex',
                         alignItems: 'center',
                         gap: '12px',
-                        boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.3)'
+                        boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.4)'
                     }}>
-                        <Info size={20} />
-                        <span style={{ fontWeight: 600 }}>{notification.message}</span>
+                        {notification.type === 'success' ? <CheckCircle size={20} /> : <Info size={20} />}
+                        <span style={{ fontWeight: 600, fontSize: '14px' }}>{notification.message}</span>
                     </div>
                 </div>,
                 document.body
@@ -391,41 +658,35 @@ export const DatasetExport = () => {
                     from { transform: translateY(-20px); opacity: 0; }
                     to { transform: translateY(0); opacity: 1; }
                 }
-                .glass-card {
-                    background: rgba(255, 255, 255, 0.03);
-                    backdrop-filter: blur(12px);
+                .spin {
+                    animation: spin 1s linear infinite;
+                }
+                @keyframes spin {
+                    from { transform: rotate(0deg); }
+                    to { transform: rotate(360deg); }
+                }
+                .glass-panel-modern {
+                    background: rgba(255, 255, 255, 0.025);
+                    backdrop-filter: blur(16px);
                     border: 1px solid rgba(255, 255, 255, 0.08);
                     transition: all 0.3s ease;
                 }
-                .glass-card:hover {
-                    border-color: rgba(255, 255, 255, 0.15);
-                    background: rgba(255, 255, 255, 0.04);
+                .glass-panel-modern:hover {
+                    border-color: rgba(255, 255, 255, 0.12);
+                    background: rgba(255, 255, 255, 0.03);
                 }
-                .checkbox-label {
-                    display: flex;
-                    align-items: center;
-                    cursor: pointer;
-                    transition: all 0.2s ease;
-                }
-                .checkbox-label:hover {
-                    background: rgba(255, 255, 255, 0.05) !important;
-                }
-                .checkbox-label input[type="checkbox"] {
-                    width: 20px;
-                    height: 20px;
+                .skeleton-inline {
+                    display: inline-block;
+                    width: 60px;
+                    height: 24px;
+                    background: linear-gradient(90deg, rgba(255,255,255,0.05) 25%, rgba(255,255,255,0.1) 50%, rgba(255,255,255,0.05) 75%);
+                    background-size: 200% 100%;
+                    animation: shimmer 1.5s infinite linear;
                     border-radius: 6px;
-                    cursor: pointer;
                 }
-                .spinner-sm {
-                    width: 20px;
-                    height: 20px;
-                    border: 3px solid rgba(255,255,255,0.3);
-                    border-top-color: white;
-                    border-radius: 50%;
-                    animation: spin 0.8s linear infinite;
-                }
-                @keyframes spin {
-                    to { transform: rotate(360deg); }
+                @keyframes shimmer {
+                    from { background-position: 200% 0; }
+                    to { background-position: -200% 0; }
                 }
             `}</style>
         </div>

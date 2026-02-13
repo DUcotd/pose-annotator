@@ -8,6 +8,7 @@ import { AnnotationEditor } from './components/AnnotationEditor';
 import { ImageUpload } from './components/ImageUpload';
 import { TrainingConfig } from './components/TrainingConfig';
 import { DatasetExport } from './components/DatasetExport';
+import { Settings } from './components/Settings';
 
 
 function App() {
@@ -21,7 +22,7 @@ function App() {
 }
 
 const AppContent = () => {
-  const { view, projects, createProject, selectProject, deleteProject, currentProject, images, selectedImage, openEditor, goBack, refreshImages } = useProject();
+  const { view, projects, createProject, selectProject, deleteProject, currentProject, images, selectedImage, openEditor, goBack, refreshImages, openSettings } = useProject();
 
   if (view === 'dashboard') {
     return (
@@ -81,6 +82,7 @@ const AppContent = () => {
             projectId={currentProject}
             onSelectImage={openEditor}
             onUpload={refreshImages}
+            selectedImage={selectedImage}
           />
         </div>
       </div >
@@ -113,6 +115,10 @@ const AppContent = () => {
         />
       </div>
     );
+  }
+
+  if (view === 'settings') {
+    return <Settings onBack={goBack} />;
   }
 
   return null;

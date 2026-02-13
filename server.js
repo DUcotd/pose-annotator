@@ -14,6 +14,39 @@ const app = express();
 const PORT = 5000;
 const trainingProcesses = {}; // Store active training processes: projectId -> { process, logs: [], status: 'idle'|'running'|'completed'|'failed' }
 
+// --- 全局配置文件 ---
+const GLOBAL_CONFIG_PATH = path.join(__dirname, 'settings.json');
+
+function loadGlobalConfig() {
+    try {
+        if (fs.existsSync(GLOBAL_CONFIG_PATH)) {
+            const data = fs.readFileSync(GLOBAL_CONFIG_PATH, 'utf8');
+            return JSON.parse(data);
+        }
+    } catch (e) {
+        console.error('[Config] Failed to load global config:', e.message);
+    }
+    return { pythonPath: '' };
+}
+
+function saveGlobalConfig(config) {
+    try {
+        fs.writeFileSync(GLOBAL_CONFIG_PATH, JSON.stringify(config, null, 2), 'utf8');
+        return true;
+    } catch (e) {
+        console.error('[Config] Failed to save global config:', e.message);
+        return false;
+    }
+}
+
+function getPythonPath() {
+    const config = loadGlobalConfig();
+    if (config.pythonPath && fs.existsSync(config.pythonPath)) {
+        return config.pythonPath;
+    }
+    return null;
+}
+
 // Middleware
 app.use(cors());
 app.use(bodyParser.json());
@@ -366,7 +399,7 @@ app.get('/api/projects/:projectId/images', (req, res) => {
 
         const imageFiles = files.filter(file => /\.(jpg|jpeg|png|gif|webp)$/i.test(file));
 
-        // Map each image to an object containing its name and annotation status
+        // Map each image to an object containing its name, annotation status, and size
         const imageList = imageFiles.map(file => {
             const annotationPath = path.join(paths.annotations, `${file}.json`);
             let hasAnnotation = false;
@@ -379,9 +412,20 @@ app.get('/api/projects/:projectId/images', (req, res) => {
                     console.error(`Error parsing annotation for ${file}:`, e.message);
                 }
             }
+            
+            // Get file size
+            let size = 0;
+            try {
+                const stats = fs.statSync(path.join(paths.uploads, file));
+                size = stats.size;
+            } catch (e) {
+                // Ignore size errors
+            }
+            
             return {
                 name: file,
-                hasAnnotation: hasAnnotation
+                hasAnnotation: hasAnnotation,
+                size: size
             };
         });
 
@@ -560,6 +604,119 @@ app.post('/api/utils/select-file', async (req, res) => {
                 versions: process.versions
             }
         });
+    }
+});
+
+// 选择 Python 解释器文件
+app.post('/api/utils/select-python', async (req, res) => {
+    let electron;
+    try {
+        electron = require('electron');
+    } catch (e) {
+        console.error('[API] Electron module not found:', e.message);
+    }
+
+    if (electron && electron.dialog) {
+        try {
+            const { dialog, BrowserWindow } = electron;
+            const win = BrowserWindow.getFocusedWindow();
+
+            const result = await dialog.showOpenDialog(win, {
+                properties: ['openFile'],
+                filters: [
+                    { name: 'Python Executable', extensions: ['exe', 'py'] },
+                    { name: 'All Files', extensions: ['*'] }
+                ],
+                title: '选择 Python 解释器'
+            });
+
+            if (!result.canceled && result.filePaths.length > 0) {
+                res.json({ path: result.filePaths[0] });
+            } else {
+                res.json({ path: null });
+            }
+        } catch (err) {
+            console.error('[API] Failed to open python selector dialog:', err);
+            res.status(500).json({ error: 'Failed to open dialog: ' + err.message });
+        }
+    } else {
+        res.status(400).json({ error: '此功能仅在桌面版应用中可用' });
+    }
+});
+
+// --- API: 全局设置 ---
+
+// 获取全局设置
+app.get('/api/settings', (req, res) => {
+    const config = loadGlobalConfig();
+    res.json(config);
+});
+
+// 保存全局设置
+app.post('/api/settings', (req, res) => {
+    const { pythonPath } = req.body;
+    const config = { pythonPath: pythonPath || '' };
+    if (saveGlobalConfig(config)) {
+        res.json({ success: true, message: '设置已保存', pythonPath });
+    } else {
+        res.status(500).json({ success: false, error: '保存设置失败' });
+    }
+});
+
+// 验证 Python 路径
+app.post('/api/settings/validate-python', async (req, res) => {
+    const { pythonPath } = req.body;
+    
+    if (!pythonPath || !pythonPath.trim()) {
+        return res.json({ valid: false, error: '请输入 Python 路径' });
+    }
+    
+    // 检查文件是否存在
+    if (!fs.existsSync(pythonPath)) {
+        return res.json({ valid: false, error: '文件不存在，请检查路径是否正确' });
+    }
+    
+    // 尝试执行 python --version
+    try {
+        const { execSync } = require('child_process');
+        const version = execSync(`"${pythonPath}" --version`, { 
+            encoding: 'utf8', 
+            timeout: 5000,
+            windowsHide: true 
+        });
+        
+        // 检查是否是有效的 Python
+        if (version.toLowerCase().includes('python')) {
+            // 进一步检查是否有 ultralytics
+            try {
+                const ultralyticsCheck = execSync(`"${pythonPath}" -c "import ultralytics; print('ok')`, {
+                    encoding: 'utf8',
+                    timeout: 10000,
+                    windowsHide: true
+                });
+                if (ultralyticsCheck.includes('ok')) {
+                    return res.json({ 
+                        valid: true, 
+                        version: version.trim(), 
+                        hasUltralytics: true,
+                        message: 'Python 有效，已安装 ultralytics'
+                    });
+                }
+            } catch (e) {
+                // ultralytics 未安装，但这不影响 Python 本身有效
+            }
+            
+            return res.json({ 
+                valid: true, 
+                version: version.trim(),
+                hasUltralytics: false,
+                message: 'Python 有效（建议安装 ultralytics: pip install ultralytics）'
+            });
+        }
+        
+        return res.json({ valid: false, error: '所选文件不是有效的 Python 解释器' });
+    } catch (e) {
+        return res.json({ valid: false, error: '无法执行 Python，请检查路径是否正确' });
     }
 });
 
@@ -976,8 +1133,30 @@ app.post('/api/projects/:projectId/train', (req, res) => {
         batch = 16,
         imgsz = 640,
         device = '0',
-        project: customProject, // Override project directory
-        name: customName       // Override run name
+        project: customProject,
+        name: customName,
+        
+        // 数据增强开关
+        augmentationEnabled = true,
+        
+        // 数据增强参数
+        degrees = 0,
+        translate = 0.1,
+        scale = 0.5,
+        shear = 0,
+        perspective = 0,
+        fliplr = 0.5,
+        flipud = 0,
+        hsv_h = 0.015,
+        hsv_s = 0.7,
+        hsv_v = 0.4,
+        mosaic = 1.0,
+        mixup = 0,
+        copy_paste = 0,
+        blur = 0,
+        noise = 0,
+        erasing = 0.4,
+        crop_fraction = 1.0
     } = req.body;
 
     if (trainingProcesses[projectId] && trainingProcesses[projectId].status === 'running') {
@@ -993,14 +1172,13 @@ app.post('/api/projects/:projectId/train', (req, res) => {
         return res.status(400).json({ error: `Dataset config not found at: ${dataYamlPath}. Please ensure the path is correct or export the dataset first.` });
     }
 
-    const projectDir = customProject || paths.root; // Use custom or project folder
+    const projectDir = customProject || paths.root;
     const runName = customName || `train_${Date.now()}`;
 
-    // Initialize process state
     trainingProcesses[projectId] = {
         status: 'running',
         logs: [],
-        metrics: [], // Structured training metrics: { epoch, box_loss, cls_loss, kpt_loss, mAP50, gpu_mem }
+        metrics: [],
         pid: null
     };
 
@@ -1014,22 +1192,51 @@ app.post('/api/projects/:projectId/train', (req, res) => {
         '--imgsz', String(imgsz),
         '--project', projectDir,
         '--name', runName,
-        '--device', device
+        '--device', device,
+        
+        // 数据增强参数 (如果禁用，则全部设为0)
+        '--degrees', String(augmentationEnabled ? degrees : 0),
+        '--translate', String(augmentationEnabled ? translate : 0),
+        '--scale', String(augmentationEnabled ? scale : 0),
+        '--shear', String(augmentationEnabled ? shear : 0),
+        '--perspective', String(augmentationEnabled ? perspective : 0),
+        '--fliplr', String(augmentationEnabled ? fliplr : 0),
+        '--flipud', String(augmentationEnabled ? flipud : 0),
+        '--hsv_h', String(augmentationEnabled ? hsv_h : 0),
+        '--hsv_s', String(augmentationEnabled ? hsv_s : 0),
+        '--hsv_v', String(augmentationEnabled ? hsv_v : 0),
+        '--mosaic', String(augmentationEnabled ? mosaic : 0),
+        '--mixup', String(augmentationEnabled ? mixup : 0),
+        '--copy_paste', String(augmentationEnabled ? copy_paste : 0),
+        '--blur', String(augmentationEnabled ? blur : 0),
+        '--noise', String(augmentationEnabled ? noise : 0),
+        '--erasing', String(augmentationEnabled ? erasing : 0),
+        '--crop_fraction', String(augmentationEnabled ? crop_fraction : 1.0)
     ];
 
-    // Use direct python path to avoid conda run encoding issues on Windows
-    // Start with the specific path reported by the user
-    const directPythonPath = 'D:\\miniconda3\\envs\\llm-gpu\\python.exe';
-
+    // 配置优先级: 用户配置 > 硬编码路径 > conda run 回退
+    // 1. 首先尝试从全局配置获取用户设置的 Python 路径
+    const userPythonPath = getPythonPath();
+    
+    // 2. 硬编码的备选路径
+    const fallbackPythonPath = 'D:\\miniconda3\\envs\\llm-gpu\\python.exe';
+    
     let cmd = 'python';
     let args = [];
 
-    if (fs.existsSync(directPythonPath)) {
-        cmd = directPythonPath;
+    if (userPythonPath && fs.existsSync(userPythonPath)) {
+        // 优先级 1: 使用用户配置的路径
+        console.log(`[Python] Using user configured Python path: ${userPythonPath}`);
+        cmd = userPythonPath;
+        args = [...pythonArgs];
+    } else if (fs.existsSync(fallbackPythonPath)) {
+        // 优先级 2: 使用硬编码的备选路径
+        console.log(`[Python] Using fallback Python path: ${fallbackPythonPath}`);
+        cmd = fallbackPythonPath;
         args = [...pythonArgs];
     } else {
-        // Fallback to conda run if direct path not found (though less likely to work if encoding is the issue)
-        console.warn('Direct python path not found, falling back to conda run');
+        // 优先级 3: conda run 回退机制
+        console.warn('[Python] No configured path found, falling back to conda run');
         cmd = 'conda';
         args = ['run', '-n', 'llm-gpu', 'python', ...pythonArgs];
     }

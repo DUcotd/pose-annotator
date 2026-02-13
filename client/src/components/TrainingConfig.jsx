@@ -1,9 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Play, Square, Terminal, Settings, CheckCircle, AlertTriangle, RefreshCw, Database, Image as ImageIcon, FileText, FolderOpen } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { 
+    Play, Square, Terminal, Settings, CheckCircle, AlertTriangle, RefreshCw, 
+    Database, Image as ImageIcon, FileText, FolderOpen, Cpu, Gauge, 
+    Layers, HardDrive, Activity, Zap, ArrowLeft
+} from 'lucide-react';
 import { useProject } from '../context/ProjectContext';
 
 export const TrainingConfig = () => {
-    const { currentProject } = useProject();
+    const { currentProject, goBack } = useProject();
     const [config, setConfig] = useState({
         model: 'yolov8n.pt',
         data: '',
@@ -11,42 +16,74 @@ export const TrainingConfig = () => {
         batch: 8,
         imgsz: 640,
         device: '0',
-        project: '', // Custom output directory
-        name: 'exp_auto' // Custom experiment name
+        project: '',
+        name: 'exp_auto',
+        
+        // 数据增强开关
+        augmentationEnabled: true,
+        
+        // 几何变换
+        degrees: 0,
+        translate: 0.1,
+        scale: 0.5,
+        shear: 0,
+        perspective: 0,
+        
+        // 翻转
+        fliplr: 0.5,
+        flipud: 0,
+        
+        // 颜色变换
+        hsv_h: 0.015,
+        hsv_s: 0.7,
+        hsv_v: 0.4,
+        
+        // 混合增强
+        mosaic: 1.0,
+        mixup: 0,
+        copy_paste: 0,
+        
+        // 模糊和噪声
+        blur: 0,
+        noise: 0,
+        
+        // 其他
+        erasing: 0.4,
+        crop_fraction: 1.0
     });
-    const [status, setStatus] = useState('idle'); // idle, running, completed, failed
+    const [status, setStatus] = useState('idle');
     const [logs, setLogs] = useState([]);
     const [metrics, setMetrics] = useState([]);
     const [stats, setStats] = useState(null);
     const logEndRef = useRef(null);
     const pollIntervalRef = useRef(null);
     const [dropdownOpen, setDropdownOpen] = useState(false);
+    const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0, width: 0 });
     const dropdownRef = useRef(null);
+    const dropdownTriggerRef = useRef(null);
 
     const modelOptions = [
-        { id: 'yolov8n.pt', label: 'YOLOv8n (Nano)' },
-        { id: 'yolov8s.pt', label: 'YOLOv8s (Small)' },
-        { id: 'yolov8m.pt', label: 'YOLOv8m (Medium)' },
-        { id: 'yolov8l.pt', label: 'YOLOv8l (Large)' },
-        { id: 'yolov8x.pt', label: 'YOLOv8x (XLarge)' }
+        { id: 'yolov8n.pt', label: 'YOLOv8n (Nano) - 轻量快速', size: '6.2MB', speed: '最快' },
+        { id: 'yolov8s.pt', label: 'YOLOv8s (Small) - 均衡', size: '22.5MB', speed: '快速' },
+        { id: 'yolov8m.pt', label: 'YOLOv8m (Medium) - 精度', size: '52MB', speed: '中等' },
+        { id: 'yolov8l.pt', label: 'YOLOv8l (Large) - 高精度', size: '87.7MB', speed: '较慢' },
+        { id: 'yolov8x.pt', label: 'YOLOv8x (XLarge) - 顶级', size: '130MB', speed: '最慢' }
     ];
 
-    // Initial status check
     useEffect(() => {
         checkStatus();
         fetchStats();
 
-        // Initialize default data path
         if (currentProject) {
-            // We use a relative path that the server can resolve to the project directory
-            // or we just default it to empty and let the server decide unless user overrides
             setConfig(prev => ({ ...prev, data: '' }));
         }
 
-        // Close dropdown when clicking outside
         const handleClickOutside = (event) => {
-            if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
-                setDropdownOpen(false);
+            if (dropdownOpen && dropdownTriggerRef.current && !dropdownTriggerRef.current.contains(event.target)) {
+                const dropdownEl = document.getElementById('model-dropdown-portal');
+                if (dropdownEl && !dropdownEl.contains(event.target)) {
+                    setDropdownOpen(false);
+                }
             }
         };
         document.addEventListener('mousedown', handleClickOutside);
@@ -67,7 +104,6 @@ export const TrainingConfig = () => {
         }
     };
 
-    // Auto-scroll logs
     useEffect(() => {
         logEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [logs]);
@@ -166,28 +202,130 @@ export const TrainingConfig = () => {
         }
     };
 
-    const LineChart = ({ data, dataKey, color, label, unit = "" }) => {
-        const width = 300;
-        const height = 120;
-        const padding = 20;
+    const StatBadge = ({ icon: Icon, label, value, color, gradient }) => (
+        <div style={{
+            background: gradient || `rgba(${color}, 0.1)`,
+            border: `1px solid rgba(${color}, 0.2)`,
+            borderRadius: '14px',
+            padding: '1rem 1.25rem',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '1rem',
+            flex: 1
+        }}>
+            <div style={{
+                width: '42px',
+                height: '42px',
+                borderRadius: '12px',
+                background: `rgba(${color}, 0.15)`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: `rgb(${color})`
+            }}>
+                <Icon size={20} />
+            </div>
+            <div>
+                <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.5px' }}>{label}</div>
+                <div style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--text-primary)' }}>{value}</div>
+            </div>
+        </div>
+    );
 
-        if (!data || data.length === 0) return (
-            <div className="chart-placeholder">等待数据累积...</div>
+    const ProgressRing = ({ progress, size = 120, strokeWidth = 10 }) => {
+        const radius = (size - strokeWidth) / 2;
+        const circumference = radius * 2 * Math.PI;
+        const offset = circumference - (progress / 100) * circumference;
+        
+        return (
+            <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
+                <circle
+                    cx={size / 2}
+                    cy={size / 2}
+                    r={radius}
+                    fill="none"
+                    stroke="rgba(255,255,255,0.1)"
+                    strokeWidth={strokeWidth}
+                />
+                <circle
+                    cx={size / 2}
+                    cy={size / 2}
+                    r={radius}
+                    fill="none"
+                    stroke="url(#progressGradient)"
+                    strokeWidth={strokeWidth}
+                    strokeDasharray={circumference}
+                    strokeDashoffset={offset}
+                    strokeLinecap="round"
+                    style={{ transition: 'stroke-dashoffset 0.5s ease' }}
+                />
+                <defs>
+                    <linearGradient id="progressGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                        <stop offset="0%" stopColor="#22c55e" />
+                        <stop offset="100%" stopColor="#4ade80" />
+                    </linearGradient>
+                </defs>
+            </svg>
         );
+    };
+
+    const LineChart = ({ data, dataKey, color, label, unit = "" }) => {
+        const width = 280;
+        const height = 100;
+        const padding = 15;
+
+        if (!data || data.length === 0) {
+            return (
+                <div style={{ 
+                    background: 'rgba(0,0,0,0.2)', 
+                    borderRadius: '16px', 
+                    padding: '1.25rem',
+                    border: '1px solid rgba(255,255,255,0.04)'
+                }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                        <span style={{ fontSize: '12px', color: 'var(--text-tertiary)', fontWeight: 600 }}>{label}</span>
+                        <span style={{ fontSize: '14px', color: `rgb(${color})`, fontWeight: 700 }}>--{unit}</span>
+                    </div>
+                    <div style={{ 
+                        height: height - 30, 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        justifyContent: 'center',
+                        color: 'var(--text-tertiary)',
+                        fontSize: '12px'
+                    }}>
+                        等待数据...
+                    </div>
+                </div>
+            );
+        }
 
         const latestValue = data[data.length - 1][dataKey];
-
-        // Handle single data point or no data for key
-        if (latestValue === undefined || (data.length < 2)) {
+        
+        if (latestValue === undefined || data.length < 2) {
             return (
-                <div className="metrics-chart">
-                    <div className="chart-header">
-                        <span className="chart-label">{label}</span>
-                        <span className="chart-value" style={{ color }}>
+                <div style={{ 
+                    background: 'rgba(0,0,0,0.2)', 
+                    borderRadius: '16px', 
+                    padding: '1.25rem',
+                    border: '1px solid rgba(255,255,255,0.04)'
+                }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                        <span style={{ fontSize: '12px', color: 'var(--text-tertiary)', fontWeight: 600 }}>{label}</span>
+                        <span style={{ fontSize: '14px', color: `rgb(${color})`, fontWeight: 700 }}>
                             {latestValue !== undefined ? (dataKey === 'mAP50' ? (latestValue * 100).toFixed(1) : latestValue.toFixed(4)) : '--'}{unit}
                         </span>
                     </div>
-                    <div className="chart-placeholder mini">正在收集训练趋势...</div>
+                    <div style={{ 
+                        height: height - 30, 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        justifyContent: 'center',
+                        color: 'var(--text-tertiary)',
+                        fontSize: '12px'
+                    }}>
+                        正在收集...
+                    </div>
                 </div>
             );
         }
@@ -204,913 +342,844 @@ export const TrainingConfig = () => {
         }).join(' ');
 
         return (
-            <div className="metrics-chart">
-                <div className="chart-header">
-                    <span className="chart-label">{label}</span>
-                    <span className="chart-value" style={{ color }}>
+            <div style={{ 
+                background: 'rgba(0,0,0,0.2)', 
+                borderRadius: '16px', 
+                padding: '1.25rem',
+                border: '1px solid rgba(255,255,255,0.04)'
+            }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                    <span style={{ fontSize: '12px', color: 'var(--text-tertiary)', fontWeight: 600 }}>{label}</span>
+                    <span style={{ fontSize: '14px', color: `rgb(${color})`, fontWeight: 700 }}>
                         {dataKey === 'mAP50' ? (latestValue * 100).toFixed(1) : latestValue.toFixed(4)}{unit}
                     </span>
                 </div>
-                <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
+                <svg width="100%" height={height - 30} viewBox={`0 0 ${width} ${height - 30}`} preserveAspectRatio="none">
+                    <defs>
+                        <linearGradient id={`grad-${dataKey}`} x1="0%" y1="0%" x2="0%" y2="100%">
+                            <stop offset="0%" stopColor={`rgb(${color})`} stopOpacity="0.3" />
+                            <stop offset="100%" stopColor={`rgb(${color})`} stopOpacity="0" />
+                        </linearGradient>
+                    </defs>
+                    <polygon
+                        points={`${padding},${height - padding} ${points} ${width - padding},${height - padding}`}
+                        fill={`url(#grad-${dataKey})`}
+                    />
                     <polyline
                         fill="none"
-                        stroke={color}
-                        strokeWidth="3"
+                        stroke={`rgb(${color})`}
+                        strokeWidth="2.5"
                         strokeLinecap="round"
                         strokeLinejoin="round"
                         points={points}
                         style={{ transition: 'all 0.5s ease' }}
                     />
-                    <line x1={padding} y1={height - padding} x2={width - padding} y2={height - padding} stroke="rgba(255,255,255,0.1)" strokeWidth="1" />
                 </svg>
             </div>
         );
     };
 
     const TrainingDashboard = ({ metrics, status }) => {
-        if (metrics.length === 0 && (status !== 'running' && status !== 'starting')) return null;
+        if (metrics.length === 0 && status !== 'running') return null;
 
         const latest = metrics[metrics.length - 1] || {};
         const progress = (latest.epoch && latest.totalEpochs) ? (latest.epoch / latest.totalEpochs) * 100 : 0;
         const mapVal = latest.mAP50 !== undefined ? (latest.mAP50 * 100).toFixed(1) : '--';
 
         return (
-            <div className="dashboard-grid fade-in">
-                <div className="dashboard-card glass-panel-modern main-metrics">
-                    <div className="progress-overview">
-                        <div className="progress-info">
-                            <span className="label-modern">正在训练第 {latest.epoch || 0} 轮</span>
-                            <div className="progress-values">
-                                <span className="current-epoch">{latest.epoch || 0}</span>
-                                <span className="total-epoch">/ {latest.totalEpochs || '--'} Epochs</span>
-                            </div>
+            <div style={{ 
+                display: 'grid', 
+                gridTemplateColumns: '1fr 1fr', 
+                gap: '1rem',
+                marginBottom: '1.5rem'
+            }}>
+                <div style={{
+                    background: 'rgba(0,0,0,0.25)',
+                    borderRadius: '20px',
+                    padding: '1.5rem',
+                    border: '1px solid rgba(255,255,255,0.06)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '1.5rem'
+                }}>
+                    <ProgressRing progress={progress} size={100} strokeWidth={8} />
+                    <div>
+                        <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.5px' }}>训练进度</div>
+                        <div style={{ fontSize: '2rem', fontWeight: 800, color: 'var(--text-primary)', marginTop: '4px' }}>
+                            {latest.epoch || 0} <span style={{ fontSize: '1rem', color: 'var(--text-tertiary)' }}>/ {latest.totalEpochs || '--'}</span>
                         </div>
-                        <div className="progress-bar-container">
-                            <div className="progress-bar-fill" style={{ width: `${progress}%` }}></div>
-                        </div>
-                    </div>
-
-                    <div className="metrics-summary-row">
-                        <div className="summary-item">
-                            <label>GPU 显存</label>
-                            <span className="value">{latest.gpu_mem || '--'}</span>
-                        </div>
-                        <div className="summary-item">
-                            <label>当前精度 (mAP50)</label>
-                            <span className="value accent">{mapVal}{mapVal !== '--' ? '%' : ''}</span>
-                        </div>
+                        <div style={{ fontSize: '13px', color: 'var(--text-secondary)', marginTop: '4px' }}>Epochs</div>
                     </div>
                 </div>
 
-                <div className="charts-container">
-                    <div className="dashboard-card glass-panel-modern chart-card">
-                        <LineChart
-                            data={metrics}
-                            dataKey="box_loss"
-                            color="#ff7b72"
-                            label="Box Loss (定位损失)"
-                        />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    <div style={{
+                        background: 'rgba(0,0,0,0.2)',
+                        borderRadius: '14px',
+                        padding: '1rem 1.25rem',
+                        border: '1px solid rgba(255,255,255,0.04)',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center'
+                    }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <Zap size={16} style={{ color: 'rgb(251,191,36)' }} />
+                            <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>GPU 显存</span>
+                        </div>
+                        <span style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)' }}>{latest.gpu_mem || '--'}</span>
                     </div>
-                    <div className="dashboard-card glass-panel-modern chart-card">
-                        <LineChart
-                            data={metrics}
-                            dataKey="mAP50"
-                            color="#79c0ff"
-                            label="mAP@50 (准确度趋势)"
-                            unit="%"
-                        />
+                    <div style={{
+                        background: 'rgba(0,0,0,0.2)',
+                        borderRadius: '14px',
+                        padding: '1rem 1.25rem',
+                        border: '1px solid rgba(255,255,255,0.04)',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center'
+                    }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <Gauge size={16} style={{ color: 'rgb(34,197,94)' }} />
+                            <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>mAP@50</span>
+                        </div>
+                        <span style={{ fontSize: '15px', fontWeight: 700, color: 'rgb(34,197,94)' }}>{mapVal}{mapVal !== '--' ? '%' : ''}</span>
                     </div>
+                </div>
+
+                <div style={{ gridColumn: '1 / -1', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                    <LineChart data={metrics} dataKey="box_loss" color="255,123,114" label="Box Loss" />
+                    <LineChart data={metrics} dataKey="mAP50" color="121,192,255" label="mAP@50" unit="%" />
                 </div>
             </div>
         );
     };
 
-    return (
-        <div className="train-panel fade-in">
-            <div className="train-header">
-                <h2>
-                    <Terminal size={24} />
-                    模型训练 (YOLOv8)
-                </h2>
-                <div className={`status-badge ${status}`}>
-                    {status === 'idle' && <span className="text-gray">Ready</span>}
-                    {status === 'running' && <span className="text-blue"><RefreshCw className="spin" size={14} /> Training</span>}
-                    {status === 'completed' && <span className="text-green"><CheckCircle size={14} /> Completed</span>}
-                    {status === 'failed' && <span className="text-red"><AlertTriangle size={14} /> Failed</span>}
+    const Toggle = ({ checked, onChange, label, desc }) => (
+        <label style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'space-between',
+            padding: '1rem 1.25rem', 
+            borderRadius: '14px', 
+            background: 'rgba(255,255,255,0.025)', 
+            border: '1px solid rgba(255,255,255,0.06)',
+            cursor: 'pointer',
+            transition: 'all 0.25s ease'
+        }}>
+            <div>
+                <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>{label}</div>
+                {desc && <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '4px' }}>{desc}</div>}
+            </div>
+            <div style={{
+                width: '44px',
+                height: '24px',
+                borderRadius: '12px',
+                background: checked ? 'linear-gradient(135deg, #22c55e, #4ade80)' : 'rgba(255,255,255,0.1)',
+                position: 'relative',
+                transition: 'all 0.3s ease'
+            }}>
+                <div style={{
+                    width: '18px',
+                    height: '18px',
+                    borderRadius: '50%',
+                    background: 'white',
+                    position: 'absolute',
+                    top: '3px',
+                    left: checked ? '23px' : '3px',
+                    transition: 'all 0.3s ease',
+                    boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+                }} />
+                <input 
+                    type="checkbox" 
+                    checked={checked}
+                    onChange={onChange}
+                    style={{ opacity: 0, width: 0, height: 0 }}
+                />
+            </div>
+        </label>
+    );
+
+    const SectionCard = ({ icon: Icon, title, color, gradient, children }) => (
+        <div style={{ 
+            background: 'rgba(255,255,255,0.02)',
+            backdropFilter: 'blur(16px)',
+            border: '1px solid rgba(255,255,255,0.06)',
+            borderRadius: '24px',
+            padding: '1.75rem'
+        }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '1.5rem' }}>
+                <div style={{ 
+                    background: gradient || `rgba(${color}, 0.12)`, 
+                    color: `rgb(${color})`, 
+                    padding: '12px', 
+                    borderRadius: '14px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                }}>
+                    <Icon size={22} />
                 </div>
+                <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 700, color: 'var(--text-primary)' }}>{title}</h3>
+            </div>
+            {children}
+        </div>
+    );
+
+    return (
+        <div style={{ 
+            height: '100%', 
+            display: 'flex', 
+            flexDirection: 'column',
+            background: 'linear-gradient(135deg, rgba(13,17,23,0.95) 0%, rgba(22,27,34,0.98) 100%)',
+            overflow: 'hidden'
+        }}>
+            {/* Header */}
+            <div style={{ 
+                padding: '1.5rem 2rem', 
+                borderBottom: '1px solid rgba(255,255,255,0.06)',
+                flexShrink: 0
+            }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '0.75rem' }}>
+                    <button 
+                        onClick={goBack}
+                        style={{
+                            background: 'rgba(255,255,255,0.05)',
+                            border: '1px solid rgba(255,255,255,0.08)',
+                            borderRadius: '12px',
+                            width: '40px',
+                            height: '40px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            color: 'var(--text-secondary)',
+                            cursor: 'pointer'
+                        }}
+                    >
+                        <ArrowLeft size={18} />
+                    </button>
+                    <h2 style={{ fontSize: '1.75rem', fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>
+                        模型训练
+                    </h2>
+                    <span style={{
+                        background: 'linear-gradient(135deg, rgba(34,197,94,0.2), rgba(74,222,128,0.1))',
+                        color: '#4ade80',
+                        padding: '6px 14px',
+                        borderRadius: '10px',
+                        fontSize: '0.8rem',
+                        fontWeight: 700,
+                        border: '1px solid rgba(74,222,128,0.3)'
+                    }}>
+                        YOLOv8
+                    </span>
+                    <div style={{
+                        marginLeft: 'auto',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        padding: '8px 16px',
+                        borderRadius: '20px',
+                        background: status === 'running' ? 'rgba(34,197,94,0.15)' : 
+                                   status === 'completed' ? 'rgba(59,130,246,0.15)' :
+                                   status === 'failed' ? 'rgba(239,68,68,0.15)' : 'rgba(255,255,255,0.05)',
+                        border: `1px solid ${status === 'running' ? 'rgba(34,197,94,0.3)' : 
+                                     status === 'completed' ? 'rgba(59,130,246,0.3)' :
+                                     status === 'failed' ? 'rgba(239,68,68,0.3)' : 'rgba(255,255,255,0.08)'}`
+                    }}>
+                        {status === 'running' && <><RefreshCw size={14} className="spin" style={{ color: '#4ade80' }} /> <span style={{ color: '#4ade80', fontWeight: 600, fontSize: '13px' }}>训练中</span></>}
+                        {status === 'completed' && <><CheckCircle size={14} style={{ color: '#60a5fa' }} /> <span style={{ color: '#60a5fa', fontWeight: 600, fontSize: '13px' }}>已完成</span></>}
+                        {status === 'failed' && <><AlertTriangle size={14} style={{ color: '#f87171' }} /> <span style={{ color: '#f87171', fontWeight: 600, fontSize: '13px' }}>失败</span></>}
+                        {status === 'idle' && <span style={{ color: 'var(--text-tertiary)', fontWeight: 600, fontSize: '13px' }}>就绪</span>}
+                        {status === 'starting' && <><RefreshCw size={14} className="spin" style={{ color: '#fbbf24' }} /> <span style={{ color: '#fbbf24', fontWeight: 600, fontSize: '13px' }}>启动中</span></>}
+                    </div>
+                </div>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '1rem', margin: 0, paddingLeft: '56px' }}>
+                    为项目 <span style={{ color: 'var(--accent-primary)', fontWeight: 600 }}>{currentProject}</span> 训练自定义 YOLOv8-Pose 模型
+                </p>
             </div>
 
-            <div className="train-layout">
-                {/* Left Column: Stats & Parameters */}
-                <div className="train-controls">
-                    {/* Real-time Visualization Dashboard */}
-                    {status === 'running' || metrics.length > 0 ? (
-                        <TrainingDashboard metrics={metrics} status={status} />
-                    ) : null}
-
-                    {/* Dataset Info Card */}
-                    <div className="info-card">
-                        <h3><Database size={18} /> 数据集概览</h3>
-                        {stats ? (
-                            <div className="stats-content">
-                                <div className="stat-row">
-                                    <div className="stat-item">
-                                        <span className="stat-label">总图片</span>
-                                        <span className="stat-value">{stats.total}</span>
-                                    </div>
-                                    <div className="stat-item">
-                                        <span className="stat-label highlight">已标注</span>
-                                        <span className="stat-value highlight">{stats.annotated}</span>
-                                    </div>
-                                    <div className="stat-item">
-                                        <span className="stat-label text-muted">未标注</span>
-                                        <span className="stat-value text-muted">{stats.unannotated}</span>
-                                    </div>
-                                </div>
-
-                                {stats.annotated === 0 && (
-                                    <div className="warning-box">
-                                        <AlertTriangle size={16} />
-                                        <span>没有已标注的图片，无法开始训练。请先去编辑器进行标注。</span>
-                                    </div>
-                                )}
-
-                                {stats.samples && stats.samples.length > 0 && (
-                                    <div className="samples-preview">
-                                        <label>标注样本 Preview:</label>
-                                        <div className="sample-grid">
-                                            {stats.samples.map((sample, i) => (
-                                                <div key={i} className="sample-img">
-                                                    <img src={`http://localhost:5000/api/projects/${currentProject}/uploads/${sample}`} alt="sample" />
-                                                </div>
-                                            ))}
-                                            {stats.annotated > 5 && <div className="sample-more">+{stats.annotated - 5}</div>}
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                        ) : (
-                            <div className="loading-stats">加载中...</div>
-                        )}
+            {/* Main Content */}
+            <div style={{ 
+                display: 'grid', 
+                gridTemplateColumns: '1fr 420px', 
+                gap: '1.5rem',
+                padding: '1.5rem 2rem',
+                flex: 1,
+                minHeight: 0,
+                overflow: 'hidden'
+            }}>
+                {/* Left: Logs & Charts */}
+                <div style={{ 
+                    display: 'flex', 
+                    flexDirection: 'column', 
+                    gap: '1.5rem',
+                    overflow: 'hidden'
+                }}>
+                    {/* Stats */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', flexShrink: 0 }}>
+                        <StatBadge 
+                            icon={Database} 
+                            label="总图片" 
+                            value={stats?.total || 0} 
+                            color="99,102,241"
+                            gradient="linear-gradient(135deg, rgba(99,102,241,0.15), rgba(139,92,246,0.05))"
+                        />
+                        <StatBadge 
+                            icon={CheckCircle} 
+                            label="已标注" 
+                            value={stats?.annotated || 0} 
+                            color="34,197,94"
+                            gradient="linear-gradient(135deg, rgba(34,197,94,0.15), rgba(74,222,128,0.05))"
+                        />
+                        <StatBadge 
+                            icon={Layers} 
+                            label="标注目标" 
+                            value={stats?.objects || 0} 
+                            color="251,191,36"
+                            gradient="linear-gradient(135deg, rgba(251,191,36,0.15), rgba(252,211,77,0.05))"
+                        />
                     </div>
 
-                    <div className="config-card glass-panel-modern">
-                        <div className="card-header-modern">
-                            <Settings size={20} className="icon-accent" />
-                            <h3>模型与参数配置</h3>
+                    {/* Training Dashboard */}
+                    <TrainingDashboard metrics={metrics} status={status} />
+
+                    {/* Logs */}
+                    <div style={{ 
+                        flex: 1, 
+                        background: 'rgba(0,0,0,0.3)',
+                        borderRadius: '20px',
+                        border: '1px solid rgba(255,255,255,0.06)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        overflow: 'hidden',
+                        minHeight: 0
+                    }}>
+                        <div style={{ 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            justifyContent: 'space-between',
+                            padding: '1rem 1.25rem',
+                            borderBottom: '1px solid rgba(255,255,255,0.06)',
+                            flexShrink: 0
+                        }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                <Terminal size={16} style={{ color: 'var(--text-tertiary)' }} />
+                                <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>训练日志</span>
+                            </div>
+                            <span style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>{logs.length} 行</span>
                         </div>
-
-                        {/* Section: Base Model */}
-                        <div className="config-section">
-                            <h4 className="section-title">基础模型 (Base Model)</h4>
-                            <div className="form-group-modern">
-                                <label className="label-modern">选择权重文件</label>
-                                <div className="select-wrapper-modern" ref={dropdownRef}>
-                                    <div
-                                        className={`custom-select-trigger ${dropdownOpen ? 'open' : ''} ${status === 'running' ? 'disabled' : ''}`}
-                                        onClick={() => status !== 'running' && setDropdownOpen(!dropdownOpen)}
-                                    >
-                                        <Database size={16} className="input-icon-left" />
-                                        <span className="selected-value">
-                                            {modelOptions.find(m => m.id === config.model)?.label}
-                                        </span>
-                                        <div className="arrow-icon"></div>
-                                    </div>
-
-                                    {dropdownOpen && (
-                                        <div className="custom-dropdown-menu">
-                                            {modelOptions.map(option => (
-                                                <div
-                                                    key={option.id}
-                                                    className={`dropdown-item-modern ${config.model === option.id ? 'active' : ''}`}
-                                                    onClick={() => {
-                                                        setConfig({ ...config, model: option.id });
-                                                        setDropdownOpen(false);
-                                                    }}
-                                                >
-                                                    {option.label}
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
+                        <div style={{ 
+                            flex: 1, 
+                            overflowY: 'auto', 
+                            padding: '1rem',
+                            fontFamily: 'monospace',
+                            fontSize: '12px'
+                        }} className="custom-scrollbar">
+                            {logs.length === 0 && (
+                                <div style={{ color: 'var(--text-tertiary)', textAlign: 'center', padding: '2rem' }}>
+                                    等待日志输出...
                                 </div>
+                            )}
+                            {logs.map((log, i) => (
+                                <div key={i} style={{ 
+                                    color: log.type === 'stdout' ? 'var(--text-secondary)' : '#f87171',
+                                    marginBottom: '4px',
+                                    wordBreak: 'break-all'
+                                }}>
+                                    <span style={{ color: 'var(--text-tertiary)', marginRight: '8px' }}>
+                                        [{new Date(log.time).toLocaleTimeString()}]
+                                    </span>
+                                    {log.msg}
+                                </div>
+                            ))}
+                            <div ref={logEndRef} />
+                        </div>
+                    </div>
+                </div>
+
+                {/* Right: Config */}
+                <div style={{ 
+                    overflowY: 'auto',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '1.25rem'
+                }} className="custom-scrollbar">
+                    
+                    {/* Model Selection */}
+                    <SectionCard icon={Cpu} title="基础模型" color="99,102,241" gradient="linear-gradient(135deg, rgba(99,102,241,0.15), rgba(139,92,246,0.05))">
+                        <div style={{ position: 'relative' }} ref={dropdownRef}>
+                            <div
+                                ref={dropdownTriggerRef}
+                                onClick={() => {
+                                    if (status !== 'running') {
+                                        if (!dropdownOpen && dropdownTriggerRef.current) {
+                                            const rect = dropdownTriggerRef.current.getBoundingClientRect();
+                                            setDropdownPosition({
+                                                top: rect.bottom + 8,
+                                                left: rect.left,
+                                                width: rect.width
+                                            });
+                                        }
+                                        setDropdownOpen(!dropdownOpen);
+                                    }
+                                }}
+                                style={{
+                                    background: 'rgba(0,0,0,0.25)',
+                                    border: '1px solid rgba(255,255,255,0.1)',
+                                    borderRadius: '14px',
+                                    padding: '1rem 1.25rem',
+                                    cursor: status === 'running' ? 'not-allowed' : 'pointer',
+                                    opacity: status === 'running' ? 0.6 : 1,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'space-between'
+                                }}
+                            >
+                                <div>
+                                    <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                                        {modelOptions.find(m => m.id === config.model)?.label}
+                                    </div>
+                                    <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '4px' }}>
+                                        {modelOptions.find(m => m.id === config.model)?.size} • {modelOptions.find(m => m.id === config.model)?.speed}
+                                    </div>
+                                </div>
+                                <div style={{ 
+                                    width: '24px', 
+                                    height: '24px', 
+                                    borderRadius: '8px', 
+                                    background: 'rgba(255,255,255,0.05)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    transform: dropdownOpen ? 'rotate(180deg)' : 'rotate(0)',
+                                    transition: 'transform 0.2s'
+                                }}>
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <path d="M6 9l6 6 6-6" />
+                                    </svg>
+                                </div>
+                            </div>
+                            
+                            {dropdownOpen && createPortal(
+                                <div 
+                                    id="model-dropdown-portal"
+                                    style={{
+                                        position: 'fixed',
+                                        top: dropdownPosition.top,
+                                        left: dropdownPosition.left,
+                                        width: dropdownPosition.width,
+                                        background: 'rgba(30,35,45,0.98)',
+                                        border: '1px solid rgba(255,255,255,0.1)',
+                                        borderRadius: '14px',
+                                        overflow: 'hidden',
+                                        zIndex: 9999,
+                                        boxShadow: '0 10px 40px rgba(0,0,0,0.5)',
+                                        maxHeight: '300px',
+                                        overflowY: 'auto'
+                                    }}
+                                    className="custom-scrollbar"
+                                >
+                                    {modelOptions.map(option => (
+                                        <div
+                                            key={option.id}
+                                            onClick={() => {
+                                                setConfig({ ...config, model: option.id });
+                                                setDropdownOpen(false);
+                                            }}
+                                            style={{
+                                                padding: '1rem 1.25rem',
+                                                cursor: 'pointer',
+                                                background: config.model === option.id ? 'rgba(99,102,241,0.15)' : 'transparent',
+                                                borderBottom: '1px solid rgba(255,255,255,0.04)',
+                                                transition: 'background 0.2s'
+                                            }}
+                                        >
+                                            <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>{option.label}</div>
+                                            <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '2px' }}>{option.size} • {option.speed}</div>
+                                        </div>
+                                    ))}
+                                </div>,
+                                document.body
+                            )}
+                        </div>
+                    </SectionCard>
+
+                    {/* Parameters */}
+                    <SectionCard icon={Settings} title="训练参数" color="251,191,36" gradient="linear-gradient(135deg, rgba(251,191,36,0.15), rgba(252,211,77,0.05))">
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                            <div>
+                                <label style={{ fontSize: '12px', color: 'var(--text-tertiary)', fontWeight: 600, display: 'block', marginBottom: '8px' }}>训练轮数</label>
+                                <input
+                                    type="number"
+                                    value={config.epochs}
+                                    onChange={e => setConfig({ ...config, epochs: parseInt(e.target.value) })}
+                                    disabled={status === 'running'}
+                                    style={{
+                                        width: '100%',
+                                        height: '48px',
+                                        background: 'rgba(0,0,0,0.25)',
+                                        border: '1px solid rgba(255,255,255,0.1)',
+                                        borderRadius: '12px',
+                                        padding: '0 1rem',
+                                        color: 'white',
+                                        fontSize: '15px',
+                                        fontWeight: 600,
+                                        outline: 'none'
+                                    }}
+                                />
+                            </div>
+                            <div>
+                                <label style={{ fontSize: '12px', color: 'var(--text-tertiary)', fontWeight: 600, display: 'block', marginBottom: '8px' }}>批次大小</label>
+                                <input
+                                    type="number"
+                                    value={config.batch}
+                                    onChange={e => setConfig({ ...config, batch: parseInt(e.target.value) })}
+                                    disabled={status === 'running'}
+                                    style={{
+                                        width: '100%',
+                                        height: '48px',
+                                        background: 'rgba(0,0,0,0.25)',
+                                        border: '1px solid rgba(255,255,255,0.1)',
+                                        borderRadius: '12px',
+                                        padding: '0 1rem',
+                                        color: 'white',
+                                        fontSize: '15px',
+                                        fontWeight: 600,
+                                        outline: 'none'
+                                    }}
+                                />
+                            </div>
+                            <div>
+                                <label style={{ fontSize: '12px', color: 'var(--text-tertiary)', fontWeight: 600, display: 'block', marginBottom: '8px' }}>图像尺寸</label>
+                                <input
+                                    type="number"
+                                    value={config.imgsz}
+                                    onChange={e => setConfig({ ...config, imgsz: parseInt(e.target.value) })}
+                                    disabled={status === 'running'}
+                                    style={{
+                                        width: '100%',
+                                        height: '48px',
+                                        background: 'rgba(0,0,0,0.25)',
+                                        border: '1px solid rgba(255,255,255,0.1)',
+                                        borderRadius: '12px',
+                                        padding: '0 1rem',
+                                        color: 'white',
+                                        fontSize: '15px',
+                                        fontWeight: 600,
+                                        outline: 'none'
+                                    }}
+                                />
+                            </div>
+                            <div>
+                                <label style={{ fontSize: '12px', color: 'var(--text-tertiary)', fontWeight: 600, display: 'block', marginBottom: '8px' }}>计算设备</label>
+                                <input
+                                    type="text"
+                                    value={config.device}
+                                    onChange={e => setConfig({ ...config, device: e.target.value })}
+                                    placeholder="0, 1, cpu"
+                                    disabled={status === 'running'}
+                                    style={{
+                                        width: '100%',
+                                        height: '48px',
+                                        background: 'rgba(0,0,0,0.25)',
+                                        border: '1px solid rgba(255,255,255,0.1)',
+                                        borderRadius: '12px',
+                                        padding: '0 1rem',
+                                        color: 'white',
+                                        fontSize: '15px',
+                                        fontWeight: 600,
+                                        outline: 'none'
+                                    }}
+                                />
+                            </div>
+                        </div>
+                    </SectionCard>
+
+                    {/* Data Augmentation */}
+                    <SectionCard icon={Activity} title="数据增强" color="236,72,153" gradient="linear-gradient(135deg, rgba(236,72,153,0.15), rgba(244,114,182,0.05))">
+                        
+                        {/* 全局开关 */}
+                        <div style={{ 
+                            marginBottom: '1.5rem',
+                            padding: '1.25rem', 
+                            borderRadius: '16px', 
+                            background: config.augmentationEnabled ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)',
+                            border: `1px solid ${config.augmentationEnabled ? 'rgba(34,197,94,0.25)' : 'rgba(239,68,68,0.25)'}`,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between'
+                        }}>
+                            <div>
+                                <div style={{ fontSize: '15px', fontWeight: 700, color: config.augmentationEnabled ? '#4ade80' : '#f87171' }}>
+                                    {config.augmentationEnabled ? '✓ 数据增强已启用' : '✗ 数据增强已禁用'}
+                                </div>
+                                <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '4px' }}>
+                                    {config.augmentationEnabled ? '训练时将应用图像变换和特征增强' : '使用原始数据，无任何增强处理'}
+                                </div>
+                            </div>
+                            <div 
+                                onClick={() => setConfig({...config, augmentationEnabled: !config.augmentationEnabled})}
+                                style={{
+                                    width: '56px',
+                                    height: '30px',
+                                    borderRadius: '15px',
+                                    background: config.augmentationEnabled ? 'linear-gradient(135deg, #22c55e, #4ade80)' : 'rgba(255,255,255,0.1)',
+                                    position: 'relative',
+                                    cursor: 'pointer',
+                                    transition: 'all 0.3s ease',
+                                    flexShrink: 0
+                                }}
+                            >
+                                <div style={{
+                                    width: '24px',
+                                    height: '24px',
+                                    borderRadius: '50%',
+                                    background: 'white',
+                                    position: 'absolute',
+                                    top: '3px',
+                                    left: config.augmentationEnabled ? '29px' : '3px',
+                                    transition: 'all 0.3s ease',
+                                    boxShadow: '0 2px 6px rgba(0,0,0,0.3)'
+                                }} />
                             </div>
                         </div>
 
-                        {/* Section: Output Settings */}
-                        <div className="config-section">
-                            <h4 className="section-title">保存设置 (Output Settings)</h4>
-                            <div className="form-group-modern">
-                                <label className="label-modern">输出项目目录 (Project)</label>
-                                <div className="input-wrapper-modern has-action">
-                                    <FolderOpen size={16} className="input-icon-left" />
+                        {/* 参数配置 */}
+                        <div style={{ 
+                            display: 'flex', 
+                            flexDirection: 'column', 
+                            gap: '1rem',
+                            opacity: config.augmentationEnabled ? 1 : 0.4,
+                            pointerEvents: config.augmentationEnabled ? 'auto' : 'none',
+                            transition: 'all 0.3s ease'
+                        }}>
+                            
+                            {/* 几何变换 */}
+                            <div>
+                                <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <span style={{ width: '4px', height: '4px', borderRadius: '50%', background: '#ec4899' }} />
+                                    几何变换
+                                </div>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                                    <div>
+                                        <label style={{ fontSize: '11px', color: 'var(--text-tertiary)', display: 'block', marginBottom: '6px' }}>旋转角度 (±°)</label>
+                                        <input type="number" value={config.degrees} onChange={e => setConfig({...config, degrees: parseFloat(e.target.value)})} disabled={status === 'running'} style={{ width: '100%', height: '40px', background: 'rgba(0,0,0,0.25)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', padding: '0 10px', color: 'white', fontSize: '13px', outline: 'none' }} />
+                                        <div style={{ fontSize: '10px', color: 'var(--text-tertiary)', marginTop: '4px' }}>推荐: 0-15°，防止关键点错位</div>
+                                    </div>
+                                    <div>
+                                        <label style={{ fontSize: '11px', color: 'var(--text-tertiary)', display: 'block', marginBottom: '6px' }}>平移比例</label>
+                                        <input type="number" step="0.1" value={config.translate} onChange={e => setConfig({...config, translate: parseFloat(e.target.value)})} disabled={status === 'running'} style={{ width: '100%', height: '40px', background: 'rgba(0,0,0,0.25)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', padding: '0 10px', color: 'white', fontSize: '13px', outline: 'none' }} />
+                                        <div style={{ fontSize: '10px', color: 'var(--text-tertiary)', marginTop: '4px' }}>推荐: 0.1，图像部分移出</div>
+                                    </div>
+                                    <div>
+                                        <label style={{ fontSize: '11px', color: 'var(--text-tertiary)', display: 'block', marginBottom: '6px' }}>缩放范围</label>
+                                        <input type="number" step="0.1" value={config.scale} onChange={e => setConfig({...config, scale: parseFloat(e.target.value)})} disabled={status === 'running'} style={{ width: '100%', height: '40px', background: 'rgba(0,0,0,0.25)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', padding: '0 10px', color: 'white', fontSize: '13px', outline: 'none' }} />
+                                        <div style={{ fontSize: '10px', color: 'var(--text-tertiary)', marginTop: '4px' }}>推荐: 0.5，增加尺度多样性</div>
+                                    </div>
+                                    <div>
+                                        <label style={{ fontSize: '11px', color: 'var(--text-tertiary)', display: 'block', marginBottom: '6px' }}>随机擦除</label>
+                                        <input type="number" step="0.1" value={config.erasing} onChange={e => setConfig({...config, erasing: parseFloat(e.target.value)})} disabled={status === 'running'} style={{ width: '100%', height: '40px', background: 'rgba(0,0,0,0.25)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', padding: '0 10px', color: 'white', fontSize: '13px', outline: 'none' }} />
+                                        <div style={{ fontSize: '10px', color: 'var(--text-tertiary)', marginTop: '4px' }}>推荐: 0.3-0.4，防止过拟合</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* 翻转 */}
+                            <div>
+                                <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <span style={{ width: '4px', height: '4px', borderRadius: '50%', background: '#22d3ee' }} />
+                                    翻转
+                                </div>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                                    <div>
+                                        <label style={{ fontSize: '11px', color: 'var(--text-tertiary)', display: 'block', marginBottom: '6px' }}>水平翻转概率</label>
+                                        <input type="number" step="0.1" max="1" value={config.fliplr} onChange={e => setConfig({...config, fliplr: parseFloat(e.target.value)})} disabled={status === 'running'} style={{ width: '100%', height: '40px', background: 'rgba(0,0,0,0.25)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', padding: '0 10px', color: 'white', fontSize: '13px', outline: 'none' }} />
+                                        <div style={{ fontSize: '10px', color: 'var(--text-tertiary)', marginTop: '4px' }}>推荐: 0.5，标准水平翻转</div>
+                                    </div>
+                                    <div>
+                                        <label style={{ fontSize: '11px', color: 'var(--text-tertiary)', display: 'block', marginBottom: '6px' }}>垂直翻转概率</label>
+                                        <input type="number" step="0.1" max="1" value={config.flipud} onChange={e => setConfig({...config, flipud: parseFloat(e.target.value)})} disabled={status === 'running'} style={{ width: '100%', height: '40px', background: 'rgba(0,0,0,0.25)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', padding: '0 10px', color: 'white', fontSize: '13px', outline: 'none' }} />
+                                        <div style={{ fontSize: '10px', color: 'var(--text-tertiary)', marginTop: '4px' }}>推荐: 0，适用于常规物体</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* 颜色变换 */}
+                            <div>
+                                <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <span style={{ width: '4px', height: '4px', borderRadius: '50%', background: '#a855f7' }} />
+                                    颜色变换 (HSV)
+                                </div>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
+                                    <div>
+                                        <label style={{ fontSize: '11px', color: 'var(--text-tertiary)', display: 'block', marginBottom: '6px' }}>色相</label>
+                                        <input type="number" step="0.01" max="1" value={config.hsv_h} onChange={e => setConfig({...config, hsv_h: parseFloat(e.target.value)})} disabled={status === 'running'} style={{ width: '100%', height: '40px', background: 'rgba(0,0,0,0.25)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', padding: '0 10px', color: 'white', fontSize: '13px', outline: 'none' }} />
+                                        <div style={{ fontSize: '10px', color: 'var(--text-tertiary)', marginTop: '4px' }}>推荐: 0.015</div>
+                                    </div>
+                                    <div>
+                                        <label style={{ fontSize: '11px', color: 'var(--text-tertiary)', display: 'block', marginBottom: '6px' }}>饱和度</label>
+                                        <input type="number" step="0.1" max="1" value={config.hsv_s} onChange={e => setConfig({...config, hsv_s: parseFloat(e.target.value)})} disabled={status === 'running'} style={{ width: '100%', height: '40px', background: 'rgba(0,0,0,0.25)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', padding: '0 10px', color: 'white', fontSize: '13px', outline: 'none' }} />
+                                        <div style={{ fontSize: '10px', color: 'var(--text-tertiary)', marginTop: '4px' }}>推荐: 0.7</div>
+                                    </div>
+                                    <div>
+                                        <label style={{ fontSize: '11px', color: 'var(--text-tertiary)', display: 'block', marginBottom: '6px' }}>明度</label>
+                                        <input type="number" step="0.1" max="1" value={config.hsv_v} onChange={e => setConfig({...config, hsv_v: parseFloat(e.target.value)})} disabled={status === 'running'} style={{ width: '100%', height: '40px', background: 'rgba(0,0,0,0.25)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', padding: '0 10px', color: 'white', fontSize: '13px', outline: 'none' }} />
+                                        <div style={{ fontSize: '10px', color: 'var(--text-tertiary)', marginTop: '4px' }}>推荐: 0.4</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* 高级增强 */}
+                            <div>
+                                <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <span style={{ width: '4px', height: '4px', borderRadius: '50%', background: '#f59e0b' }} />
+                                    高级增强
+                                </div>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                                    <div>
+                                        <label style={{ fontSize: '11px', color: 'var(--text-tertiary)', display: 'block', marginBottom: '6px' }}>马赛克 Mosaic</label>
+                                        <input type="number" step="0.1" max="1" value={config.mosaic} onChange={e => setConfig({...config, mosaic: parseFloat(e.target.value)})} disabled={status === 'running'} style={{ width: '100%', height: '40px', background: 'rgba(0,0,0,0.25)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', padding: '0 10px', color: 'white', fontSize: '13px', outline: 'none' }} />
+                                        <div style={{ fontSize: '10px', color: 'var(--text-tertiary)', marginTop: '4px' }}>推荐: 1.0，小样本数据最佳</div>
+                                    </div>
+                                    <div>
+                                        <label style={{ fontSize: '11px', color: 'var(--text-tertiary)', display: 'block', marginBottom: '6px' }}>混合 MixUp</label>
+                                        <input type="number" step="0.1" max="1" value={config.mixup} onChange={e => setConfig({...config, mixup: parseFloat(e.target.value)})} disabled={status === 'running'} style={{ width: '100%', height: '40px', background: 'rgba(0,0,0,0.25)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', padding: '0 10px', color: 'white', fontSize: '13px', outline: 'none' }} />
+                                        <div style={{ fontSize: '10px', color: 'var(--text-tertiary)', marginTop: '4px' }}>推荐: 0-0.15，大数据集效果更好</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                        </div>
+                    </SectionCard>
+
+                    {/* Output */}
+                    <SectionCard icon={FolderOpen} title="输出设置" color="34,197,94" gradient="linear-gradient(135deg, rgba(34,197,94,0.15), rgba(74,222,128,0.05))">
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                            <div>
+                                <label style={{ fontSize: '12px', color: 'var(--text-tertiary)', fontWeight: 600, display: 'block', marginBottom: '8px' }}>实验名称</label>
+                                <input
+                                    type="text"
+                                    value={config.name}
+                                    onChange={e => setConfig({ ...config, name: e.target.value })}
+                                    placeholder="exp_auto"
+                                    disabled={status === 'running'}
+                                    style={{
+                                        width: '100%',
+                                        height: '48px',
+                                        background: 'rgba(0,0,0,0.25)',
+                                        border: '1px solid rgba(255,255,255,0.1)',
+                                        borderRadius: '12px',
+                                        padding: '0 1rem',
+                                        color: 'white',
+                                        fontSize: '14px',
+                                        outline: 'none'
+                                    }}
+                                />
+                            </div>
+                            <div>
+                                <label style={{ fontSize: '12px', color: 'var(--text-tertiary)', fontWeight: 600, display: 'block', marginBottom: '8px' }}>输出目录</label>
+                                <div style={{ display: 'flex', gap: '8px' }}>
                                     <input
                                         type="text"
                                         value={config.project}
                                         onChange={e => setConfig({ ...config, project: e.target.value })}
-                                        placeholder="默认保存至项目目录下"
+                                        placeholder="默认项目目录"
                                         disabled={status === 'running'}
-                                        className="input-modern-field"
+                                        style={{
+                                            flex: 1,
+                                            height: '48px',
+                                            background: 'rgba(0,0,0,0.25)',
+                                            border: '1px solid rgba(255,255,255,0.1)',
+                                            borderRadius: '12px',
+                                            padding: '0 1rem',
+                                            color: 'var(--text-secondary)',
+                                            fontSize: '13px',
+                                            outline: 'none'
+                                        }}
                                     />
                                     <button
-                                        className="input-action-btn"
                                         onClick={handleBrowseProject}
                                         disabled={status === 'running'}
-                                        title="选择输出目录"
+                                        style={{
+                                            width: '48px',
+                                            height: '48px',
+                                            background: 'rgba(255,255,255,0.06)',
+                                            border: '1px solid rgba(255,255,255,0.1)',
+                                            borderRadius: '12px',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            color: 'var(--text-secondary)',
+                                            cursor: status === 'running' ? 'not-allowed' : 'pointer'
+                                        }}
                                     >
-                                        <FolderOpen size={16} />
-                                    </button>
-                                </div>
-                            </div>
-
-                            <div className="form-group-modern">
-                                <label className="label-modern">实验运行名称 (Name)</label>
-                                <div className="input-wrapper-modern">
-                                    <FileText size={16} className="input-icon-left" />
-                                    <input
-                                        type="text"
-                                        value={config.name}
-                                        onChange={e => setConfig({ ...config, name: e.target.value })}
-                                        placeholder="例如: exp_fish_v1"
-                                        disabled={status === 'running'}
-                                        className="input-modern-field"
-                                    />
-                                </div>
-                            </div>
-
-                            <div className="form-group-modern">
-                                <label className="label-modern">自定义数据配置 (Optional YAML)</label>
-                                <div className="input-wrapper-modern has-action">
-                                    <FileText size={16} className="input-icon-left" />
-                                    <input
-                                        type="text"
-                                        value={config.data}
-                                        onChange={e => setConfig({ ...config, data: e.target.value })}
-                                        placeholder="默认: dataset/data.yaml"
-                                        disabled={status === 'running'}
-                                        className="input-modern-field"
-                                    />
-                                    <button
-                                        className="input-action-btn"
-                                        onClick={handleBrowseData}
-                                        disabled={status === 'running'}
-                                        title="选择 YAML 文件"
-                                    >
-                                        <FolderOpen size={16} />
+                                        <FolderOpen size={18} />
                                     </button>
                                 </div>
                             </div>
                         </div>
+                    </SectionCard>
 
-                        {/* Section: Training Parameters */}
-                        <div className="config-section no-border">
-                            <h4 className="section-title">性能参数 (Parameters)</h4>
-                            <div className="form-row-modern">
-                                <div className="form-group-modern">
-                                    <label className="label-modern">训练轮数 (Epochs)</label>
-                                    <div className="input-wrapper-modern">
-                                        <RefreshCw size={16} className="input-icon-left" />
-                                        <input
-                                            type="number"
-                                            value={config.epochs}
-                                            onChange={e => setConfig({ ...config, epochs: parseInt(e.target.value) })}
-                                            disabled={status === 'running'}
-                                            className="input-modern-field"
-                                        />
-                                    </div>
-                                </div>
-                                <div className="form-group-modern">
-                                    <label className="label-modern">批次大小 (Batch)</label>
-                                    <div className="input-wrapper-modern">
-                                        <CheckCircle size={16} className="input-icon-left" />
-                                        <input
-                                            type="number"
-                                            value={config.batch}
-                                            onChange={e => setConfig({ ...config, batch: parseInt(e.target.value) })}
-                                            disabled={status === 'running'}
-                                            className="input-modern-field"
-                                        />
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="form-row-modern">
-                                <div className="form-group-modern">
-                                    <label className="label-modern">输入尺寸 (Img Size)</label>
-                                    <div className="input-wrapper-modern">
-                                        <ImageIcon size={16} className="input-icon-left" />
-                                        <input
-                                            type="number"
-                                            value={config.imgsz}
-                                            onChange={e => setConfig({ ...config, imgsz: parseInt(e.target.value) })}
-                                            disabled={status === 'running'}
-                                            className="input-modern-field"
-                                        />
-                                    </div>
-                                </div>
-                                <div className="form-group-modern">
-                                    <label className="label-modern">计算设备 (Device)</label>
-                                    <div className="input-wrapper-modern">
-                                        <Terminal size={16} className="input-icon-left" />
-                                        <input
-                                            type="text"
-                                            value={config.device}
-                                            onChange={e => setConfig({ ...config, device: e.target.value })}
-                                            placeholder="0, 1, 或 cpu"
-                                            disabled={status === 'running'}
-                                            className="input-modern-field"
-                                        />
-                                    </div>
-                                </div>
+                    {/* Warning */}
+                    {stats?.annotated === 0 && (
+                        <div style={{
+                            background: 'rgba(239,68,68,0.1)',
+                            border: '1px solid rgba(239,68,68,0.2)',
+                            borderRadius: '14px',
+                            padding: '1rem 1.25rem',
+                            display: 'flex',
+                            alignItems: 'flex-start',
+                            gap: '12px'
+                        }}>
+                            <AlertTriangle size={18} style={{ color: '#f87171', flexShrink: 0, marginTop: '2px' }} />
+                            <div style={{ fontSize: '13px', color: '#f87171', lineHeight: 1.5 }}>
+                                没有已标注的图片，无法开始训练。请先去编辑器进行标注。
                             </div>
                         </div>
+                    )}
 
-                        <div className="train-actions-modern">
-                            {status !== 'running' ? (
-                                <button className="btn-modern-primary full-width" onClick={handleStart} disabled={!stats || stats.annotated === 0}>
-                                    <Play size={18} fill="currentColor" /> 开始训练
-                                </button>
-                            ) : (
-                                <button className="btn-modern-danger full-width" onClick={handleStop}>
-                                    <Square size={18} fill="currentColor" /> 停止训练
-                                </button>
-                            )}
-                        </div>
-                    </div>
-                </div>
-
-                {/* Log Output */}
-                <div className="log-card">
-                    <div className="log-header">
-                        <h3>Run Logs</h3>
-                        <span className="log-count">{logs.length} lines</span>
-                    </div>
-                    <div className="log-window">
-                        {logs.length === 0 && <div className="no-logs">Waiting for logs...</div>}
-                        {logs.map((log, i) => (
-                            <div key={i} className={`log-line ${log.type}`}>
-                                <span className="log-time">[{new Date(log.time).toLocaleTimeString()}]</span>
-                                <span className="log-msg">{log.msg}</span>
-                            </div>
-                        ))}
-                        <div ref={logEndRef} />
-                    </div>
+                    {/* Action Button */}
+                    <button
+                        onClick={status === 'running' ? handleStop : handleStart}
+                        disabled={status === 'starting' || (!stats || stats.annotated === 0)}
+                        style={{
+                            width: '100%',
+                            height: '56px',
+                            borderRadius: '16px',
+                            fontSize: '1rem',
+                            fontWeight: 700,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '10px',
+                            background: status === 'running' 
+                                ? 'linear-gradient(135deg, #ef4444, #dc2626)' 
+                                : 'linear-gradient(135deg, #22c55e, #4ade80)',
+                            border: 'none',
+                            color: 'white',
+                            cursor: status === 'starting' || (!stats || stats.annotated === 0) ? 'not-allowed' : 'pointer',
+                            opacity: status === 'starting' || (!stats || stats.annotated === 0) ? 0.6 : 1,
+                            boxShadow: status !== 'running' ? '0 8px 24px rgba(34,197,94,0.25)' : '0 8px 24px rgba(239,68,68,0.25)',
+                            transition: 'all 0.3s ease'
+                        }}
+                    >
+                        {status === 'running' ? (
+                            <><Square size={18} fill="currentColor" /> 停止训练</>
+                        ) : status === 'starting' ? (
+                            <><RefreshCw size={18} className="spin" /> 启动中...</>
+                        ) : (
+                            <><Play size={18} fill="currentColor" /> 开始训练</>
+                        )}
+                    </button>
                 </div>
             </div>
 
             <style>{`
-                /* Global Reset for this component */
-                * { box-sizing: border-box; }
-
-                /* Enhanced Styles */
-                .train-panel { 
-                    padding: 24px; 
-                    height: 100%; 
-                    display: flex; 
-                    flex-direction: column; 
-                    background: var(--bg-primary); 
-                    color: var(--text-primary);
-                    overflow: hidden; /* Prevent outer scroll */
+                .spin {
+                    animation: spin 1s linear infinite;
                 }
-
-                .train-header { 
-                    display: flex; 
-                    justify-content: space-between; 
-                    align-items: center; 
-                    margin-bottom: 16px; 
-                    padding-bottom: 16px;
-                    border-bottom: 1px solid var(--border-color);
-                    flex-shrink: 0; /* Prevent header from shrinking */
+                @keyframes spin {
+                    from { transform: rotate(0deg); }
+                    to { transform: rotate(360deg); }
                 }
-                
-                .train-header h2 { 
-                    display: flex; 
-                    align-items: center; 
-                    gap: 12px; 
-                    margin: 0; 
-                    font-size: 1.5rem;
-                    font-weight: 600;
-                    background: linear-gradient(135deg, var(--text-primary) 0%, var(--text-secondary) 100%);
-                    -webkit-background-clip: text;
-                    -webkit-text-fill-color: transparent;
-                }
-                
-                .train-layout { 
-                    display: grid; 
-                    grid-template-columns: 460px 1fr; 
-                    gap: 24px; 
-                    flex: 1; 
-                    min-height: 0; /* Important for nested scrolling */
-                    overflow: hidden;
-                }
-                
-                .train-controls {
-                    display: flex;
-                    flex-direction: column;
-                    gap: 24px;
-                    overflow-y: auto;
-                    height: 100%;
-                    padding-right: 12px;
-                    scrollbar-width: thin;
-                    scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
-                }
-
-                .train-controls::-webkit-scrollbar {
-                    width: 6px;
-                }
-
-                .train-controls::-webkit-scrollbar-track {
-                    background: transparent;
-                }
-
-                .train-controls::-webkit-scrollbar-thumb {
-                    background: rgba(255, 255, 255, 0.1);
-                    border-radius: 10px;
-                }
-
-                .train-controls::-webkit-scrollbar-thumb:hover {
-                    background: rgba(255, 255, 255, 0.2);
-                }
-
-                /* Info Card */
-                .info-card {
-                    background: var(--bg-secondary);
-                    padding: 20px;
-                    border-radius: 12px;
-                    border: 1px solid var(--border-color);
-                    box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-                }
-
-                .info-card h3 {
-                    display: flex; 
-                    align-items: center; 
-                    gap: 10px; 
-                    margin-top: 0; 
-                    margin-bottom: 16px; 
-                    font-size: 1.0rem; 
-                    color: var(--text-primary);
-                    font-weight: 600;
-                    text-transform: uppercase;
-                    letter-spacing: 0.5px;
-                }
-
-                .stat-row { display: flex; justify-content: space-between; margin-bottom: 20px; text-align: center; }
-                .stat-item { display: flex; flex-direction: column; flex: 1; }
-                .stat-label { font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 4px; }
-                .stat-value { font-size: 1.2rem; font-weight: 700; color: var(--text-primary); }
-                .stat-value.highlight { color: var(--accent-primary); }
-                .stat-label.highlight { color: var(--accent-primary); font-weight: 600; }
-                .text-muted { opacity: 0.5; }
-
-                .warning-box {
-                    background: rgba(239, 68, 68, 0.1);
-                    border: 1px solid rgba(239, 68, 68, 0.2);
-                    color: var(--danger);
-                    padding: 10px;
-                    border-radius: 8px;
-                    font-size: 0.85rem;
-                    display: flex;
-                    gap: 8px;
-                    align-items: flex-start;
-                    margin-bottom: 15px;
-                }
-
-                .samples-preview label { display: block; font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 8px; }
-                .sample-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
-                .sample-img { aspect-ratio: 1; background: #000; border-radius: 4px; overflow: hidden; border: 1px solid var(--border-color); }
-                .sample-img img { width: 100%; height: 100%; object-fit: cover; opacity: 0.8; }
-                .sample-more { font-size: 0.7rem; display: flex; align-items: center; justify-content: center; background: var(--bg-tertiary); color: var(--text-secondary); border-radius: 4px; }
-
-                /* Config Card Polish */
-                .config-card { 
-                    padding: 0; 
-                    background: var(--bg-secondary); 
-                    border-radius: 16px; 
-                    border: 1px solid var(--border-color);
-                    display: flex;
-                    flex-direction: column;
-                    box-shadow: 0 8px 32px rgba(0,0,0,0.2);
-                    overflow: hidden;
-                }
-
-                .card-header-modern {
-                    padding: 20px 24px;
-                    border-bottom: 1px solid var(--border-color);
-                    display: flex;
-                    align-items: center;
-                    gap: 12px;
-                    background: rgba(255,255,255,0.02);
-                }
-
-                .card-header-modern h3 {
-                    margin: 0;
-                    font-size: 1.1rem;
-                    font-weight: 600;
-                    color: var(--text-primary);
-                }
-
-                .config-section {
-                    padding: 20px 24px;
-                    border-bottom: 1px solid rgba(255,255,255,0.06);
-                }
-
-                .config-section.no-border {
-                    border-bottom: none;
-                }
-
-                .section-title {
-                    font-size: 0.8rem;
-                    font-weight: 700;
-                    text-transform: uppercase;
-                    letter-spacing: 0.05em;
-                    color: var(--text-secondary);
-                    margin-top: 0;
-                    margin-bottom: 16px;
-                    display: flex;
-                    align-items: center;
-                    opacity: 0.7;
-                }
-
-                .icon-accent { color: var(--accent-primary); }
-                
-                /* Form Elements */
-                .form-group, .form-group-modern { margin-bottom: 16px; }
-                .form-group-modern:last-child { margin-bottom: 0; }
-                
-                .label-modern { 
-                    display: block; 
-                    font-size: 0.85rem; 
-                    color: var(--text-secondary); 
-                    margin-bottom: 8px;
-                    font-weight: 500;
-                }
-                
-                .input-wrapper-modern, .select-wrapper-modern {
-                    position: relative;
-                    display: flex;
-                    align-items: center;
-                    transition: all 0.3s ease;
-                }
-
-                .input-icon-left {
-                    position: absolute;
-                    left: 14px;
-                    color: var(--text-tertiary);
-                    pointer-events: none;
-                    transition: all 0.3s ease;
-                    z-index: 2;
-                }
-
-                .input-wrapper-modern:focus-within .input-icon-left {
-                    color: var(--accent-primary);
-                    transform: scale(1.1);
-                }
-
-                .input-wrapper-modern.has-action .input-modern-field {
-                    padding-right: 48px;
-                }
-
-                .input-action-btn {
-                    position: absolute;
-                    right: 8px;
-                    background: rgba(255, 255, 255, 0.05);
-                    border: 1px solid rgba(255, 255, 255, 0.1);
-                    color: var(--text-secondary);
-                    width: 32px;
-                    height: 32px;
-                    border-radius: 8px;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    cursor: pointer;
-                    transition: all 0.2s;
-                    z-index: 2;
-                }
-
-                .input-action-btn:hover:not(:disabled) {
-                    background: rgba(88, 166, 255, 0.1);
-                    border-color: var(--accent-primary);
-                    color: var(--accent-primary);
-                    transform: translateY(-1px);
-                }
-
-                .input-action-btn:disabled {
-                    opacity: 0.3;
-                    cursor: not-allowed;
-                }
-
-                .input-modern-field, .custom-select-trigger { 
-                    width: 100%; 
-                    padding: 12px 14px 12px 42px; 
-                    background: rgba(0, 0, 0, 0.25); 
-                    border: 1px solid rgba(255, 255, 255, 0.08); 
-                    border-radius: 12px; 
-                    color: var(--text-primary); 
-                    font-size: 0.95rem;
-                    font-weight: 600;
-                    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-                    box-sizing: border-box;
-                }
-                
-                .input-modern-field:focus {
-                    border-color: var(--accent-primary);
-                    background: rgba(0, 0, 0, 0.4);
-                    box-shadow: 0 0 0 4px rgba(88, 166, 255, 0.15);
-                    outline: none;
-                }
-
-                .custom-select-trigger {
-                    width: 100%; 
-                    padding: 12px 14px 12px 42px; 
-                    background: rgba(0, 0, 0, 0.2); 
-                    border: 1px solid rgba(255, 255, 255, 0.1); 
-                    border-radius: 12px; 
-                    color: var(--text-primary); 
-                    font-size: 0.95rem;
-                    font-weight: 500;
-                    display: flex;
-                    align-items: center;
-                    cursor: pointer;
-                    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-                    position: relative;
-                }
-
-                .custom-select-trigger.disabled {
-                    opacity: 0.5;
-                    cursor: not-allowed;
-                }
-
-                .custom-select-trigger:hover:not(.disabled) {
-                    background: rgba(255, 255, 255, 0.05);
-                    border-color: rgba(255, 255, 255, 0.2);
-                }
-
-                .custom-select-trigger.open {
-                    border-color: var(--accent-primary);
-                    background: rgba(0, 0, 0, 0.3);
-                    box-shadow: 0 0 0 4px rgba(88, 166, 255, 0.1);
-                }
-
-                .arrow-icon {
-                    position: absolute;
-                    right: 16px;
-                    width: 8px;
-                    height: 8px;
-                    border-right: 2px solid var(--text-tertiary);
-                    border-bottom: 2px solid var(--text-tertiary);
-                    transform: rotate(45deg);
-                    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-                }
-
-                .custom-select-trigger.open .arrow-icon {
-                    transform: rotate(-135deg) translateY(-2px);
-                    border-color: var(--accent-primary);
-                }
-
-                .custom-dropdown-menu {
-                    position: absolute;
-                    top: calc(100% + 8px);
-                    left: 0;
-                    right: 0;
-                    background: rgba(22, 27, 34, 0.95);
-                    backdrop-filter: blur(20px);
-                    border: 1px solid rgba(255, 255, 255, 0.1);
-                    border-radius: 12px;
-                    padding: 6px;
-                    z-index: 100;
-                    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
-                    animation: dropdownFadeIn 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-                }
-
-                @keyframes dropdownFadeIn {
-                    from { opacity: 0; transform: translateY(-10px); }
-                    to { opacity: 1; transform: translateY(0); }
-                }
-
-                .dropdown-item-modern {
-                    padding: 10px 14px;
-                    border-radius: 8px;
-                    cursor: pointer;
-                    font-size: 0.9rem;
-                    color: var(--text-secondary);
-                    transition: all 0.2s;
-                }
-
-                .dropdown-item-modern:hover {
-                    background: rgba(255, 255, 255, 0.05);
-                    color: var(--text-primary);
-                    padding-left: 18px;
-                }
-
-                .dropdown-item-modern.active {
-                    background: var(--accent-primary);
-                    color: white;
-                    font-weight: 600;
-                }
-
-                .input-modern-field { 
-                    width: 100%; 
-                    padding: 12px 14px 12px 42px; 
-                    background: rgba(0, 0, 0, 0.2); 
-                    border: 1px solid rgba(255, 255, 255, 0.1); 
-                    border-radius: 12px; 
-                    color: var(--text-primary); 
-                    font-size: 0.95rem;
-                    font-weight: 500;
-                    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-                    box-sizing: border-box;
-                }
-
-                .select-modern { display: none; } /* Hide old select */
-
-                .form-row-modern { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-                
-                /* Buttons */
-                .train-actions-modern { 
-                    padding: 20px 24px;
-                    background: rgba(255,255,255,0.02);
-                    border-top: 1px solid var(--border-color);
-                    margin-top: auto;
-                }
-
-                .btn-modern-primary { 
-                    background: linear-gradient(135deg, #4da1ff 0%, #2f81f7 100%);
-                    color: white; 
-                    border: 1px solid rgba(255, 255, 255, 0.1);
-                    padding: 14px; 
-                    border-radius: 12px; 
-                    cursor: pointer; 
-                    display: flex; 
-                    align-items: center; 
-                    justify-content: center; 
-                    gap: 12px; 
-                    font-weight: 700; 
-                    font-size: 1.05rem;
-                    transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); 
-                    box-shadow: 0 4px 15px rgba(47, 129, 247, 0.3);
-                    width: 100%;
-                }
-                
-                .btn-modern-primary:hover:not(:disabled) { 
-                    transform: translateY(-3px) scale(1.02);
-                    box-shadow: 0 12px 25px rgba(47, 129, 247, 0.4);
-                    filter: brightness(1.1);
-                }
-                
-                .btn-modern-primary:disabled {
-                    opacity: 0.5;
-                    cursor: not-allowed;
-                    filter: grayscale(1);
-                    transform: none !important;
-                    box-shadow: none;
-                }
-
-                .btn-modern-danger { 
-                    background: linear-gradient(135deg, #f85149 0%, #b91c1c 100%);
-                    color: white; 
-                    border: 1px solid rgba(255, 255, 255, 0.1);
-                    padding: 14px; 
-                    border-radius: 12px; 
-                    cursor: pointer; 
-                    display: flex; 
-                    align-items: center; 
-                    justify-content: center; 
-                    gap: 10px; 
-                    font-weight: 700; 
-                    transition: all 0.3s ease;
-                    box-shadow: 0 4px 15px rgba(248, 81, 73, 0.3);
-                    width: 100%;
-                }
-
-                .btn-modern-danger:hover {
-                    transform: translateY(-2px);
-                    filter: brightness(1.1);
-                    box-shadow: 0 8px 20px rgba(248, 81, 73, 0.4);
-                }
-                
-                /* Log Card */
-                .log-card { 
-                    background: #121212; /* Darker purely for terminal feel */
-                    border-radius: 12px; 
-                    display: flex; 
-                    flex-direction: column; 
-                    overflow: hidden; 
-                    border: 1px solid #333; 
-                    box-shadow: 0 44px 20px rgba(0,0,0,0.2);
-                    height: 100%; /* Fill available space */
-                }
-                
-                .log-header { 
-                    padding: 12px 20px; 
-                    background: #1a1a1a; 
-                    border-bottom: 1px solid #333; 
-                    display: flex; 
-                    justify-content: space-between; 
-                    align-items: center; 
-                    flex-shrink: 0;
-                }
-                
-                .log-header h3 { margin: 0; font-size: 0.95rem; color: #a0a0a0; font-family: 'Consolas', monospace; }
-                .log-count { font-size: 0.8rem; color: #666; background: #252526; padding: 2px 8px; border-radius: 4px; }
-                
-                .log-window { 
-                    flex: 1; 
-                    overflow-y: auto; 
-                    padding: 20px; 
-                    font-family: 'JetBrains Mono', 'Consolas', monospace; 
-                    font-size: 0.9rem; 
-                    color: #d4d4d4; 
-                    line-height: 1.5;
-                }
-                
-                /* Custom Scrollbar for logs */
-                .log-window::-webkit-scrollbar { width: 10px; }
-                .log-window::-webkit-scrollbar-track { background: #121212; }
-                .log-window::-webkit-scrollbar-thumb { background: #333; border-radius: 5px; border: 2px solid #121212; }
-                .log-window::-webkit-scrollbar-thumb:hover { background: #555; }
-
-                .log-line { margin-bottom: 4px; white-space: pre-wrap; word-break: break-all; animation: fadeIn 0.1s ease; }
-                @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-
-                .log-line.stderr { color: #ff7b72; }
-                .log-line.system { color: #dcdcaa; font-style: italic; border-left: 2px solid #dcdcaa; padding-left: 10px; margin: 8px 0; }
-                .log-time { color: #569cd6; margin-right: 12px; font-size: 0.8rem; opacity: 0.5; user-select: none; }
-                
-                /* Status Badge */
-                .status-badge { 
-                    padding: 6px 16px; 
-                    border-radius: 30px; 
-                    font-size: 0.9rem; 
-                    font-weight: 600; 
-                    display: flex; 
-                    align-items: center; 
-                    gap: 8px;
-                    border: 1px solid transparent;
-                }
-                
-                .status-badge.idle { background: var(--bg-tertiary); color: var(--text-secondary); border-color: var(--border-color); }
-                .status-badge.running { background: rgba(59, 130, 246, 0.1); color: #3b82f6; border-color: rgba(59, 130, 246, 0.2); }
-                .status-badge.completed { background: rgba(16, 185, 129, 0.1); color: #10b981; border-color: rgba(16, 185, 129, 0.2); }
-                .status-badge.failed { background: rgba(239, 68, 68, 0.1); color: #ef4444; border-color: rgba(239, 68, 68, 0.2); }
-
-                .spin { animation: spin 1s linear infinite; }
-                @keyframes spin { 100% { transform: rotate(360deg); } }
-                
-                .full-width { width: 100%; }
-                
-                .no-logs { 
-                    display: flex; 
-                    flex-direction: column; 
-                    align-items: center; 
-                    justify-content: center; 
-                    height: 100%; 
-                    color: #444; 
-                    font-style: italic; 
-                }
-                .no-logs::before {
-                    content: '>';
-                    font-size: 3rem;
-                    margin-bottom: 10px;
-                    opacity: 0.2;
-                }
-                /* Dashboard & Charts */
-                .dashboard-grid { 
-                    display: flex; 
-                    flex-direction: column; 
-                    gap: 16px; 
-                    margin-bottom: 24px; 
-                }
-                .dashboard-card { 
-                    padding: 20px; 
-                    border-radius: 16px; 
-                    background: rgba(22, 27, 34, 0.4); 
-                    border: 1px solid rgba(255, 255, 255, 0.1); 
-                }
-                
-                .progress-overview { margin-bottom: 20px; }
-                .progress-info { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 12px; }
-                .current-epoch { font-size: 2rem; font-weight: 800; color: var(--text-primary); line-height: 1; }
-                .total-epoch { font-size: 1rem; color: var(--text-tertiary); margin-left: 8px; }
-                
-                .progress-bar-container { height: 8px; background: rgba(255, 255, 255, 0.05); border-radius: 4px; overflow: hidden; }
-                .progress-bar-fill { height: 100%; background: linear-gradient(90deg, #2f81f7, #60a5fa); border-radius: 4px; transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1); }
-                
-                .metrics-summary-row { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; padding-top: 15px; border-top: 1px solid rgba(255, 255, 255, 0.05); }
-                .summary-item label { display: block; font-size: 0.75rem; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
-                .summary-item .value { font-size: 1.25rem; font-weight: 700; color: var(--text-primary); }
-                .summary-item .value.accent { color: #79c0ff; }
-
-                .charts-container { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-                .chart-card { background: rgba(0, 0, 0, 0.2); }
-                
-                .metrics-chart { width: 100%; }
-                .chart-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
-                .chart-label { font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); }
-                .chart-value { font-family: 'JetBrains Mono', monospace; font-size: 1.1rem; font-weight: 700; }
-                
-                .chart-placeholder { height: 120px; display: flex; align-items: center; justify-content: center; font-size: 0.85rem; color: #444; font-style: italic; }
-                .chart-placeholder.mini { height: 80px; font-size: 0.75rem; color: #666; opacity: 0.7; }
-
             `}</style>
         </div>
     );

@@ -4,7 +4,7 @@ import { Layers, Image as ImageIcon, Box, ArrowLeft, Settings, Home, Download, C
 import { ExportModal } from './ExportModal';
 
 export const MainLayout = ({ children }) => {
-    const { currentProject, view, goBack, setView, exportProject } = useProject();
+    const { currentProject, view, goBack, setView, exportProject, openSettings } = useProject();
     const [notification, setNotification] = useState(null);
 
     const handleExport = async (options) => {
@@ -102,8 +102,7 @@ export const MainLayout = ({ children }) => {
                 </nav>
 
                 <div className="sidebar-footer">
-                    {/* Divider handled by CSS or removed for cleaner look */}
-                    <button className="nav-btn">
+                    <button className="nav-btn" onClick={openSettings}>
                         <Settings size={18} strokeWidth={2} />
                         <span>系统设置</span>
                     </button>

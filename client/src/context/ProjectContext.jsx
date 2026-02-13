@@ -92,12 +92,18 @@ export const ProjectProvider = ({ children }) => {
         } else if (view === 'export' || view === 'training') {
             setView('gallery');
             if (currentProject) fetchImages(currentProject);
+        } else if (view === 'settings') {
+            setView('dashboard');
         } else if (view === 'gallery') {
             setView('dashboard');
             setCurrentProject(null);
             setImages([]);
             fetchProjects(); // Refresh counts
         }
+    };
+
+    const openSettings = () => {
+        setView('settings');
     };
 
     const exportProject = async (projectId, options) => {
@@ -203,6 +209,7 @@ export const ProjectProvider = ({ children }) => {
         selectProject,
         openEditor,
         goBack,
+        openSettings,
         refreshImages: () => fetchImages(currentProject),
         exportProject,
         exportCollaboration,

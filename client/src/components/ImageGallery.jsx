@@ -4,24 +4,36 @@ import { ImageUpload } from './ImageUpload';
 
 const PAGE_SIZE = 60;
 
-const ThumbnailCard = ({ imageObj, projectId, index, onSelectImage }) => {
+const ThumbnailCard = ({ imageObj, projectId, index, onSelectImage, isSelected }) => {
     const [isLoaded, setIsLoaded] = useState(false);
     const [errorCount, setErrorCount] = useState(0);
 
     const img = typeof imageObj === 'string' ? imageObj : imageObj.name;
     const hasAnnotation = typeof imageObj === 'string' ? false : imageObj.hasAnnotation;
+    const imageSize = typeof imageObj === 'string' ? null : imageObj.size;
 
     const thumbnailUrl = `http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/thumbnails/${encodeURIComponent(img)}`;
     const fallbackUrl = `http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/uploads/${encodeURIComponent(img)}`;
 
     const currentSrc = errorCount > 0 ? fallbackUrl : thumbnailUrl;
 
+    const formatSize = (bytes) => {
+        if (!bytes) return '';
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+        return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    };
+
     return (
         <div
             className="image-card"
             style={{
                 transitionDelay: `${(index % 8) * 0.05}s`,
-                position: 'relative'
+                position: 'relative',
+                ...(isSelected ? {
+                    borderColor: 'rgba(77, 161, 255, 0.6)',
+                    boxShadow: '0 0 0 2px rgba(77, 161, 255, 0.3), 0 12px 25px rgba(0, 0, 0, 0.4)'
+                } : {})
             }}
             onClick={() => onSelectImage(img)}
         >
@@ -65,15 +77,35 @@ const ThumbnailCard = ({ imageObj, projectId, index, onSelectImage }) => {
                         <CheckCircle size={14} fill="currentColor" />
                     </div>
                 )}
+
+                {/* Image Size Badge */}
+                {imageSize && (
+                    <div style={{
+                        position: 'absolute',
+                        bottom: '32px',
+                        left: '8px',
+                        zIndex: 10,
+                        background: 'rgba(0, 0, 0, 0.7)',
+                        color: 'rgba(255, 255, 255, 0.8)',
+                        padding: '2px 6px',
+                        borderRadius: '6px',
+                        fontSize: '10px',
+                        fontWeight: 600,
+                        backdropFilter: 'blur(4px)',
+                        border: '1px solid rgba(255,255,255,0.1)'
+                    }}>
+                        {formatSize(imageSize)}
+                    </div>
+                )}
             </div>
-            <div className="image-card-label">
-                {img}
+            <div className="image-card-label" style={{ opacity: 1, transform: 'translateY(0)' }}>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{img}</span>
             </div>
         </div>
     );
 };
 
-export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload }) => {
+export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, selectedImage }) => {
     const [page, setPage] = useState(0);
     const [search, setSearch] = useState('');
 
@@ -180,6 +212,7 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload }
                             projectId={projectId}
                             index={index}
                             onSelectImage={onSelectImage}
+                            isSelected={selectedImage === (typeof item === 'string' ? item : item.name)}
                         />
                     );
                 })}
