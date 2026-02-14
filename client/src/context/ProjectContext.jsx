@@ -102,6 +102,13 @@ export const ProjectProvider = ({ children }) => {
         }
     };
 
+    const goToTraining = (projectId) => {
+        if (projectId) {
+            setCurrentProject(projectId);
+        }
+        setView('training');
+    };
+
     const openSettings = () => {
         setView('settings');
     };
@@ -191,6 +198,69 @@ export const ProjectProvider = ({ children }) => {
         }
     };
 
+    const selectFolder = async () => {
+        try {
+            const res = await fetch('http://localhost:5000/api/utils/select-folder', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            const data = await res.json();
+            return data;
+        } catch (err) {
+            console.error("Failed to select folder", err);
+            return { path: null, error: '选择文件夹失败' };
+        }
+    };
+
+    const scanImages = async (folderPath, maxResults = 5000) => {
+        try {
+            const res = await fetch('http://localhost:5000/api/utils/scan-images', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ folderPath, maxResults })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                return { success: true, ...data };
+            } else {
+                return { success: false, error: data.error || '扫描失败' };
+            }
+        } catch (err) {
+            console.error("Failed to scan images", err);
+            return { success: false, error: '扫描失败：网络错误' };
+        }
+    };
+
+    const importImages = async (projectId, images, mode = 'copy') => {
+        try {
+            const res = await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/import-images`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ images, mode })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                return { success: true, ...data };
+            } else {
+                return { success: false, error: data.error || '导入失败' };
+            }
+        } catch (err) {
+            console.error("Failed to import images", err);
+            return { success: false, error: '导入失败：网络错误' };
+        }
+    };
+
+    const getImportHistory = async (projectId) => {
+        try {
+            const res = await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/import-history`);
+            const data = await res.json();
+            return data.history || [];
+        } catch (err) {
+            console.error("Failed to get import history", err);
+            return [];
+        }
+    };
+
     // Initial Load
     useEffect(() => {
         fetchProjects();
@@ -209,12 +279,17 @@ export const ProjectProvider = ({ children }) => {
         selectProject,
         openEditor,
         goBack,
+        goToTraining,
         openSettings,
         refreshImages: () => fetchImages(currentProject),
         exportProject,
         exportCollaboration,
         importCollaboration,
-        renumberProject
+        renumberProject,
+        selectFolder,
+        scanImages,
+        importImages,
+        getImportHistory
     };
 
     return (

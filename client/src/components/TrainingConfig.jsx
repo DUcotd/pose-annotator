@@ -43,10 +43,6 @@ export const TrainingConfig = () => {
         mixup: 0,
         copy_paste: 0,
         
-        // 模糊和噪声
-        blur: 0,
-        noise: 0,
-        
         // 其他
         erasing: 0.4,
         crop_fraction: 1.0
@@ -172,6 +168,7 @@ export const TrainingConfig = () => {
     const handleStart = async () => {
         try {
             setStatus('starting');
+            
             const res = await fetch(`http://localhost:5000/api/projects/${currentProject}/train`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -185,11 +182,16 @@ export const TrainingConfig = () => {
                 startPolling();
             } else {
                 setStatus('failed');
-                alert(`Start failed: ${data.error}`);
+                const errorMsg = data.error || 'Unknown error';
+                if (errorMsg.includes('Dataset config not found')) {
+                    alert(`⚠️ 数据集未导出\n\n请先导出数据集再开始训练：\n1. 点击左侧导航栏的「导出数据集」\n2. 配置导出选项并点击导出\n3. 导出成功后返回此页面开始训练\n\n详细错误：${errorMsg}`);
+                } else {
+                    alert(`启动失败: ${errorMsg}`);
+                }
             }
         } catch (err) {
             setStatus('failed');
-            alert(`Network error: ${err.message}`);
+            alert(`网络错误: ${err.message}`);
         }
     };
 

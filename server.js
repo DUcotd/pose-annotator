@@ -644,6 +644,224 @@ app.post('/api/utils/select-python', async (req, res) => {
     }
 });
 
+const SUPPORTED_IMAGE_EXTENSIONS = /\.(jpg|jpeg|png|gif|bmp|webp)$/i;
+
+const scanDirectoryRecursive = (dirPath, baseDir, results = [], errors = []) => {
+    try {
+        const items = fs.readdirSync(dirPath);
+        
+        for (const item of items) {
+            if (item.startsWith('.') || item.startsWith('_to_delete_')) continue;
+            
+            const itemPath = path.join(dirPath, item);
+            
+            try {
+                const stat = fs.statSync(itemPath);
+                
+                if (stat.isDirectory()) {
+                    scanDirectoryRecursive(itemPath, baseDir, results, errors);
+                } else if (stat.isFile() && SUPPORTED_IMAGE_EXTENSIONS.test(item)) {
+                    let dimensions = null;
+                    try {
+                        dimensions = sizeOf(itemPath);
+                    } catch (e) {
+                        // Could not get dimensions, will be null
+                    }
+                    
+                    results.push({
+                        name: item,
+                        path: itemPath,
+                        relativePath: path.relative(baseDir, itemPath),
+                        size: stat.size,
+                        width: dimensions ? dimensions.width : null,
+                        height: dimensions ? dimensions.height : null,
+                        createdTime: stat.birthtime,
+                        modifiedTime: stat.mtime,
+                        error: null
+                    });
+                }
+            } catch (e) {
+                errors.push({
+                    path: itemPath,
+                    error: e.message || 'Access denied'
+                });
+            }
+        }
+    } catch (e) {
+        errors.push({
+            path: dirPath,
+            error: e.message || 'Failed to read directory'
+        });
+    }
+    
+    return { results, errors };
+};
+
+app.post('/api/utils/scan-images', async (req, res) => {
+    const { folderPath, maxResults = 5000 } = req.body;
+    
+    if (!folderPath) {
+        return res.status(400).json({ error: '文件夹路径不能为空' });
+    }
+    
+    if (!fs.existsSync(folderPath)) {
+        return res.status(400).json({ error: '指定的文件夹不存在' });
+    }
+    
+    try {
+        const stat = fs.statSync(folderPath);
+        if (!stat.isDirectory()) {
+            return res.status(400).json({ error: '指定的路径不是文件夹' });
+        }
+        
+        console.log(`[Scan] Starting scan of: ${folderPath}`);
+        const startTime = Date.now();
+        
+        const { results, errors } = scanDirectoryRecursive(folderPath, folderPath);
+        
+        const scanTime = Date.now() - startTime;
+        console.log(`[Scan] Found ${results.length} images in ${scanTime}ms`);
+        
+        const limitedResults = results.slice(0, maxResults);
+        const wasLimited = results.length > maxResults;
+        
+        res.json({
+            success: true,
+            images: limitedResults,
+            totalFound: results.length,
+            returnedCount: limitedResults.length,
+            wasLimited,
+            errors: errors.slice(0, 50),
+            errorCount: errors.length,
+            scanTime
+        });
+    } catch (err) {
+        console.error('[Scan] Failed to scan directory:', err);
+        res.status(500).json({ error: '扫描文件夹失败: ' + err.message });
+    }
+});
+
+app.post('/api/projects/:projectId/import-images', async (req, res) => {
+    const { projectId } = req.params;
+    const { images, mode = 'copy' } = req.body;
+    
+    if (!images || !Array.isArray(images) || images.length === 0) {
+        return res.status(400).json({ error: '请提供要导入的图片列表' });
+    }
+    
+    if (mode !== 'copy' && mode !== 'move') {
+        return res.status(400).json({ error: '导入模式必须是 copy 或 move' });
+    }
+    
+    const paths = ensureProjectDirs(projectId);
+    const existingFiles = new Set(fs.readdirSync(paths.uploads));
+    
+    const results = {
+        success: [],
+        failed: [],
+        skipped: [],
+        duplicates: []
+    };
+    
+    const importRecord = {
+        timestamp: new Date().toISOString(),
+        sourcePath: images.length > 0 ? path.dirname(images[0].path) : '',
+        mode,
+        totalRequested: images.length,
+        successCount: 0,
+        failedCount: 0,
+        skippedCount: 0,
+        details: []
+    };
+    
+    for (const imageInfo of images) {
+        const { path: sourcePath, name: originalName } = imageInfo;
+        
+        if (!fs.existsSync(sourcePath)) {
+            results.failed.push({ path: sourcePath, error: '源文件不存在' });
+            results.details = results.details || [];
+            results.details.push({ originalName, error: '源文件不存在' });
+            continue;
+        }
+        
+        let targetName = originalName;
+        let counter = 1;
+        while (existingFiles.has(targetName)) {
+            const ext = path.extname(originalName);
+            const baseName = path.basename(originalName, ext);
+            targetName = `${baseName}_${Date.now()}_${counter}${ext}`;
+            counter++;
+        }
+        
+        if (targetName !== originalName) {
+            results.duplicates.push({ original: originalName, renamed: targetName });
+        }
+        
+        const targetPath = path.join(paths.uploads, targetName);
+        
+        try {
+            if (mode === 'copy') {
+                await fs.promises.copyFile(sourcePath, targetPath);
+            } else {
+                await fs.promises.rename(sourcePath, targetPath);
+            }
+            
+            existingFiles.add(targetName);
+            results.success.push({ originalName, targetName });
+            importRecord.details.push({ originalName, targetName, status: 'success' });
+        } catch (err) {
+            results.failed.push({ path: sourcePath, error: err.message });
+            importRecord.details.push({ originalName, error: err.message, status: 'failed' });
+        }
+    }
+    
+    importRecord.successCount = results.success.length;
+    importRecord.failedCount = results.failed.length;
+    importRecord.skippedCount = results.skipped.length;
+    
+    const historyPath = path.join(paths.root, 'import-history.json');
+    let history = [];
+    if (fs.existsSync(historyPath)) {
+        try {
+            history = JSON.parse(fs.readFileSync(historyPath, 'utf8'));
+        } catch (e) {
+            history = [];
+        }
+    }
+    history.unshift(importRecord);
+    if (history.length > 50) {
+        history = history.slice(0, 50);
+    }
+    fs.writeFileSync(historyPath, JSON.stringify(history, null, 2));
+    
+    console.log(`[Import] Project ${projectId}: ${results.success.length} success, ${results.failed.length} failed`);
+    
+    res.json({
+        success: true,
+        message: `成功导入 ${results.success.length}/${images.length} 张图片`,
+        results,
+        importRecord
+    });
+});
+
+app.get('/api/projects/:projectId/import-history', (req, res) => {
+    const { projectId } = req.params;
+    const paths = getProjectPaths(projectId);
+    const historyPath = path.join(paths.root, 'import-history.json');
+    
+    if (!fs.existsSync(historyPath)) {
+        return res.json({ history: [] });
+    }
+    
+    try {
+        const history = JSON.parse(fs.readFileSync(historyPath, 'utf8'));
+        res.json({ history });
+    } catch (e) {
+        console.error('[Import History] Failed to read:', e.message);
+        res.json({ history: [] });
+    }
+});
+
 // --- API: 全局设置 ---
 
 // 获取全局设置
@@ -1153,8 +1371,6 @@ app.post('/api/projects/:projectId/train', (req, res) => {
         mosaic = 1.0,
         mixup = 0,
         copy_paste = 0,
-        blur = 0,
-        noise = 0,
         erasing = 0.4,
         crop_fraction = 1.0
     } = req.body;
@@ -1208,8 +1424,6 @@ app.post('/api/projects/:projectId/train', (req, res) => {
         '--mosaic', String(augmentationEnabled ? mosaic : 0),
         '--mixup', String(augmentationEnabled ? mixup : 0),
         '--copy_paste', String(augmentationEnabled ? copy_paste : 0),
-        '--blur', String(augmentationEnabled ? blur : 0),
-        '--noise', String(augmentationEnabled ? noise : 0),
         '--erasing', String(augmentationEnabled ? erasing : 0),
         '--crop_fraction', String(augmentationEnabled ? crop_fraction : 1.0)
     ];

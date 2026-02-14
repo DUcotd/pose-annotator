@@ -1,11 +1,26 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useProject } from '../context/ProjectContext';
-import { Layers, Image as ImageIcon, Box, ArrowLeft, Settings, Home, Download, CheckCircle, AlertTriangle, Terminal } from 'lucide-react';
+import { Layers, Image as ImageIcon, Box, ArrowLeft, Settings, Home, Download, CheckCircle, AlertTriangle, Terminal, Menu, X } from 'lucide-react';
 import { ExportModal } from './ExportModal';
 
 export const MainLayout = ({ children }) => {
     const { currentProject, view, goBack, setView, exportProject, openSettings } = useProject();
     const [notification, setNotification] = useState(null);
+    const [sidebarOpen, setSidebarOpen] = useState(false);
+
+    useEffect(() => {
+        const handleResize = () => {
+            if (window.innerWidth > 992) {
+                setSidebarOpen(false);
+            }
+        };
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+    }, []);
+
+    useEffect(() => {
+        setSidebarOpen(false);
+    }, [view, currentProject]);
 
     const handleExport = async (options) => {
         const result = await exportProject(currentProject, options);
@@ -25,8 +40,20 @@ export const MainLayout = ({ children }) => {
 
     return (
         <div className="app-layout">
-            {/* Sidebar */}
-            <aside className="sidebar">
+            <button 
+                className="mobile-menu-btn"
+                onClick={() => setSidebarOpen(!sidebarOpen)}
+                aria-label="Toggle menu"
+            >
+                {sidebarOpen ? <X size={22} /> : <Menu size={22} />}
+            </button>
+
+            <div 
+                className={`sidebar-overlay ${sidebarOpen ? 'visible' : ''}`}
+                onClick={() => setSidebarOpen(false)}
+            />
+
+            <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
                 <div className="sidebar-brand">
                     <div className="brand-logo">
                         <Box size={24} strokeWidth={2.5} />
@@ -41,7 +68,7 @@ export const MainLayout = ({ children }) => {
                     <div className="sidebar-section">
                         {currentProject ? (
                             <>
-                                <button onClick={goBack} className="nav-btn-back">
+                                <button onClick={() => { goBack(); setSidebarOpen(false); }} className="nav-btn-back">
                                     <ArrowLeft size={16} strokeWidth={2.5} />
                                     <span>返回项目列表</span>
                                 </button>
@@ -69,7 +96,7 @@ export const MainLayout = ({ children }) => {
                         <>
                             <NavButton
                                 active={view === 'gallery' || view === 'upload'}
-                                onClick={() => setView('gallery')}
+                                onClick={() => { setView('gallery'); setSidebarOpen(false); }}
                                 icon={<ImageIcon size={18} />}
                                 label="图库"
                             />
@@ -77,7 +104,7 @@ export const MainLayout = ({ children }) => {
                             {view === 'editor' && (
                                 <NavButton
                                     active={true}
-                                    onClick={() => { }}
+                                    onClick={() => {}}
                                     icon={<Box size={18} />}
                                     label="编辑器"
                                 />
@@ -85,14 +112,14 @@ export const MainLayout = ({ children }) => {
 
                             <NavButton
                                 active={view === 'export'}
-                                onClick={() => setView('export')}
+                                onClick={() => { setView('export'); setSidebarOpen(false); }}
                                 icon={<Download size={18} />}
                                 label="导出数据集"
                             />
 
                             <NavButton
                                 active={view === 'training'}
-                                onClick={() => setView('training')}
+                                onClick={() => { setView('training'); setSidebarOpen(false); }}
                                 icon={<Terminal size={18} />}
                                 label="模型训练"
                             />
@@ -102,14 +129,13 @@ export const MainLayout = ({ children }) => {
                 </nav>
 
                 <div className="sidebar-footer">
-                    <button className="nav-btn" onClick={openSettings}>
+                    <button className="nav-btn" onClick={() => { openSettings(); setSidebarOpen(false); }}>
                         <Settings size={18} strokeWidth={2} />
                         <span>系统设置</span>
                     </button>
                 </div>
             </aside>
 
-            {/* Main Content */}
             <main className="main-content">
                 {children}
 

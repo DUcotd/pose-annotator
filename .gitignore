@@ -43,6 +43,7 @@ yarn-error.log*
 # Editor directories and files
 .vscode/
 .idea/
+.trae/
 *.suo
 *.ntvs*
 *.njsproj

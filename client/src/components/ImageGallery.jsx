@@ -1,6 +1,8 @@
 import React, { useState, useMemo } from 'react';
-import { ChevronLeft, ChevronRight, Image as ImageIcon, CheckCircle, RefreshCw } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Image as ImageIcon, CheckCircle, RefreshCw, FolderOpen, Clock } from 'lucide-react';
 import { ImageUpload } from './ImageUpload';
+import { ImageDiscovery } from './ImageDiscovery';
+import { ImportHistory } from './ImportHistory';
 
 const PAGE_SIZE = 60;
 
@@ -108,6 +110,8 @@ const ThumbnailCard = ({ imageObj, projectId, index, onSelectImage, isSelected }
 export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, selectedImage }) => {
     const [page, setPage] = useState(0);
     const [search, setSearch] = useState('');
+    const [showDiscovery, setShowDiscovery] = useState(false);
+    const [showHistory, setShowHistory] = useState(false);
 
     // Filter images by search
     const filtered = useMemo(() => {
@@ -166,6 +170,33 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
                         }}
                     >
                         <RefreshCw size={16} />
+                    </button>
+                    <button
+                        onClick={() => setShowDiscovery(true)}
+                        className="icon-btn hover-card"
+                        title="从文件夹导入"
+                        style={{
+                            background: 'rgba(77, 161, 255, 0.1)',
+                            padding: '8px',
+                            borderRadius: '10px',
+                            border: '1px solid rgba(77, 161, 255, 0.2)',
+                            color: '#4da1ff'
+                        }}
+                    >
+                        <FolderOpen size={16} />
+                    </button>
+                    <button
+                        onClick={() => setShowHistory(true)}
+                        className="icon-btn hover-card"
+                        title="导入历史"
+                        style={{
+                            background: 'rgba(255,255,255,0.03)',
+                            padding: '8px',
+                            borderRadius: '10px',
+                            border: '1px solid rgba(255,255,255,0.05)'
+                        }}
+                    >
+                        <Clock size={16} />
                     </button>
                 </div>
                 <div style={{ position: 'relative', flex: 1, maxWidth: '320px' }}>
@@ -302,6 +333,24 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
                 <div style={{ margin: 'auto', textAlign: 'center', color: 'var(--text-secondary)', padding: '4rem' }}>
                     <p>没有找到匹配 "{search}" 的图片</p>
                 </div>
+            )}
+            
+            {showDiscovery && (
+                <ImageDiscovery
+                    projectId={projectId}
+                    onClose={() => setShowDiscovery(false)}
+                    onImportComplete={() => {
+                        onUpload();
+                        setShowDiscovery(false);
+                    }}
+                />
+            )}
+            
+            {showHistory && (
+                <ImportHistory
+                    projectId={projectId}
+                    onClose={() => setShowHistory(false)}
+                />
             )}
         </div>
     );

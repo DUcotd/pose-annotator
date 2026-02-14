@@ -1,12 +1,12 @@
 
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { Save, ArrowLeft, Trash2, Crosshair, Box, MousePointer2, ChevronDown, ChevronRight, ChevronLeft, Layers, ZoomIn, ZoomOut, Maximize, Tag } from 'lucide-react';
+import { Save, ArrowLeft, Trash2, Crosshair, Box, MousePointer2, ChevronDown, ChevronRight, ChevronLeft, Layers, ZoomIn, ZoomOut, Maximize, Tag, HelpCircle, Undo2, Redo2, RotateCcw, Grid3X3, Link, CheckCircle, Play, X, AlertTriangle } from 'lucide-react';
 import { useProject } from '../context/ProjectContext';
 import { ClassInputModal } from './ClassInputModal';
 import { ClassManagerModal } from './ClassManagerModal';
 
 export function AnnotationEditor({ image, projectId, onBack }) {
-    const { images, openEditor } = useProject();
+    const { images, openEditor, goToTraining, currentProject, exportProject } = useProject();
     const [annotations, setAnnotations] = useState([]);
     const [mode, setMode] = useState('bbox'); // 'bbox' | 'keypoint' | 'select'
     const [isDrawing, setIsDrawing] = useState(false);
@@ -29,6 +29,20 @@ export function AnnotationEditor({ image, projectId, onBack }) {
     const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
     const [editingLabelId, setEditingLabelId] = useState(null); // ID of bbox being renamed
     const [editLabelValue, setEditLabelValue] = useState("");
+
+    // Enhanced Features State
+    const [zoomLevel, setZoomLevel] = useState(1);
+    const [showGrid, setShowGrid] = useState(false);
+    const [showConnections, setShowConnections] = useState(true);
+    const [showHelpPanel, setShowHelpPanel] = useState(false);
+    const [history, setHistory] = useState([]);
+    const [historyIndex, setHistoryIndex] = useState(-1);
+    const [annotationStats, setAnnotationStats] = useState({ bboxes: 0, keypoints: 0, labeled: 0 });
+
+    // Completion Dialog State
+    const [showCompletionDialog, setShowCompletionDialog] = useState(false);
+    const [isExporting, setIsExporting] = useState(false);
+    const [exportStatus, setExportStatus] = useState(null);
 
     const imageRef = useRef(null);
     const containerRef = useRef(null);
@@ -57,6 +71,46 @@ export function AnnotationEditor({ image, projectId, onBack }) {
         const unassigned = keypoints.filter(kp => !usedKeypoints.has(kp.id));
         return { groups, unassignedKeypoints: unassigned };
     }, [annotations]);
+
+    // Annotation Statistics
+    useEffect(() => {
+        const bboxes = annotations.filter(a => a.type === 'bbox');
+        const keypoints = annotations.filter(a => a.type === 'keypoint');
+        const labeled = bboxes.filter(b => b.label || b.classIndex !== undefined).length;
+        setAnnotationStats({ bboxes: bboxes.length, keypoints: keypoints.length, labeled });
+    }, [annotations]);
+
+    // Undo/Redo functionality
+    const pushToHistory = useCallback((newAnnotations) => {
+        setHistory(prev => {
+            const newHistory = prev.slice(0, historyIndex + 1);
+            newHistory.push(JSON.stringify(newAnnotations));
+            return newHistory.slice(-50); // Keep last 50 states
+        });
+        setHistoryIndex(prev => Math.min(prev + 1, 49));
+    }, [historyIndex]);
+
+    const undo = useCallback(() => {
+        if (historyIndex > 0) {
+            const newIndex = historyIndex - 1;
+            setHistoryIndex(newIndex);
+            setAnnotations(JSON.parse(history[newIndex]));
+        }
+    }, [history, historyIndex]);
+
+    const redo = useCallback(() => {
+        if (historyIndex < history.length - 1) {
+            const newIndex = historyIndex + 1;
+            setHistoryIndex(newIndex);
+            setAnnotations(JSON.parse(history[newIndex]));
+        }
+    }, [history, historyIndex]);
+
+    const resetView = useCallback(() => {
+        setZoomLevel(1);
+        setSelectedId(null);
+        setMode('bbox');
+    }, []);
 
     const handleImageLoad = useCallback(() => {
         if (imageRef.current) {
@@ -142,6 +196,74 @@ export function AnnotationEditor({ image, projectId, onBack }) {
         return () => clearTimeout(timer);
     }, [annotations, isLoaded, saveAnnotations]);
 
+    // Completion Handlers
+    const handleCompleteAnnotation = async () => {
+        await saveAnnotations(annotations);
+        setShowCompletionDialog(true);
+    };
+
+    const handleContinueAnnotation = () => {
+        setShowCompletionDialog(false);
+    };
+
+    const handleGoToGallery = async () => {
+        await saveAnnotations(annotations);
+        setShowCompletionDialog(false);
+        onBack();
+    };
+
+    const handleGoToTraining = async (exportFirst = false) => {
+        await saveAnnotations(annotations);
+        
+        if (exportFirst) {
+            setIsExporting(true);
+            setExportStatus(null);
+            try {
+                const result = await exportProject(projectId, {
+                    trainRatio: 0.7,
+                    valRatio: 0.2,
+                    testRatio: 0.1,
+                    includeVisibility: true
+                });
+                setExportStatus(result);
+                if (result.success) {
+                    setTimeout(() => {
+                        setShowCompletionDialog(false);
+                        setIsExporting(false);
+                        goToTraining(projectId);
+                    }, 500);
+                } else {
+                    setIsExporting(false);
+                }
+            } catch (err) {
+                setExportStatus({ success: false, message: err.message });
+                setIsExporting(false);
+            }
+        } else {
+            setShowCompletionDialog(false);
+            goToTraining(projectId);
+        }
+    };
+
+    // Get annotated images count
+    const getAnnotatedImagesCount = useCallback(async () => {
+        try {
+            const res = await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/dataset/stats`);
+            const data = await res.json();
+            return data.annotated || 0;
+        } catch {
+            return 0;
+        }
+    }, [projectId]);
+
+    const [annotatedCount, setAnnotatedCount] = useState(0);
+
+    useEffect(() => {
+        if (showCompletionDialog) {
+            getAnnotatedImagesCount().then(setAnnotatedCount);
+        }
+    }, [showCompletionDialog, getAnnotatedImagesCount]);
+
 
     // Navigation Logic
     const currentIndex = useMemo(() => images.findIndex(img => (typeof img === 'string' ? img === image : img.name === image)), [images, image]);
@@ -172,12 +294,41 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                 goToNext();
             } else if (e.key === 'a' || e.key === 'ArrowLeft') {
                 goToPrev();
+            } else if (e.key === 'v') {
+                setMode('select');
+            } else if (e.key === 'b') {
+                setMode('bbox');
+            } else if (e.key === 'k') {
+                setMode('keypoint');
+            } else if (e.key === 'z' && (e.ctrlKey || e.metaKey)) {
+                e.preventDefault();
+                if (e.shiftKey) {
+                    redo();
+                } else {
+                    undo();
+                }
+            } else if (e.key === 'y' && (e.ctrlKey || e.metaKey)) {
+                e.preventDefault();
+                redo();
+            } else if (e.key === 'Delete' || e.key === 'Backspace') {
+                if (selectedId) {
+                    handleDelete(selectedId);
+                }
+            } else if (e.key === 'g') {
+                setShowGrid(prev => !prev);
+            } else if (e.key === 'h') {
+                setShowConnections(prev => !prev);
+            } else if (e.key === '?') {
+                setShowHelpPanel(prev => !prev);
+            } else if (e.key === 'Escape') {
+                setShowHelpPanel(false);
+                setSelectedId(null);
             }
         };
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [goToNext, goToPrev, isClassModalOpen]);
+    }, [goToNext, goToPrev, isClassModalOpen, undo, redo, selectedId]);
 
 
     // Auto-expand group when selecting a bbox
@@ -546,6 +697,27 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                             </>
                         )}
                     </div>
+                    <button
+                        onClick={handleCompleteAnnotation}
+                        style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            padding: '8px 16px',
+                            background: 'linear-gradient(135deg, #22c55e, #4ade80)',
+                            border: 'none',
+                            borderRadius: '10px',
+                            color: 'white',
+                            fontSize: '0.85rem',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            boxShadow: '0 4px 12px rgba(34, 197, 94, 0.3)',
+                            transition: 'all 0.2s ease'
+                        }}
+                    >
+                        <CheckCircle size={16} />
+                        完成标注
+                    </button>
                 </div>
             </header>
 
@@ -568,8 +740,62 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                         </button>
                     ))}
                     <div className="toolbar-divider"></div>
-                    <button title="复位视图" className="tool-btn">
+                    <button 
+                        onClick={undo} 
+                        disabled={historyIndex <= 0}
+                        title="撤销 (Ctrl+Z)" 
+                        className="tool-btn"
+                        style={{ opacity: historyIndex <= 0 ? 0.4 : 1 }}
+                    >
+                        <Undo2 size={20} />
+                    </button>
+                    <button 
+                        onClick={redo} 
+                        disabled={historyIndex >= history.length - 1}
+                        title="重做 (Ctrl+Y)" 
+                        className="tool-btn"
+                        style={{ opacity: historyIndex >= history.length - 1 ? 0.4 : 1 }}
+                    >
+                        <Redo2 size={20} />
+                    </button>
+                    <div className="toolbar-divider"></div>
+                    <button 
+                        onClick={() => setZoomLevel(prev => Math.min(prev + 0.25, 3))} 
+                        title="放大" 
+                        className="tool-btn"
+                    >
+                        <ZoomIn size={20} />
+                    </button>
+                    <button 
+                        onClick={() => setZoomLevel(prev => Math.max(prev - 0.25, 0.5))} 
+                        title="缩小" 
+                        className="tool-btn"
+                    >
+                        <ZoomOut size={20} />
+                    </button>
+                    <button 
+                        onClick={resetView} 
+                        title="复位视图" 
+                        className="tool-btn"
+                    >
                         <Maximize size={20} />
+                    </button>
+                    <div className="toolbar-divider"></div>
+                    <button 
+                        onClick={() => setShowGrid(prev => !prev)} 
+                        title="切换网格 (G)" 
+                        className={`tool-btn ${showGrid ? 'active' : ''}`}
+                        style={{ opacity: showGrid ? 1 : 0.6 }}
+                    >
+                        <Grid3X3 size={20} />
+                    </button>
+                    <button 
+                        onClick={() => setShowConnections(prev => !prev)} 
+                        title="切换连接线 (H)" 
+                        className={`tool-btn ${showConnections ? 'active' : ''}`}
+                        style={{ opacity: showConnections ? 1 : 0.6 }}
+                    >
+                        <Link size={20} />
                     </button>
                     <div className="toolbar-divider"></div>
                     <button
@@ -579,6 +805,14 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                         style={{ color: 'var(--accent-primary)' }}
                     >
                         <Tag size={20} />
+                    </button>
+                    <button 
+                        onClick={() => setShowHelpPanel(prev => !prev)} 
+                        title="快捷键帮助 (?)" 
+                        className="tool-btn"
+                        style={{ color: showHelpPanel ? 'var(--accent-primary)' : 'inherit' }}
+                    >
+                        <HelpCircle size={20} />
                     </button>
                 </div>
 
@@ -740,6 +974,24 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                     <div className="editor-sidebar-header">
                         <Layers size={18} color="var(--accent-primary)" />
                         <h4>图层列表</h4>
+                        <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px', fontSize: '11px' }}>
+                            <span style={{ 
+                                background: 'rgba(88, 166, 255, 0.15)', 
+                                padding: '2px 8px', 
+                                borderRadius: '6px',
+                                color: 'var(--accent-primary)'
+                            }}>
+                                {annotationStats.bboxes} 框
+                            </span>
+                            <span style={{ 
+                                background: 'rgba(255, 189, 46, 0.15)', 
+                                padding: '2px 8px', 
+                                borderRadius: '6px',
+                                color: '#ffbd2e'
+                            }}>
+                                {annotationStats.keypoints} 点
+                            </span>
+                        </div>
                     </div>
 
                     <div className="editor-sidebar-body">
@@ -874,6 +1126,370 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                 config={projectConfig}
                 onSave={saveConfig}
             />
+
+            {/* Help Panel */}
+            {showHelpPanel && (
+                <div style={{
+                    position: 'fixed',
+                    inset: 0,
+                    background: 'rgba(0, 0, 0, 0.7)',
+                    backdropFilter: 'blur(8px)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    zIndex: 2000,
+                    padding: '20px'
+                }}>
+                    <div style={{
+                        background: 'linear-gradient(145deg, rgba(22, 27, 34, 0.98), rgba(13, 17, 23, 0.99))',
+                        borderRadius: '20px',
+                        border: '1px solid rgba(255, 255, 255, 0.1)',
+                        padding: '28px',
+                        maxWidth: '500px',
+                        width: '100%',
+                        maxHeight: '80vh',
+                        overflow: 'auto'
+                    }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                            <h3 style={{ margin: 0, fontSize: '1.3rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                ⌨️ 快捷键帮助
+                            </h3>
+                            <button 
+                                onClick={() => setShowHelpPanel(false)}
+                                style={{
+                                    background: 'rgba(255, 255, 255, 0.05)',
+                                    border: 'none',
+                                    borderRadius: '8px',
+                                    padding: '8px',
+                                    cursor: 'pointer',
+                                    color: 'var(--text-secondary)'
+                                }}
+                            >
+                                ✕
+                            </button>
+                        </div>
+                        
+                        <div style={{ display: 'grid', gap: '16px' }}>
+                            <div>
+                                <h4 style={{ margin: '0 0 10px 0', fontSize: '0.85rem', color: 'var(--accent-primary)', fontWeight: 600 }}>
+                                    工具切换
+                                </h4>
+                                <div style={{ display: 'grid', gap: '6px' }}>
+                                    {[
+                                        ['V', '选择工具'],
+                                        ['B', '画框工具'],
+                                        ['K', '关键点工具']
+                                    ].map(([key, desc]) => (
+                                        <div key={key} style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                            <kbd style={{
+                                                background: 'rgba(255, 255, 255, 0.1)',
+                                                padding: '4px 10px',
+                                                borderRadius: '6px',
+                                                fontSize: '12px',
+                                                fontFamily: 'monospace',
+                                                color: 'var(--text-primary)',
+                                                minWidth: '32px',
+                                                textAlign: 'center'
+                                            }}>{key}</kbd>
+                                            <span style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>{desc}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                            
+                            <div>
+                                <h4 style={{ margin: '0 0 10px 0', fontSize: '0.85rem', color: 'var(--accent-primary)', fontWeight: 600 }}>
+                                    导航操作
+                                </h4>
+                                <div style={{ display: 'grid', gap: '6px' }}>
+                                    {[
+                                        ['A / ←', '上一张图片'],
+                                        ['D / →', '下一张图片'],
+                                        ['Ctrl+Z', '撤销'],
+                                        ['Ctrl+Y', '重做'],
+                                        ['Delete', '删除选中']
+                                    ].map(([key, desc]) => (
+                                        <div key={key} style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                            <kbd style={{
+                                                background: 'rgba(255, 255, 255, 0.1)',
+                                                padding: '4px 10px',
+                                                borderRadius: '6px',
+                                                fontSize: '12px',
+                                                fontFamily: 'monospace',
+                                                color: 'var(--text-primary)',
+                                                minWidth: '60px',
+                                                textAlign: 'center'
+                                            }}>{key}</kbd>
+                                            <span style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>{desc}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                            
+                            <div>
+                                <h4 style={{ margin: '0 0 10px 0', fontSize: '0.85rem', color: 'var(--accent-primary)', fontWeight: 600 }}>
+                                    视图控制
+                                </h4>
+                                <div style={{ display: 'grid', gap: '6px' }}>
+                                    {[
+                                        ['G', '切换网格'],
+                                        ['H', '切换连接线'],
+                                        ['Esc', '取消选择'],
+                                        ['?', '显示/隐藏帮助']
+                                    ].map(([key, desc]) => (
+                                        <div key={key} style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                            <kbd style={{
+                                                background: 'rgba(255, 255, 255, 0.1)',
+                                                padding: '4px 10px',
+                                                borderRadius: '6px',
+                                                fontSize: '12px',
+                                                fontFamily: 'monospace',
+                                                color: 'var(--text-primary)',
+                                                minWidth: '32px',
+                                                textAlign: 'center'
+                                            }}>{key}</kbd>
+                                            <span style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>{desc}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div style={{ 
+                            marginTop: '20px', 
+                            padding: '12px', 
+                            background: 'rgba(88, 166, 255, 0.1)', 
+                            borderRadius: '10px',
+                            fontSize: '12px',
+                            color: 'var(--text-tertiary)'
+                        }}>
+                            💡 提示：右键点击可取消当前操作或切换到选择模式
+                        </div>
+                    </div>
+                </div>
+            )}
+            {/* Completion Dialog */}
+            {showCompletionDialog && (
+                <div style={{
+                    position: 'fixed',
+                    inset: 0,
+                    background: 'rgba(0, 0, 0, 0.75)',
+                    backdropFilter: 'blur(10px)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    zIndex: 2000,
+                    padding: '20px'
+                }}>
+                    <div style={{
+                        background: 'linear-gradient(145deg, rgba(22, 27, 34, 0.98), rgba(13, 17, 23, 0.99))',
+                        borderRadius: '24px',
+                        border: '1px solid rgba(255, 255, 255, 0.1)',
+                        padding: '32px',
+                        maxWidth: '480px',
+                        width: '100%',
+                        boxShadow: '0 25px 50px rgba(0, 0, 0, 0.5)'
+                    }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                                <div style={{
+                                    width: '48px',
+                                    height: '48px',
+                                    borderRadius: '14px',
+                                    background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.2), rgba(74, 222, 128, 0.1))',
+                                    border: '1px solid rgba(34, 197, 94, 0.3)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center'
+                                }}>
+                                    <CheckCircle size={24} color="#4ade80" />
+                                </div>
+                                <h3 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                    标注完成确认
+                                </h3>
+                            </div>
+                            <button 
+                                onClick={handleContinueAnnotation}
+                                style={{
+                                    background: 'rgba(255, 255, 255, 0.05)',
+                                    border: 'none',
+                                    borderRadius: '10px',
+                                    padding: '10px',
+                                    cursor: 'pointer',
+                                    color: 'var(--text-secondary)',
+                                    transition: 'all 0.2s'
+                                }}
+                            >
+                                <X size={20} />
+                            </button>
+                        </div>
+                        
+                        <div style={{ 
+                            background: 'rgba(255, 255, 255, 0.03)', 
+                            borderRadius: '16px', 
+                            padding: '20px',
+                            marginBottom: '24px',
+                            border: '1px solid rgba(255, 255, 255, 0.06)'
+                        }}>
+                            <div style={{ fontSize: '13px', color: 'var(--text-tertiary)', marginBottom: '8px' }}>
+                                当前图片
+                            </div>
+                            <div style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '20px' }}>
+                                {image}
+                            </div>
+                            
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
+                                <div style={{ 
+                                    textAlign: 'center', 
+                                    padding: '14px', 
+                                    background: 'rgba(88, 166, 255, 0.08)', 
+                                    borderRadius: '12px',
+                                    border: '1px solid rgba(88, 166, 255, 0.15)'
+                                }}>
+                                    <div style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--accent-primary)' }}>
+                                        {annotationStats.bboxes}
+                                    </div>
+                                    <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '4px' }}>标注框</div>
+                                </div>
+                                <div style={{ 
+                                    textAlign: 'center', 
+                                    padding: '14px', 
+                                    background: 'rgba(251, 191, 36, 0.08)', 
+                                    borderRadius: '12px',
+                                    border: '1px solid rgba(251, 191, 36, 0.15)'
+                                }}>
+                                    <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#fbbf24' }}>
+                                        {annotationStats.keypoints}
+                                    </div>
+                                    <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '4px' }}>关键点</div>
+                                </div>
+                                <div style={{ 
+                                    textAlign: 'center', 
+                                    padding: '14px', 
+                                    background: 'rgba(34, 197, 94, 0.08)', 
+                                    borderRadius: '12px',
+                                    border: '1px solid rgba(34, 197, 94, 0.15)'
+                                }}>
+                                    <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#4ade80' }}>
+                                        {annotatedCount} / {images.length}
+                                    </div>
+                                    <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '4px' }}>已标注图片</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {exportStatus && !exportStatus.success && (
+                            <div style={{
+                                marginBottom: '16px',
+                                padding: '12px 16px',
+                                background: 'rgba(239, 68, 68, 0.1)',
+                                border: '1px solid rgba(239, 68, 68, 0.3)',
+                                borderRadius: '12px',
+                                color: '#f87171',
+                                fontSize: '13px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '10px'
+                            }}>
+                                <AlertTriangle size={16} />
+                                {exportStatus.message || '导出失败'}
+                            </div>
+                        )}
+                        
+                        <div style={{ display: 'flex', gap: '12px', marginTop: '8px' }}>
+                            <button
+                                onClick={handleContinueAnnotation}
+                                style={{
+                                    flex: 1,
+                                    padding: '14px',
+                                    background: 'rgba(255, 255, 255, 0.05)',
+                                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                                    borderRadius: '12px',
+                                    color: 'var(--text-secondary)',
+                                    fontSize: '0.9rem',
+                                    fontWeight: 600,
+                                    cursor: 'pointer',
+                                    transition: 'all 0.2s'
+                                }}
+                            >
+                                继续标注
+                            </button>
+                            <button
+                                onClick={handleGoToGallery}
+                                style={{
+                                    flex: 1,
+                                    padding: '14px',
+                                    background: 'rgba(255, 255, 255, 0.08)',
+                                    border: '1px solid rgba(255, 255, 255, 0.12)',
+                                    borderRadius: '12px',
+                                    color: 'var(--text-primary)',
+                                    fontSize: '0.9rem',
+                                    fontWeight: 600,
+                                    cursor: 'pointer',
+                                    transition: 'all 0.2s'
+                                }}
+                            >
+                                返回图库
+                            </button>
+                            <button
+                                onClick={() => handleGoToTraining(true)}
+                                disabled={isExporting}
+                                style={{
+                                    flex: 1.2,
+                                    padding: '14px',
+                                    background: isExporting 
+                                        ? 'rgba(34, 197, 94, 0.5)' 
+                                        : 'linear-gradient(135deg, #22c55e, #4ade80)',
+                                    border: 'none',
+                                    borderRadius: '12px',
+                                    color: 'white',
+                                    fontSize: '0.9rem',
+                                    fontWeight: 700,
+                                    cursor: isExporting ? 'not-allowed' : 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: '8px',
+                                    boxShadow: '0 4px 15px rgba(34, 197, 94, 0.3)',
+                                    transition: 'all 0.2s'
+                                }}
+                            >
+                                {isExporting ? (
+                                    <>
+                                        <div style={{
+                                            width: '16px',
+                                            height: '16px',
+                                            border: '2px solid rgba(255,255,255,0.3)',
+                                            borderTopColor: 'white',
+                                            borderRadius: '50%',
+                                            animation: 'spin 1s linear infinite'
+                                        }} />
+                                        导出中...
+                                    </>
+                                ) : (
+                                    <>
+                                        <Play size={16} fill="currentColor" />
+                                        前往训练
+                                    </>
+                                )}
+                            </button>
+                        </div>
+                        
+                        <div style={{ 
+                            marginTop: '16px', 
+                            padding: '12px', 
+                            background: 'rgba(88, 166, 255, 0.08)', 
+                            borderRadius: '10px',
+                            fontSize: '12px',
+                            color: 'var(--text-tertiary)',
+                            textAlign: 'center',
+                            border: '1px solid rgba(88, 166, 255, 0.1)'
+                        }}>
+                            💡 点击"前往训练"将自动导出数据集并跳转到训练配置页面
+                        </div>
+                    </div>
+                </div>
+            )}
         </div >
     );
 }
