@@ -9,6 +9,37 @@ const { spawn } = require('child_process');
 const sharp = require('sharp');
 const AdmZip = require('adm-zip');
 const archiver = require('archiver');
+const { Worker } = require('worker_threads');
+
+/**
+ * Helper to extract zip asynchronously in the legacy server.js
+ */
+function extractZipAsyncLegacy(filePath, targetPath, overwrite = true) {
+    return new Promise((resolve, reject) => {
+        // Since server.js might be in a different location than the new src structure,
+        // we'll define a simple worker logic or reuse the new one if possible.
+        // For reliability in server.js, we'll use a direct Worker approach here.
+        const workerScript = `
+            const { parentPort, workerData } = require('worker_threads');
+            const AdmZip = require('adm-zip');
+            try {
+                const { filePath, targetPath, overwrite } = workerData;
+                const zip = new AdmZip(filePath);
+                zip.extractAllTo(targetPath, overwrite);
+                parentPort.postMessage({ success: true });
+            } catch (error) {
+                parentPort.postMessage({ success: false, error: error.message });
+            }
+        `;
+        const worker = new Worker(workerScript, {
+            eval: true,
+            workerData: { filePath, targetPath, overwrite }
+        });
+        worker.on('message', m => m.success ? resolve() : reject(new Error(m.error)));
+        worker.on('error', reject);
+        worker.on('exit', code => code !== 0 && reject(new Error('Worker exited with code ' + code)));
+    });
+}
 
 const app = express();
 const PORT = 5000;
@@ -412,7 +443,7 @@ app.get('/api/projects/:projectId/images', (req, res) => {
                     console.error(`Error parsing annotation for ${file}:`, e.message);
                 }
             }
-            
+
             // Get file size
             let size = 0;
             try {
@@ -421,7 +452,7 @@ app.get('/api/projects/:projectId/images', (req, res) => {
             } catch (e) {
                 // Ignore size errors
             }
-            
+
             return {
                 name: file,
                 hasAnnotation: hasAnnotation,
@@ -649,15 +680,15 @@ const SUPPORTED_IMAGE_EXTENSIONS = /\.(jpg|jpeg|png|gif|bmp|webp)$/i;
 const scanDirectoryRecursive = (dirPath, baseDir, results = [], errors = []) => {
     try {
         const items = fs.readdirSync(dirPath);
-        
+
         for (const item of items) {
             if (item.startsWith('.') || item.startsWith('_to_delete_')) continue;
-            
+
             const itemPath = path.join(dirPath, item);
-            
+
             try {
                 const stat = fs.statSync(itemPath);
-                
+
                 if (stat.isDirectory()) {
                     scanDirectoryRecursive(itemPath, baseDir, results, errors);
                 } else if (stat.isFile() && SUPPORTED_IMAGE_EXTENSIONS.test(item)) {
@@ -667,7 +698,7 @@ const scanDirectoryRecursive = (dirPath, baseDir, results = [], errors = []) => 
                     } catch (e) {
                         // Could not get dimensions, will be null
                     }
-                    
+
                     results.push({
                         name: item,
                         path: itemPath,
@@ -693,38 +724,38 @@ const scanDirectoryRecursive = (dirPath, baseDir, results = [], errors = []) => 
             error: e.message || 'Failed to read directory'
         });
     }
-    
+
     return { results, errors };
 };
 
 app.post('/api/utils/scan-images', async (req, res) => {
     const { folderPath, maxResults = 5000 } = req.body;
-    
+
     if (!folderPath) {
         return res.status(400).json({ error: '文件夹路径不能为空' });
     }
-    
+
     if (!fs.existsSync(folderPath)) {
         return res.status(400).json({ error: '指定的文件夹不存在' });
     }
-    
+
     try {
         const stat = fs.statSync(folderPath);
         if (!stat.isDirectory()) {
             return res.status(400).json({ error: '指定的路径不是文件夹' });
         }
-        
+
         console.log(`[Scan] Starting scan of: ${folderPath}`);
         const startTime = Date.now();
-        
+
         const { results, errors } = scanDirectoryRecursive(folderPath, folderPath);
-        
+
         const scanTime = Date.now() - startTime;
         console.log(`[Scan] Found ${results.length} images in ${scanTime}ms`);
-        
+
         const limitedResults = results.slice(0, maxResults);
         const wasLimited = results.length > maxResults;
-        
+
         res.json({
             success: true,
             images: limitedResults,
@@ -744,25 +775,25 @@ app.post('/api/utils/scan-images', async (req, res) => {
 app.post('/api/projects/:projectId/import-images', async (req, res) => {
     const { projectId } = req.params;
     const { images, mode = 'copy' } = req.body;
-    
+
     if (!images || !Array.isArray(images) || images.length === 0) {
         return res.status(400).json({ error: '请提供要导入的图片列表' });
     }
-    
+
     if (mode !== 'copy' && mode !== 'move') {
         return res.status(400).json({ error: '导入模式必须是 copy 或 move' });
     }
-    
+
     const paths = ensureProjectDirs(projectId);
     const existingFiles = new Set(fs.readdirSync(paths.uploads));
-    
+
     const results = {
         success: [],
         failed: [],
         skipped: [],
         duplicates: []
     };
-    
+
     const importRecord = {
         timestamp: new Date().toISOString(),
         sourcePath: images.length > 0 ? path.dirname(images[0].path) : '',
@@ -773,17 +804,17 @@ app.post('/api/projects/:projectId/import-images', async (req, res) => {
         skippedCount: 0,
         details: []
     };
-    
+
     for (const imageInfo of images) {
         const { path: sourcePath, name: originalName } = imageInfo;
-        
+
         if (!fs.existsSync(sourcePath)) {
             results.failed.push({ path: sourcePath, error: '源文件不存在' });
             results.details = results.details || [];
             results.details.push({ originalName, error: '源文件不存在' });
             continue;
         }
-        
+
         let targetName = originalName;
         let counter = 1;
         while (existingFiles.has(targetName)) {
@@ -792,20 +823,20 @@ app.post('/api/projects/:projectId/import-images', async (req, res) => {
             targetName = `${baseName}_${Date.now()}_${counter}${ext}`;
             counter++;
         }
-        
+
         if (targetName !== originalName) {
             results.duplicates.push({ original: originalName, renamed: targetName });
         }
-        
+
         const targetPath = path.join(paths.uploads, targetName);
-        
+
         try {
             if (mode === 'copy') {
                 await fs.promises.copyFile(sourcePath, targetPath);
             } else {
                 await fs.promises.rename(sourcePath, targetPath);
             }
-            
+
             existingFiles.add(targetName);
             results.success.push({ originalName, targetName });
             importRecord.details.push({ originalName, targetName, status: 'success' });
@@ -814,11 +845,11 @@ app.post('/api/projects/:projectId/import-images', async (req, res) => {
             importRecord.details.push({ originalName, error: err.message, status: 'failed' });
         }
     }
-    
+
     importRecord.successCount = results.success.length;
     importRecord.failedCount = results.failed.length;
     importRecord.skippedCount = results.skipped.length;
-    
+
     const historyPath = path.join(paths.root, 'import-history.json');
     let history = [];
     if (fs.existsSync(historyPath)) {
@@ -833,9 +864,9 @@ app.post('/api/projects/:projectId/import-images', async (req, res) => {
         history = history.slice(0, 50);
     }
     fs.writeFileSync(historyPath, JSON.stringify(history, null, 2));
-    
+
     console.log(`[Import] Project ${projectId}: ${results.success.length} success, ${results.failed.length} failed`);
-    
+
     res.json({
         success: true,
         message: `成功导入 ${results.success.length}/${images.length} 张图片`,
@@ -848,11 +879,11 @@ app.get('/api/projects/:projectId/import-history', (req, res) => {
     const { projectId } = req.params;
     const paths = getProjectPaths(projectId);
     const historyPath = path.join(paths.root, 'import-history.json');
-    
+
     if (!fs.existsSync(historyPath)) {
         return res.json({ history: [] });
     }
-    
+
     try {
         const history = JSON.parse(fs.readFileSync(historyPath, 'utf8'));
         res.json({ history });
@@ -884,25 +915,25 @@ app.post('/api/settings', (req, res) => {
 // 验证 Python 路径
 app.post('/api/settings/validate-python', async (req, res) => {
     const { pythonPath } = req.body;
-    
+
     if (!pythonPath || !pythonPath.trim()) {
         return res.json({ valid: false, error: '请输入 Python 路径' });
     }
-    
+
     // 检查文件是否存在
     if (!fs.existsSync(pythonPath)) {
         return res.json({ valid: false, error: '文件不存在，请检查路径是否正确' });
     }
-    
+
     // 尝试执行 python --version
     try {
         const { execSync } = require('child_process');
-        const version = execSync(`"${pythonPath}" --version`, { 
-            encoding: 'utf8', 
+        const version = execSync(`"${pythonPath}" --version`, {
+            encoding: 'utf8',
             timeout: 5000,
-            windowsHide: true 
+            windowsHide: true
         });
-        
+
         // 检查是否是有效的 Python
         if (version.toLowerCase().includes('python')) {
             // 进一步检查是否有 ultralytics
@@ -913,9 +944,9 @@ app.post('/api/settings/validate-python', async (req, res) => {
                     windowsHide: true
                 });
                 if (ultralyticsCheck.includes('ok')) {
-                    return res.json({ 
-                        valid: true, 
-                        version: version.trim(), 
+                    return res.json({
+                        valid: true,
+                        version: version.trim(),
                         hasUltralytics: true,
                         message: 'Python 有效，已安装 ultralytics'
                     });
@@ -923,15 +954,15 @@ app.post('/api/settings/validate-python', async (req, res) => {
             } catch (e) {
                 // ultralytics 未安装，但这不影响 Python 本身有效
             }
-            
-            return res.json({ 
-                valid: true, 
+
+            return res.json({
+                valid: true,
                 version: version.trim(),
                 hasUltralytics: false,
                 message: 'Python 有效（建议安装 ultralytics: pip install ultralytics）'
             });
         }
-        
+
         return res.json({ valid: false, error: '所选文件不是有效的 Python 解释器' });
     } catch (e) {
         return res.json({ valid: false, error: '无法执行 Python，请检查路径是否正确' });
@@ -1353,10 +1384,10 @@ app.post('/api/projects/:projectId/train', (req, res) => {
         device = '0',
         project: customProject,
         name: customName,
-        
+
         // 数据增强开关
         augmentationEnabled = true,
-        
+
         // 数据增强参数
         degrees = 0,
         translate = 0.1,
@@ -1409,7 +1440,7 @@ app.post('/api/projects/:projectId/train', (req, res) => {
         '--project', projectDir,
         '--name', runName,
         '--device', device,
-        
+
         // 数据增强参数 (如果禁用，则全部设为0)
         '--degrees', String(augmentationEnabled ? degrees : 0),
         '--translate', String(augmentationEnabled ? translate : 0),
@@ -1431,10 +1462,10 @@ app.post('/api/projects/:projectId/train', (req, res) => {
     // 配置优先级: 用户配置 > 硬编码路径 > conda run 回退
     // 1. 首先尝试从全局配置获取用户设置的 Python 路径
     const userPythonPath = getPythonPath();
-    
+
     // 2. 硬编码的备选路径
     const fallbackPythonPath = 'D:\\miniconda3\\envs\\llm-gpu\\python.exe';
-    
+
     let cmd = 'python';
     let args = [];
 
@@ -1613,7 +1644,7 @@ app.get('/api/projects/:projectId/collaboration/export', (req, res) => {
 
     try {
         const archive = archiver('zip', {
-            zlib: { level: 9 } // Sets the compression level.
+            zlib: { level: 0 } // Level 0 (Store) for maximum speed since images are already compressed
         });
 
         // Set the headers
@@ -1623,13 +1654,11 @@ app.get('/api/projects/:projectId/collaboration/export', (req, res) => {
         res.set('Content-Disposition', `attachment; filename="${safeFilename}"; filename*=UTF-8''${safeFilename}`);
 
         // Listen for all archive data to be written
-        // 'close' event is fired only when a file descriptor is involved
         res.on('close', function () {
-            console.log(archive.pointer() + ' total bytes');
-            console.log('archiver has been finalized and the output file descriptor has closed.');
+            console.log(`Collaboration ZIP exported for ${projectId}: ${archive.pointer()} bytes`);
         });
 
-        // Good practice to catch warnings (ie stat failures and other non-blocking errors)
+        // Good practice to catch warnings
         archive.on('warning', function (err) {
             if (err.code === 'ENOENT') {
                 console.warn('Archiver warning:', err);
@@ -1641,29 +1670,38 @@ app.get('/api/projects/:projectId/collaboration/export', (req, res) => {
         // Good practice to catch this error explicitly
         archive.on('error', function (err) {
             console.error('Archiver error:', err);
-            res.status(500).send({ error: err.message });
+            if (!res.headersSent) {
+                res.status(500).send({ error: err.message });
+            }
         });
 
         // Pipe archive data to the response
         archive.pipe(res);
 
-        // Add uploads folder
-        if (fs.existsSync(paths.uploads)) {
-            archive.directory(paths.uploads, 'uploads');
-        }
+        // --- ALLOWLIST APPROACH ---
+        // Instead of zipping the whole root, we only include what we know is needed.
+        // This avoids zipping large folders like 'dataset', 'thumbnails', 'models', etc.
 
-        // Add annotations folder
-        if (fs.existsSync(paths.annotations)) {
-            archive.directory(paths.annotations, 'annotations');
-        }
+        const safeDirs = ['uploads', 'annotations'];
+        const safeFiles = ['config.json', 'import-history.json', 'project.json'];
 
-        // Add config.json if it exists
-        const configPath = path.join(paths.root, 'config.json');
-        if (fs.existsSync(configPath)) {
-            archive.file(configPath, { name: 'config.json' });
-        }
+        // 1. Add safe directories
+        safeDirs.forEach(dir => {
+            const dirPath = path.join(paths.root, dir);
+            if (fs.existsSync(dirPath)) {
+                archive.directory(dirPath, dir);
+            }
+        });
 
-        // Finalize the archive (ie we are done appending files but streams have to finish yet)
+        // 2. Add safe files
+        safeFiles.forEach(file => {
+            const filePath = path.join(paths.root, file);
+            if (fs.existsSync(filePath)) {
+                archive.file(filePath, { name: file });
+            }
+        });
+
+        // Finalize the archive
         archive.finalize();
 
     } catch (err) {
@@ -1699,8 +1737,8 @@ app.post('/api/projects/collaboration/import', upload.single('file'), async (req
 
         const paths = ensureProjectDirs(finalProjectName);
 
-        // Extract contents
-        zip.extractAllTo(paths.root, true);
+        // Extract contents asynchronously
+        await extractZipAsyncLegacy(filePath, paths.root, true);
 
         // Clean up uploaded file if it was a temp upload
         if (req.file) {

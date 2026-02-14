@@ -72,7 +72,6 @@ export const ClassManagerModal = ({ isOpen, onClose, config, onSave }) => {
                         定义类别 ID 与名称的映射关系。这些名称将显示在侧边栏并用于数据集导出（data.yaml）。
                     </p>
 
-                    {/* Add New Mapping */}
                     <div style={{
                         display: 'grid',
                         gridTemplateColumns: '100px 1fr auto',
@@ -118,7 +117,6 @@ export const ClassManagerModal = ({ isOpen, onClose, config, onSave }) => {
                         </div>
                     </div>
 
-                    {/* Mapping List */}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr 40px', gap: '12px', padding: '0 12px', opacity: 0.5, fontSize: '11px' }}>
                             <span>ID</span>
@@ -149,7 +147,15 @@ export const ClassManagerModal = ({ isOpen, onClose, config, onSave }) => {
                                         className="input-inline"
                                         style={{ width: '100%', background: 'transparent', border: 'none', padding: '4px 0' }}
                                     />
-                                    <button onClick={() => handleRemove(m.id)} className="icon-btn" style={{ color: 'var(--danger)', opacity: 0.7 }}>
+                                    <button 
+                                        onClick={() => handleRemove(m.id)} 
+                                        className="icon-btn trash-btn" 
+                                        style={{ 
+                                            opacity: 0.7,
+                                            padding: '6px',
+                                            borderRadius: '8px'
+                                        }}
+                                    >
                                         <Trash2 size={16} />
                                     </button>
                                 </div>

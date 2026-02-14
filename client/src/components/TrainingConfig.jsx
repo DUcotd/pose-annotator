@@ -14,6 +14,7 @@ export const TrainingConfig = () => {
     const {
         config,
         status,
+        envInfo,
         logs,
         metrics,
         stats,
@@ -235,6 +236,7 @@ export const TrainingConfig = () => {
                         updateConfig={updateConfig}
                         status={status}
                         onBrowseData={handleBrowseData}
+                        envInfo={envInfo}
                     />
 
                     <AugmentationForm

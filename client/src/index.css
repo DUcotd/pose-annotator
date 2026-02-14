@@ -312,6 +312,19 @@ button {
   background-color: var(--bg-tertiary);
 }
 
+.icon-btn.trash-btn {
+  color: var(--text-tertiary);
+}
+
+.icon-btn.trash-btn:hover {
+  color: var(--danger);
+  background-color: rgba(248, 81, 73, 0.1);
+  border-color: rgba(248, 81, 73, 0.3);
+  transform: scale(1.05);
+  box-shadow: 0 0 15px rgba(248, 81, 73, 0.2);
+  opacity: 1 !important;
+}
+
 .icon-btn:disabled {
   opacity: 0.3;
   cursor: not-allowed;

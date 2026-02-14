@@ -151,6 +151,17 @@ function createSettingsRouter() {
     }
   });
 
+  router.get('/check-env', async (req, res) => {
+    const PythonEnvService = require('../services/PythonEnvService');
+    try {
+      const result = await PythonEnvService.checkEnv();
+      res.json(result);
+    } catch (err) {
+      logger.error('Failed to check environment:', err);
+      res.status(500).json({ error: 'Failed to check environment' });
+    }
+  });
+
   return router;
 }
 
@@ -178,6 +189,33 @@ function createUtilsRouter(projectsDir) {
       }
     } else {
       res.status(400).json({ error: 'Folder picker is only available in Desktop version' });
+    }
+  });
+
+  router.post('/save-file-dialog', async (req, res) => {
+    let electron;
+    try {
+      electron = require('electron');
+    } catch (e) { }
+
+    if (electron && electron.dialog) {
+      try {
+        const { dialog, BrowserWindow } = electron;
+        const win = BrowserWindow.getFocusedWindow();
+        const { title, defaultPath, filters } = req.body;
+
+        const result = await dialog.showSaveDialog(win, {
+          title: title || '保存文件',
+          defaultPath: defaultPath || '',
+          filters: filters || [{ name: 'ZIP Archive', extensions: ['zip'] }, { name: 'All Files', extensions: ['*'] }]
+        });
+
+        res.json({ path: result.canceled ? null : result.filePath });
+      } catch (err) {
+        res.status(500).json({ error: 'Failed to open save dialog' });
+      }
+    } else {
+      res.status(400).json({ error: 'Save dialog is only available in Desktop version' });
     }
   });
 

@@ -50,13 +50,14 @@ export const ProjectCard = ({ project, onClick, onDelete, onRenumber, index }) =
                     </button>
                     <button
                         onClick={(e) => { e.stopPropagation(); onDelete(project.id); }}
-                        className="icon-btn hover-card"
+                        className="icon-btn trash-btn"
                         title="删除项目"
                         style={{
                             color: 'var(--text-tertiary)',
                             background: 'rgba(255,255,255,0.03)',
                             padding: '8px',
-                            borderRadius: '10px'
+                            borderRadius: '10px',
+                            border: '1px solid rgba(255,255,255,0.05)'
                         }}
                     >
                         <Trash2 size={16} />

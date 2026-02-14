@@ -9,6 +9,7 @@ const { imageSize } = require('image-size');
 const logger = require('../utils/logger');
 const SafeFileOp = require('../services/FileService');
 const settings = require('../config/settings');
+const { extractZipAsync } = require('../utils/zipUtils');
 
 function createProjectRouter(projectsDir) {
   const router = express.Router();
@@ -300,11 +301,18 @@ function createProjectRouter(projectsDir) {
 
       const images = files.filter(file => /\.(jpg|jpeg|png|gif|webp)$/i.test(file));
       let annotatedCount = 0;
+      let totalSize = 0;
       let samples = [];
 
       images.forEach(imageFile => {
+        const imagePath = path.join(paths.root, 'uploads', imageFile);
         const annotationFile = path.join(paths.annotations, `${imageFile}.json`);
         let isAnnotated = false;
+
+        try {
+          const stats = fs.statSync(imagePath);
+          totalSize += stats.size;
+        } catch (e) { }
 
         if (fs.existsSync(annotationFile)) {
           try {
@@ -327,6 +335,7 @@ function createProjectRouter(projectsDir) {
         total: images.length,
         annotated: annotatedCount,
         unannotated: images.length - annotatedCount,
+        totalSize: totalSize,
         samples: samples
       });
     });
@@ -432,74 +441,74 @@ function createProjectRouter(projectsDir) {
     }
   });
 
-  // Export project as ZIP for collaboration
-  router.get('/:projectId/collaboration/export', (req, res) => {
-    const { projectId } = req.params;
-    const paths = getProjectPaths(projectId);
+  // Helper to create collaboration archive
+  const createCollaborationArchive = (projectId, outputStream) => {
+    return new Promise((resolve, reject) => {
+      const paths = getProjectPaths(projectId);
+      if (!fs.existsSync(paths.root)) {
+        return reject(new Error('Project not found'));
+      }
 
-    if (!fs.existsSync(paths.root)) {
-      return res.status(404).json({ error: 'Project not found' });
-    }
-
-    try {
       const archive = archiver('zip', {
-        zlib: { level: 9 }
+        zlib: { level: 0 } // Level 0 (Store) for maximum speed
       });
 
+      outputStream.on('close', () => resolve(archive.pointer()));
+      archive.on('error', (err) => reject(err));
+      archive.pipe(outputStream);
+
+      const safeDirs = ['uploads', 'annotations'];
+      const safeFiles = ['config.json', 'import-history.json', 'project.json', 'index.json'];
+
+      safeDirs.forEach(dir => {
+        const dirPath = path.join(paths.root, dir);
+        if (fs.existsSync(dirPath)) archive.directory(dirPath, dir);
+      });
+
+      safeFiles.forEach(file => {
+        const filePath = path.join(paths.root, file);
+        if (fs.existsSync(filePath)) archive.file(filePath, { name: file });
+      });
+
+      archive.finalize();
+    });
+  };
+
+  // Export project as ZIP for collaboration (browser download)
+  router.get('/:projectId/collaboration/export', async (req, res) => {
+    const { projectId } = req.params;
+    try {
       res.set('Content-Type', 'application/zip');
       const safeFilename = encodeURIComponent(`${projectId}_collaboration.zip`);
       res.set('Content-Disposition', `attachment; filename="${safeFilename}"; filename*=UTF-8''${safeFilename}`);
 
-      res.on('close', function () {
-        logger.info(`Collaboration ZIP exported for ${projectId}: ${archive.pointer()} bytes`);
-      });
-
-      archive.on('warning', function (err) {
-        if (err.code === 'ENOENT') {
-          logger.warn('Archiver warning:', err);
-        } else {
-          throw err;
-        }
-      });
-
-      archive.on('error', function (err) {
-        logger.error('Archiver error:', err);
-        if (!res.headersSent) {
-          res.status(500).send({ error: err.message });
-        }
-      });
-
-      archive.pipe(res);
-
-      // --- ALLOWLIST APPROACH ---
-      // Instead of excluding, we only include what we know is safe and needed.
-      // This avoids zipping unexpected large folders (like 'models', 'output', 'dataset', etc.)
-
-      const safeDirs = ['uploads', 'annotations'];
-      const safeFiles = ['config.json', 'import-history.json', 'project.json', 'index.json']; // index.json is sometimes used
-
-      // 1. Add safe directories
-      safeDirs.forEach(dir => {
-        const dirPath = path.join(paths.root, dir);
-        if (fs.existsSync(dirPath)) {
-          archive.directory(dirPath, dir);
-        }
-      });
-
-      // 2. Add safe files
-      safeFiles.forEach(file => {
-        const filePath = path.join(paths.root, file);
-        if (fs.existsSync(filePath)) {
-          archive.file(filePath, { name: file });
-        }
-      });
-
-      archive.finalize();
+      const bytes = await createCollaborationArchive(projectId, res);
+      logger.info(`Collaboration ZIP exported for ${projectId}: ${bytes} bytes`);
     } catch (err) {
       logger.error('Failed to export collaboration ZIP:', err);
       if (!res.headersSent) {
-        res.status(500).json({ error: 'Failed to create collaboration package', details: err.message });
+        res.status(err.message === 'Project not found' ? 404 : 500).json({ error: err.message });
       }
+    }
+  });
+
+  // Export project ZIP directly to local path (Electron Save As)
+  router.post('/:projectId/collaboration/export-to-path', async (req, res) => {
+    const { projectId } = req.params;
+    const { savePath } = req.body;
+
+    if (!savePath) {
+      return res.status(400).json({ error: 'Save path is required' });
+    }
+
+    try {
+      const outputStream = fs.createWriteStream(savePath);
+      const bytes = await createCollaborationArchive(projectId, outputStream);
+      logger.info(`Collaboration ZIP saved to ${savePath} for ${projectId}: ${bytes} bytes`);
+      res.json({ success: true, path: savePath, bytes });
+    } catch (err) {
+      logger.error('Failed to export collaboration ZIP to path:', err);
+      res.status(500).json({ error: 'Failed to save collaboration package', details: err.message });
     }
   });
 
@@ -533,7 +542,9 @@ function createProjectRouter(projectsDir) {
 
       logger.info(`Extracting project to: ${finalProjectName}`);
       const paths = ensureProjectDirs(finalProjectName);
-      zip.extractAllTo(paths.root, true);
+
+      // Use async extraction to prevent blocking the main thread
+      await extractZipAsync(filePath, paths.root, true);
 
       if (req.file && fs.existsSync(req.file.path)) {
         try {

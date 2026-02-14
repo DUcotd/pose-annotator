@@ -41,10 +41,21 @@ export const useTraining = (projectId) => {
     }, [projectConfig.trainingSettings]);
 
     const [status, setStatus] = useState('idle');
+    const [envInfo, setEnvInfo] = useState(null);
     const [logs, setLogs] = useState([]);
     const [metrics, setMetrics] = useState([]);
     const [stats, setStats] = useState(null);
     const pollIntervalRef = useRef(null);
+
+    const fetchEnvInfo = useCallback(async () => {
+        try {
+            const res = await fetch('http://localhost:5000/api/settings/check-env');
+            const data = await res.json();
+            setEnvInfo(data);
+        } catch (err) {
+            console.error("Failed to fetch environment info", err);
+        }
+    }, []);
 
     const stopPolling = useCallback(() => {
         if (pollIntervalRef.current) {
@@ -90,9 +101,10 @@ export const useTraining = (projectId) => {
         if (projectId) {
             checkStatus();
             fetchStats();
+            fetchEnvInfo();
         }
         return () => stopPolling();
-    }, [projectId, checkStatus, fetchStats, stopPolling]);
+    }, [projectId, checkStatus, fetchStats, fetchEnvInfo, stopPolling]);
 
     const handleStart = async () => {
         try {
@@ -161,6 +173,7 @@ export const useTraining = (projectId) => {
     return {
         config,
         status,
+        envInfo,
         logs,
         metrics,
         stats,
@@ -169,6 +182,7 @@ export const useTraining = (projectId) => {
         handleBrowseData,
         handleBrowseProject,
         updateConfig,
-        refreshStats: fetchStats
+        refreshStats: fetchStats,
+        refreshEnv: fetchEnvInfo
     };
 };

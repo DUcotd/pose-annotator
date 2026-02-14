@@ -11,7 +11,7 @@ const modelOptions = [
     { id: 'yolov8x.pt', label: 'YOLOv8x (XLarge) - 顶级', size: '130MB', speed: '最慢' }
 ];
 
-export const TrainingForm = ({ config, updateConfig, status, onBrowseData, onBrowseProject }) => {
+export const TrainingForm = ({ config, updateConfig, status, onBrowseData, envInfo }) => {
     const [dropdownOpen, setDropdownOpen] = useState(false);
     const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0, width: 0 });
     const dropdownRef = useRef(null);
@@ -19,6 +19,7 @@ export const TrainingForm = ({ config, updateConfig, status, onBrowseData, onBro
 
     const isRunning = status === 'running' || status === 'starting';
 
+    // ... useEffect remains same ...
     useEffect(() => {
         const handleClickOutside = (event) => {
             if (dropdownOpen && dropdownTriggerRef.current && !dropdownTriggerRef.current.contains(event.target)) {
@@ -202,6 +203,59 @@ export const TrainingForm = ({ config, updateConfig, status, onBrowseData, onBro
                             </button>
                         </div>
                     </div>
+
+                    {/* Environment Info */}
+                    {envInfo && (
+                        <div style={{
+                            marginTop: '0.5rem',
+                            padding: '12px 14px',
+                            background: 'rgba(255,255,255,0.03)',
+                            borderRadius: '12px',
+                            border: '1px solid rgba(255,255,255,0.06)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '12px'
+                        }}>
+                            <div style={{
+                                width: '32px',
+                                height: '32px',
+                                borderRadius: '8px',
+                                background: envInfo.available ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                color: envInfo.available ? '#4ade80' : '#f87171'
+                            }}>
+                                <Settings size={16} className={isRunning ? 'spin' : ''} />
+                            </div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    Python 环境
+                                    {envInfo.available && (
+                                        <span style={{
+                                            fontSize: '10px',
+                                            background: envInfo.cuda ? 'rgba(99,102,241,0.15)' : 'rgba(255,255,255,0.1)',
+                                            color: envInfo.cuda ? '#818cf8' : 'var(--text-tertiary)',
+                                            padding: '1px 6px',
+                                            borderRadius: '4px'
+                                        }}>
+                                            {envInfo.cuda ? 'GPU 加速' : 'CPU 模式'}
+                                        </span>
+                                    )}
+                                </div>
+                                <div style={{
+                                    fontSize: '11px',
+                                    color: 'var(--text-tertiary)',
+                                    marginTop: '2px',
+                                    whiteSpace: 'nowrap',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis'
+                                }}>
+                                    {envInfo.available ? `${envInfo.version} • ${envInfo.message}` : '未配置 Python 环境'}
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             </SectionCard>
         </>

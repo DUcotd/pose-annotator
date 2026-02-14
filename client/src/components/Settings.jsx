@@ -306,26 +306,32 @@ export const Settings = ({ onBack }) => {
 
                             {isScanning ? (
                                 <div style={{
-                                    padding: '2.5rem',
-                                    borderRadius: '16px',
-                                    background: 'rgba(255,255,255,0.02)',
+                                    padding: '3rem 2rem',
+                                    borderRadius: '20px',
+                                    background: 'rgba(255,255,255,0.01)',
                                     border: '1px dashed rgba(255,255,255,0.1)',
                                     display: 'flex',
                                     flexDirection: 'column',
                                     alignItems: 'center',
-                                    gap: '12px',
-                                    color: 'var(--text-tertiary)'
+                                    justifyContent: 'center',
+                                    gap: '16px',
+                                    color: 'var(--text-tertiary)',
+                                    textAlign: 'center'
                                 }}>
-                                    <RefreshCw size={24} className="spin" style={{ color: 'var(--accent-primary)' }} />
-                                    <div style={{ fontSize: '14px', fontWeight: 500 }}>正在深度扫描 Python 环境...</div>
-                                    <div style={{ fontSize: '12px', opacity: 0.7 }}>正在查找 Conda, 系统路径和虚拟环境</div>
+                                    <div style={{ position: 'relative', width: '48px', height: '48px' }}>
+                                        <RefreshCw size={48} className="spin" style={{ color: 'var(--accent-primary)', opacity: 0.8 }} />
+                                    </div>
+                                    <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text-secondary)' }}>正在智能扫描 Python 环境</div>
+                                    <div style={{ fontSize: '13px', opacity: 0.6, maxWidth: '280px', lineHeight: 1.5 }}>
+                                        正在搜索 Conda 环境、系统变量、常见安装目录以及项目虚拟环境...
+                                    </div>
                                 </div>
                             ) : detectedEnvs.length > 0 ? (
                                 <div style={{
                                     display: 'grid',
-                                    gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))',
+                                    gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))',
                                     gap: '12px',
-                                    maxHeight: '400px',
+                                    maxHeight: '420px',
                                     overflowY: 'auto',
                                     padding: '4px'
                                 }} className="custom-scrollbar">
@@ -339,9 +345,9 @@ export const Settings = ({ onBack }) => {
                                             style={{
                                                 padding: '16px',
                                                 cursor: 'pointer',
-                                                background: pythonPath === env.path ? 'rgba(99,102,241,0.08)' : 'rgba(255,255,255,0.03)',
+                                                background: pythonPath === env.path ? 'rgba(99,102,241,0.08)' : 'rgba(255,255,255,0.02)',
                                                 border: `1px solid ${pythonPath === env.path ? 'rgba(99,102,241,0.4)' : 'rgba(255,255,255,0.08)'}`,
-                                                borderRadius: '14px',
+                                                borderRadius: '16px',
                                                 display: 'flex',
                                                 alignItems: 'center',
                                                 gap: '14px',
@@ -351,20 +357,20 @@ export const Settings = ({ onBack }) => {
                                             }}
                                             onMouseEnter={(e) => {
                                                 if (pythonPath !== env.path) {
-                                                    e.currentTarget.style.background = 'rgba(255,255,255,0.06)';
+                                                    e.currentTarget.style.background = 'rgba(255,255,255,0.05)';
                                                     e.currentTarget.style.borderColor = 'rgba(255,255,255,0.15)';
                                                 }
                                             }}
                                             onMouseLeave={(e) => {
                                                 if (pythonPath !== env.path) {
-                                                    e.currentTarget.style.background = 'rgba(255,255,255,0.03)';
+                                                    e.currentTarget.style.background = 'rgba(255,255,255,0.02)';
                                                     e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)';
                                                 }
                                             }}
                                         >
                                             <div style={{
-                                                width: '40px',
-                                                height: '40px',
+                                                width: '42px',
+                                                height: '42px',
                                                 borderRadius: '12px',
                                                 background: env.source === 'conda' ? 'rgba(74,222,128,0.1)' : 'rgba(99,102,241,0.1)',
                                                 display: 'flex',
@@ -376,7 +382,7 @@ export const Settings = ({ onBack }) => {
                                                 {env.source === 'conda' ? <RefreshCw size={20} /> : <Terminal size={20} />}
                                             </div>
                                             <div style={{ flex: 1, minWidth: 0 }}>
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px', marginBottom: '4px' }}>
                                                     <span style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)' }}>{env.name}</span>
                                                     {env.hasUltralytics && (
                                                         <div style={{
@@ -391,13 +397,39 @@ export const Settings = ({ onBack }) => {
                                                             YOLO 已就绪
                                                         </div>
                                                     )}
+                                                    {env.hasTorch && (
+                                                        <div style={{
+                                                            fontSize: '10px',
+                                                            background: 'rgba(99,102,241,0.15)',
+                                                            color: '#818cf8',
+                                                            padding: '2px 6px',
+                                                            borderRadius: '6px',
+                                                            fontWeight: 600,
+                                                            border: '1px solid rgba(99,102,241,0.2)'
+                                                        }}>
+                                                            Torch {env.torchVersion?.split('+')[0]} {env.cudaAvailable ? '(CUDA)' : '(CPU)'}
+                                                        </div>
+                                                    )}
                                                 </div>
-                                                <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', opacity: 0.8 }}>
+                                                <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', opacity: 0.7 }}>
                                                     {env.path}
                                                 </div>
                                             </div>
                                             {pythonPath === env.path ? (
-                                                <CheckCircle size={20} style={{ color: '#6366f1', flexShrink: 0 }} />
+                                                <div style={{
+                                                    width: '24px',
+                                                    height: '24px',
+                                                    borderRadius: '50%',
+                                                    background: 'var(--accent-primary)',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                    color: 'white',
+                                                    flexShrink: 0,
+                                                    boxShadow: '0 0 12px rgba(99,102,241,0.4)'
+                                                }}>
+                                                    <CheckCircle size={16} />
+                                                </div>
                                             ) : (
                                                 <div style={{
                                                     width: '20px',
@@ -412,21 +444,54 @@ export const Settings = ({ onBack }) => {
                                 </div>
                             ) : (
                                 <div style={{
-                                    padding: '2.5rem',
-                                    borderRadius: '16px',
+                                    padding: '3rem 2rem',
+                                    borderRadius: '20px',
                                     background: 'rgba(239,68,68,0.02)',
-                                    border: '1px dashed rgba(239,68,68,0.2)',
+                                    border: '1px dashed rgba(239,68,68,0.15)',
                                     display: 'flex',
                                     flexDirection: 'column',
                                     alignItems: 'center',
-                                    gap: '12px',
+                                    gap: '16px',
                                     color: 'var(--text-tertiary)',
                                     textAlign: 'center'
                                 }}>
-                                    <AlertTriangle size={24} style={{ color: '#f87171' }} />
-                                    <div style={{ fontSize: '14px', fontWeight: 500, color: '#f87171' }}>未检测到 Python 环境</div>
-                                    <div style={{ fontSize: '12px', maxWidth: '300px' }}>
-                                        请尝试手动点击右上方「重新扫描环境」，或点击左侧文件夹图标手动浏览 python.exe 文件。
+                                    <div style={{
+                                        width: '56px',
+                                        height: '56px',
+                                        borderRadius: '50%',
+                                        background: 'rgba(239,68,68,0.1)',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        color: '#f87171'
+                                    }}>
+                                        <AlertTriangle size={32} />
+                                    </div>
+                                    <div>
+                                        <div style={{ fontSize: '16px', fontWeight: 700, color: '#f87171', marginBottom: '8px' }}>未检测到 Python 环境</div>
+                                        <div style={{ fontSize: '13px', maxWidth: '340px', lineHeight: 1.6, opacity: 0.8 }}>
+                                            自动检测未能找到可用的 Python 解释器。这可能是因为 Python 未安装在标准路径，或者尚未配置环境变量。
+                                        </div>
+                                    </div>
+                                    <div style={{ display: 'flex', gap: '12px', marginTop: '8px' }}>
+                                        <button onClick={handleScan} style={{
+                                            padding: '8px 16px',
+                                            borderRadius: '8px',
+                                            background: 'rgba(255,255,255,0.05)',
+                                            border: '1px solid rgba(255,255,255,0.1)',
+                                            color: 'var(--text-secondary)',
+                                            fontSize: '13px',
+                                            cursor: 'pointer'
+                                        }}>重新扫描</button>
+                                        <button onClick={handleSelectFile} style={{
+                                            padding: '8px 16px',
+                                            borderRadius: '8px',
+                                            background: 'rgba(99,102,241,0.1)',
+                                            border: '1px solid rgba(99,102,241,0.2)',
+                                            color: '#818cf8',
+                                            fontSize: '13px',
+                                            cursor: 'pointer'
+                                        }}>手动浏览</button>
                                     </div>
                                 </div>
                             )}

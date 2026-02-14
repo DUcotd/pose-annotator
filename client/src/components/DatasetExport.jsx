@@ -230,16 +230,22 @@ export const DatasetExport = () => {
         }
     };
 
+    const [isCollaborationExporting, setIsCollaborationExporting] = useState(false);
+
     const handleCollaborationExport = async () => {
+        setIsCollaborationExporting(true);
         setNotification({ type: 'success', message: '正在准备项目协作包，请稍候...' });
         const result = await exportCollaboration(currentProject);
+        setIsCollaborationExporting(false);
         if (result.success) {
-            setNotification({ type: 'success', message: '✅ 协作包导出成功！已开始下载。' });
-            setTimeout(() => setNotification(null), 8000);
+            setNotification({ type: 'success', message: result.message || '✅ 协作包导出成功！' });
+            setTimeout(() => setNotification(null), 10000);
         } else {
-            setNotification({ type: 'error', message: `❌ 导出失败: ${result.message}` });
+            setNotification({ type: 'error', message: result.message || '❌ 导出失败' });
         }
     };
+
+
 
     const handleTrainChange = (v) => {
         if (v === '') {
@@ -673,16 +679,17 @@ export const DatasetExport = () => {
                             </div>
                             <button
                                 onClick={handleCollaborationExport}
+                                disabled={isCollaborationExporting}
                                 style={{
                                     width: '100%',
                                     height: '48px',
                                     borderRadius: '12px',
-                                    background: 'rgba(255,255,255,0.04)',
+                                    background: isCollaborationExporting ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.04)',
                                     border: '1px solid rgba(255,255,255,0.1)',
-                                    color: 'var(--text-primary)',
+                                    color: isCollaborationExporting ? 'var(--text-tertiary)' : 'var(--text-primary)',
                                     fontSize: '14px',
                                     fontWeight: 600,
-                                    cursor: 'pointer',
+                                    cursor: isCollaborationExporting ? 'not-allowed' : 'pointer',
                                     display: 'flex',
                                     alignItems: 'center',
                                     justifyContent: 'center',
@@ -690,8 +697,17 @@ export const DatasetExport = () => {
                                     transition: 'all 0.2s ease'
                                 }}
                             >
-                                <Share2 size={16} /> 开始导出
+                                {isCollaborationExporting ? (
+                                    <>
+                                        <Loader2 size={16} className="spin" /> 正在导出...
+                                    </>
+                                ) : (
+                                    <>
+                                        <Share2 size={16} /> 开始导出
+                                    </>
+                                )}
                             </button>
+
                         </div>
                     </SectionCard>
 
@@ -757,12 +773,23 @@ export const DatasetExport = () => {
                         gap: '12px',
                         boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.4)'
                     }}>
-                        {notification.type === 'success' ? <CheckCircle size={20} /> : <Info size={20} />}
-                        <span style={{ fontWeight: 600, fontSize: '14px' }}>{notification.message}</span>
+                        {isCollaborationExporting ? (
+                            <Loader2 size={24} className="spin" />
+                        ) : (
+                            notification.type === 'success' ? <CheckCircle size={24} /> : <Info size={24} />
+                        )}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                            <span style={{ fontWeight: 800, fontSize: '16px' }}>
+                                {isCollaborationExporting ? '正在导出' : (notification.type === 'success' ? '操作成功' : '操作提示')}
+                            </span>
+                            <span style={{ fontWeight: 500, fontSize: '13px', opacity: 0.9 }}>{notification.message}</span>
+                        </div>
                     </div>
+
                 </div>,
                 document.body
             )}
+
 
             <style>{`
                 @keyframes slideUp {

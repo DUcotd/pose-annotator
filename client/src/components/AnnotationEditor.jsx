@@ -1039,7 +1039,7 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                                             </span>
                                         )}
                                     </div>
-                                    <button onClick={(e) => { e.stopPropagation(); handleDelete(group.id); }} className="icon-btn" title="删除">
+                                    <button onClick={(e) => { e.stopPropagation(); handleDelete(group.id); }} className="icon-btn trash-btn" title="删除">
                                         <Trash2 size={14} />
                                     </button>
                                 </div>
@@ -1082,7 +1082,7 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                                                                 }}
                                                                 className="input-inline-xs"
                                                             />
-                                                            <button onClick={(e) => { e.stopPropagation(); handleDelete(kp.id); }} className="icon-btn" style={{ padding: '2px' }}>
+                                                            <button onClick={(e) => { e.stopPropagation(); handleDelete(kp.id); }} className="icon-btn trash-btn" style={{ padding: '2px' }}>
                                                                 <Trash2 size={12} />
                                                             </button>
                                                         </div>

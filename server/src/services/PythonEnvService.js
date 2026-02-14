@@ -1,4 +1,6 @@
-const { execSync } = require('child_process');
+const { exec, execSync } = require('child_process');
+const util = require('util');
+const execAsync = util.promisify(exec);
 const fs = require('fs');
 const path = require('path');
 const logger = require('../utils/logger');
@@ -36,7 +38,9 @@ class PythonEnvService {
   async validatePython(pythonPath) {
     try {
       const versionCmd = `"${pythonPath}" --version`;
-      const version = execSync(versionCmd, { encoding: 'utf8', timeout: 5000, windowsHide: true });
+      // Use execAsync for true async execution
+      const { stdout: versionOutput } = await execAsync(versionCmd, { timeout: 5000, windowsHide: true });
+      const version = versionOutput.trim();
 
       if (!version.toLowerCase().includes('python')) {
         return { valid: false, error: 'Not a valid Python interpreter' };
@@ -49,31 +53,34 @@ class PythonEnvService {
 
       try {
         const checkCmd = `"${pythonPath}" -c "import ultralytics; import torch; print('OK'); print(torch.__version__); print('CUDA' if torch.cuda.is_available() else 'CPU')"`;
-        const output = execSync(checkCmd, { encoding: 'utf8', timeout: 10000, windowsHide: true });
-        const lines = output.trim().split('\n');
-        if (lines[0] === 'OK') {
+        const { stdout: checkOutput } = await execAsync(checkCmd, { timeout: 10000, windowsHide: true });
+        const lines = checkOutput.trim().split('\n');
+
+        // Find 'OK' index as some warnings might precede it
+        const okIndex = lines.findIndex(l => l.trim() === 'OK');
+        if (okIndex !== -1 && lines.length > okIndex + 2) {
           hasUltralytics = true;
-          hasTorch = lines[1]?.startsWith('2.') || lines[1]?.startsWith('1.');
-          torchVersion = lines[1];
-          cudaAvailable = lines[2] === 'CUDA';
+          torchVersion = lines[okIndex + 1].trim();
+          hasTorch = torchVersion.startsWith('2.') || torchVersion.startsWith('1.');
+          cudaAvailable = lines[okIndex + 2].trim() === 'CUDA';
         }
       } catch (e) {
-        logger.debug(`Python validation: optional packages check failed: ${e.message}`);
+        logger.debug(`Python validation: optional packages check failed for ${pythonPath}: ${e.message}`);
       }
 
       return {
         valid: true,
-        version: version.trim(),
+        version: version,
         hasUltralytics,
         hasTorch,
         torchVersion,
         cudaAvailable,
         message: hasUltralytics
-          ? `Python ${version.trim()}, PyTorch ${torchVersion}, CUDA: ${cudaAvailable ? 'Yes' : 'No'}`
+          ? `Python ${version}, PyTorch ${torchVersion}, CUDA: ${cudaAvailable ? 'Yes' : 'No'}`
           : 'Python 有效（建议安装 ultralytics: pip install ultralytics）'
       };
     } catch (err) {
-      logger.error(`Python validation failed for ${pythonPath}:`, err.message);
+      logger.debug(`Python validation failed for ${pythonPath}: ${err.message}`);
       return { valid: false, error: err.message };
     }
   }
@@ -212,17 +219,15 @@ class PythonEnvService {
       }
     });
 
-    const results = [];
-    for (const [path, info] of candidates) {
-      const validation = await this.validatePython(path);
+    const validationPromises = Array.from(candidates.values()).map(async (info) => {
+      const validation = await this.validatePython(info.path);
       if (validation.valid) {
-        results.push({
-          ...info,
-          ...validation
-        });
+        return { ...info, ...validation };
       }
-    }
+      return null;
+    });
 
+    const results = (await Promise.all(validationPromises)).filter(r => r !== null);
     return results;
   }
 

@@ -9,6 +9,7 @@ export const ProjectProvider = ({ children }) => {
     const [currentProject, setCurrentProject] = useState(null); // String ID
     const [images, setImages] = useState([]);
     const [view, setView] = useState('dashboard'); // 'dashboard', 'gallery', 'editor', 'export', 'training'
+    const [previousView, setPreviousView] = useState('dashboard');
     const [selectedImage, setSelectedImage] = useState(null);
     const [loading, setLoading] = useState(false);
     const [configLoading, setConfigLoading] = useState(false);
@@ -143,7 +144,7 @@ export const ProjectProvider = ({ children }) => {
             setView('gallery');
             if (currentProject) fetchImages(currentProject);
         } else if (view === 'settings') {
-            setView('dashboard');
+            setView(previousView);
         } else if (view === 'gallery') {
             setView('dashboard');
             setCurrentProject(null);
@@ -160,6 +161,7 @@ export const ProjectProvider = ({ children }) => {
     };
 
     const openSettings = () => {
+        setPreviousView(view);
         setView('settings');
     };
 
@@ -185,30 +187,59 @@ export const ProjectProvider = ({ children }) => {
 
     const exportCollaboration = async (projectId) => {
         try {
-            const url = `http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/collaboration/export`;
-            const res = await fetch(url);
+            // If in Electron, use the native save dialog
+            if (window.electronAPI) {
+                // 1. Show save dialog
+                const saveDialogRes = await fetch('http://localhost:5000/api/utils/save-file-dialog', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        title: '导出协作包',
+                        defaultPath: `${projectId}_collaboration.zip`,
+                        filters: [{ name: 'ZIP Archive', extensions: ['zip'] }]
+                    })
+                });
+                const dialogData = await saveDialogRes.json();
 
-            if (!res.ok) {
-                const data = await res.json();
-                return { success: false, message: data.error || '导出失败' };
+                if (dialogData.path) {
+                    // 2. Perform export to path
+                    const exportRes = await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/collaboration/export-to-path`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ savePath: dialogData.path })
+                    });
+                    const result = await exportRes.json();
+
+                    if (result.success) {
+                        return {
+                            success: true,
+                            message: `✅ 协作包已成功保存至：${dialogData.path}`,
+                            path: dialogData.path
+                        };
+                    } else {
+                        return { success: false, message: result.error || '导出失败' };
+                    }
+                }
+                return { success: false, message: '已取消导出' }; // User canceled
             }
 
-            const blob = await res.blob();
-            const downloadUrl = window.URL.createObjectURL(blob);
+            // Fallback for non-electron: use direct download link
+            const url = `http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/collaboration/export`;
             const link = document.createElement('a');
-            link.href = downloadUrl;
+            link.href = url;
             link.setAttribute('download', `${projectId}_collaboration.zip`);
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
-            window.URL.revokeObjectURL(downloadUrl);
 
-            return { success: true, message: '协作包导出成功' };
+            return { success: true, message: '正在导出协作包，请查看浏览器下载记录' };
         } catch (err) {
             console.error("Failed to export collaboration package", err);
             return { success: false, message: '导出失败：网络错误或服务器异常' };
         }
     };
+
+
 
     const importCollaboration = async () => {
         try {

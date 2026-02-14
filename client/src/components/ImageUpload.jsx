@@ -61,7 +61,7 @@ export const ImageUpload = ({ projectId, onUploadComplete, compact = false, vari
         return (
             <>
                 <label
-                    className="glass-card glass-card-hover"
+                    className="glass-card"
                     style={{
                         display: 'flex',
                         flexDirection: 'column',
@@ -70,14 +70,30 @@ export const ImageUpload = ({ projectId, onUploadComplete, compact = false, vari
                         cursor: uploading ? 'wait' : 'pointer',
                         borderStyle: 'dashed',
                         borderWidth: '2px',
-                        borderColor: uploading ? 'var(--accent-primary)' : 'rgba(255,255,255,0.1)',
+                        borderColor: uploading ? 'var(--accent-primary)' : 'rgba(255, 255, 255, 0.08)',
                         width: '100%',
-                        aspectRatio: '1.5',
+                        aspectRatio: '4/3',
                         padding: '20px',
-                        background: uploading ? 'rgba(88, 166, 255, 0.05)' : 'rgba(255, 255, 255, 0.01)',
+                        background: uploading ? 'rgba(88, 166, 255, 0.05)' : 'rgba(255, 255, 255, 0.015)',
                         animationDelay: '0.1s',
-                        position: 'relative', // For progress overlay
-                        borderRadius: '16px'
+                        position: 'relative',
+                        borderRadius: '14px',
+                        transition: 'all 0.35s cubic-bezier(0.4, 0, 0.2, 1)',
+                        boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)'
+                    }}
+                    onMouseEnter={(e) => {
+                        if (!uploading) {
+                            e.currentTarget.style.transform = 'translateY(-5px) scale(1.02)';
+                            e.currentTarget.style.borderColor = 'rgba(77, 161, 255, 0.35)';
+                            e.currentTarget.style.boxShadow = '0 16px 32px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(77, 161, 255, 0.15)';
+                        }
+                    }}
+                    onMouseLeave={(e) => {
+                        if (!uploading) {
+                            e.currentTarget.style.transform = 'none';
+                            e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.08)';
+                            e.currentTarget.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.15)';
+                        }
                     }}
                 >
                     <input
