@@ -60,7 +60,14 @@ class JobQueue {
         currentJobId: this.currentJobId
       }, null, 2);
       
-      fs.writeFileSync(this.storagePath, data, 'utf-8');
+      const tempFilePath = this.storagePath + '.tmp';
+      
+      fs.writeFileSync(tempFilePath, data, 'utf-8');
+      
+      if (fs.existsSync(this.storagePath)) {
+        fs.unlinkSync(this.storagePath);
+      }
+      fs.renameSync(tempFilePath, this.storagePath);
     } catch (err) {
       logger.error('Failed to save job queue to disk:', err);
     }

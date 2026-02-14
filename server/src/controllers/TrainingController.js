@@ -29,6 +29,18 @@ function createTrainingRouter(projectsDir) {
     const parsedPath = PathUtils.parseYamlPath(config.data, defaultYamlPath, paths.root);
     const dataYamlPath = parsedPath.path;
 
+    const pathBoundsCheck = PathUtils.validatePathWithinBounds(dataYamlPath, paths.root, {
+      allowAbsolute: true,
+      allowedExtensions: ['.yaml', '.yml']
+    });
+    if (!pathBoundsCheck.valid) {
+      logger.warn(`Path security check failed: ${JSON.stringify(pathBoundsCheck.issues)}`);
+      return res.status(400).json({
+        error: `路径安全检查失败: ${pathBoundsCheck.issues.join('; ')}`,
+        code: 'PATH_SECURITY_VIOLATION'
+      });
+    }
+
     const pathValidation = PathUtils.validateForYaml(dataYamlPath);
     if (!pathValidation.valid) {
       const errorMsg = PathUtils.formatErrorMessage(pathValidation, config.data);
@@ -166,6 +178,18 @@ function createTrainingRouter(projectsDir) {
     
     const parsedPath = PathUtils.parseYamlPath(config.data, defaultYamlPath, paths.root);
     const dataYamlPath = parsedPath.path;
+
+    const pathBoundsCheck = PathUtils.validatePathWithinBounds(dataYamlPath, paths.root, {
+      allowAbsolute: true,
+      allowedExtensions: ['.yaml', '.yml']
+    });
+    if (!pathBoundsCheck.valid) {
+      logger.warn(`Path security check failed: ${JSON.stringify(pathBoundsCheck.issues)}`);
+      return res.status(400).json({
+        error: `路径安全检查失败: ${pathBoundsCheck.issues.join('; ')}`,
+        code: 'PATH_SECURITY_VIOLATION'
+      });
+    }
 
     const pathValidation = PathUtils.validateForYaml(dataYamlPath);
     if (!pathValidation.valid) {

@@ -19,6 +19,7 @@ class TrainingService {
     this.isShuttingDown = false;
     this.jobQueue = new JobQueue();
     this.csvWatchers = new Map();
+    this.jsonBuffer = new Map();
     
     this.setupProcessCleanup();
     this.setupQueueListeners();
@@ -118,18 +119,58 @@ class TrainingService {
     }
   }
 
+  killProcess(pid, force = false) {
+    if (!pid) return false;
+    
+    const isWindows = process.platform === 'win32';
+    
+    try {
+      if (isWindows) {
+        const { execSync } = require('child_process');
+        const signal = force ? '/F' : '';
+        execSync(`taskkill ${signal} /PID ${pid} /T`, { stdio: 'ignore' });
+        logger.debug(`Killed process ${pid} via taskkill (force: ${force})`);
+      } else {
+        process.kill(pid, force ? 'SIGKILL' : 'SIGTERM');
+        logger.debug(`Killed process ${pid} via signal ${force ? 'SIGKILL' : 'SIGTERM'}`);
+      }
+      return true;
+    } catch (e) {
+      if (e.code === 'ESRCH') {
+        return true;
+      }
+      logger.debug(`Failed to kill process ${pid}: ${e.message}`);
+      return false;
+    }
+  }
+
+  async isProcessRunning(pid) {
+    if (!pid) return false;
+    
+    const isWindows = process.platform === 'win32';
+    
+    try {
+      if (isWindows) {
+        const { execSync } = require('child_process');
+        execSync(`tasklist /FI "PID eq ${pid}"`, { stdio: 'ignore' });
+        return true;
+      } else {
+        process.kill(pid, 0);
+        return true;
+      }
+    } catch (e) {
+      return false;
+    }
+  }
+
   killAllProcesses() {
     const runningProcesses = this.processes.getRunning();
     logger.info(`Cleaning up ${runningProcesses.length} running processes`);
     
     runningProcesses.forEach(proc => {
       if (proc.pid) {
-        try {
-          process.kill(proc.pid);
-          logger.info(`Killed process ${proc.pid} for project ${proc.projectId}`);
-        } catch (e) {
-          logger.debug(`Failed to kill process ${proc.pid}: ${e.message}`);
-        }
+        this.killProcess(proc.pid, true);
+        logger.info(`Killed process ${proc.pid} for project ${proc.projectId}`);
       }
     });
   }
@@ -144,23 +185,14 @@ class TrainingService {
       if (proc.pid) {
         try {
           logger.info(`Sending SIGTERM to process ${proc.pid} (project: ${proc.projectId})`);
-          process.kill(proc.pid, 'SIGTERM');
+          this.killProcess(proc.pid, false);
           
-          await new Promise((resolve, reject) => {
-            const timeout = setTimeout(() => {
-              logger.warn(`Process ${proc.pid} did not exit gracefully, sending SIGKILL`);
-              try {
-                process.kill(proc.pid, 'SIGKILL');
-              } catch (e) {}
-              resolve();
-            }, 5000);
-            
-            try {
-              process.kill(proc.pid, 'SIGKILL');
-            } catch (e) {}
-            clearTimeout(timeout);
-            resolve();
-          });
+          const exited = await this.waitForProcessExit(proc.pid, 5000);
+          
+          if (!exited) {
+            logger.warn(`Process ${proc.pid} did not exit gracefully, sending SIGKILL`);
+            this.killProcess(proc.pid, true);
+          }
           
           this.processes.addLog(proc.projectId, {
             type: 'system',
@@ -177,6 +209,20 @@ class TrainingService {
     
     logger.info('Graceful shutdown completed');
     process.exit(0);
+  }
+
+  async waitForProcessExit(pid, timeoutMs) {
+    const startTime = Date.now();
+    
+    while (Date.now() - startTime < timeoutMs) {
+      const running = await this.isProcessRunning(pid);
+      if (!running) {
+        return true;
+      }
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    
+    return false;
   }
 
   async getPythonCommand() {
@@ -267,6 +313,8 @@ class TrainingService {
       throw new Error('Training is already in progress for this project');
     }
 
+    this.jsonBuffer.set(projectId, '');
+
     const { cmd: pythonCmd } = await this.getPythonCommand();
     const args = this.buildArgs(config);
 
@@ -311,13 +359,20 @@ class TrainingService {
     });
 
     child.stdout.on('data', (data) => {
-      const lines = data.toString().split('\n');
+      const chunk = data.toString();
+      let buffer = this.jsonBuffer.get(projectId) || '';
+      buffer += chunk;
+      
+      const lines = buffer.split('\n');
+      buffer = lines.pop();
+      
       lines.forEach(line => {
         if (!line.trim()) return;
 
         if (line.startsWith(JSON_LOG_PREFIX)) {
           try {
-            const jsonData = JSON.parse(line.slice(JSON_LOG_PREFIX.length));
+            const jsonStr = line.slice(JSON_LOG_PREFIX.length);
+            const jsonData = JSON.parse(jsonStr);
             this.processes.addMetric(projectId, {
               ...jsonData,
               time: Date.now()
@@ -339,7 +394,7 @@ class TrainingService {
               });
             }
           } catch (e) {
-            logger.debug(`Failed to parse JSON log: ${e.message}`);
+            logger.debug(`Failed to parse JSON log: ${e.message}, raw: ${line.slice(0, 100)}`);
           }
         } else {
           const trimmed = line.trim();
@@ -450,6 +505,8 @@ class TrainingService {
         logger.debug(`Closed CSV watcher for project ${projectId}`);
       }
       
+      this.jsonBuffer.delete(projectId);
+      
       if (code === 0) {
         const status = 'completed';
         this.processes.setStatus(projectId, status);
@@ -550,18 +607,17 @@ class TrainingService {
 
     try {
       if (this.processes.get(projectId) && this.processes.get(projectId).pid) {
-        try {
-          process.kill(this.processes.get(projectId).pid);
-          logger.info(`Killed old process for project ${projectId}`);
-        } catch (e) {
-          logger.debug(`Error killing process: ${e.message}`);
-        }
+        this.killProcess(this.processes.get(projectId).pid, true);
+        logger.info(`Killed old process for project ${projectId}`);
       }
     } catch (e) {
       logger.debug(`Error during cleanup: ${e.message}`);
     }
 
     await new Promise(resolve => setTimeout(resolve, 3000));
+
+    this.processes.setStatus(projectId, 'idle');
+    logger.info(`Reset process status to 'idle' for OOM retry of project ${projectId}`);
 
     const newConfig = {
       ...config,
@@ -592,7 +648,7 @@ class TrainingService {
     }
 
     try {
-      process.kill(processState.pid);
+      this.killProcess(processState.pid, true);
       this.processes.setStatus(projectId, 'stopped');
       this.processes.addLog(projectId, {
         type: 'system',
@@ -688,8 +744,9 @@ class TrainingService {
     const watcher = fs.watch(csvPath, (eventType) => {
       if (eventType !== 'change') return;
 
-      try {
-        const stats = fs.statSync(csvPath);
+      setTimeout(() => {
+        try {
+          const stats = fs.statSync(csvPath);
         const newSize = stats.size;
 
         if (newSize > lastSize) {
@@ -775,6 +832,7 @@ class TrainingService {
       } catch (e) {
         logger.debug(`Error reading CSV: ${e.message}`);
       }
+      }, 100);
     });
 
     watcher.on('error', (err) => {
@@ -785,6 +843,14 @@ class TrainingService {
   }
 
   async startDryRun(projectId, config) {
+    const runningProcesses = this.processes.getRunning();
+    if (runningProcesses.length > 0) {
+      return {
+        success: false,
+        error: '当前已有正在进行的训练任务，无法启动测试运行。请等待当前任务完成或终止后再试。'
+      };
+    }
+
     const dryRunConfig = {
       ...config,
       epochs: 1,

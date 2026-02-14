@@ -251,6 +251,85 @@ const PathUtils = {
     } catch (err) {
       return { valid: false, error: err.message };
     }
+  },
+
+  isPathTraversal(pathString) {
+    const normalized = path.normalize(pathString);
+    return normalized.includes('..');
+  },
+
+  isWithinDirectory(filePath, allowedDir) {
+    try {
+      const normalizedFile = path.normalize(path.resolve(filePath));
+      const normalizedDir = path.normalize(path.resolve(allowedDir));
+      return normalizedFile.startsWith(normalizedDir + path.sep) || normalizedFile === normalizedDir;
+    } catch (err) {
+      return false;
+    }
+  },
+
+  validatePathWithinBounds(targetPath, allowedRoot, options = {}) {
+    const { 
+      allowAbsolute = false, 
+      allowedExtensions = [] 
+    } = options;
+
+    const issues = [];
+    const warnings = [];
+
+    if (!targetPath || typeof targetPath !== 'string') {
+      return { valid: false, issues: ['路径不能为空'] };
+    }
+
+    if (this.isPathTraversal(targetPath)) {
+      issues.push('检测到路径遍历攻击: 路径包含 ".." 跳转');
+    }
+
+    const absolutePath = path.isAbsolute(targetPath) ? targetPath : path.resolve(allowedRoot, targetPath);
+    
+    if (!allowAbsolute && path.isAbsolute(targetPath)) {
+      warnings.push('建议使用相对路径而非绝对路径');
+    }
+
+    if (!this.isWithinDirectory(absolutePath, allowedRoot)) {
+      issues.push(`路径越界: ${targetPath} 不在允许的目录 ${allowedRoot} 内`);
+    }
+
+    if (allowedExtensions.length > 0) {
+      const ext = path.extname(targetPath).toLowerCase();
+      if (!allowedExtensions.includes(ext)) {
+        issues.push(`不支持的文件类型: ${ext}，允许的类型: ${allowedExtensions.join(', ')}`);
+      }
+    }
+
+    return {
+      valid: issues.length === 0,
+      issues,
+      warnings,
+      resolvedPath: absolutePath
+    };
+  },
+
+  sanitizePath(inputPath, baseDir = '') {
+    if (!inputPath || typeof inputPath !== 'string') {
+      return '';
+    }
+
+    let sanitized = inputPath.trim();
+
+    sanitized = sanitized.replace(/[<>:"|?*]/g, '');
+
+    sanitized = sanitized.replace(/\.\.+/g, '.');
+
+    if (baseDir) {
+      const resolved = path.resolve(baseDir, sanitized);
+      if (!this.isWithinDirectory(resolved, baseDir)) {
+        return path.basename(sanitized);
+      }
+      return path.relative(baseDir, resolved);
+    }
+
+    return sanitized;
   }
 };
 
