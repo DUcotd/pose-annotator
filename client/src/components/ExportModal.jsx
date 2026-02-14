@@ -1,8 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Download, X, Shuffle, FolderOpen } from 'lucide-react';
+import { Download, X, Shuffle, FolderOpen, Loader2 } from 'lucide-react';
+import { useProject } from '../context/ProjectContext';
 
 export const ExportModal = ({ isOpen, onClose, onExport }) => {
+    const { currentProject, projectConfig, configLoading, updateProjectConfig } = useProject();
+
     const [includeVisibility, setIncludeVisibility] = useState(true);
     const [customPath, setCustomPath] = useState('');
     const [numKeypoints, setNumKeypoints] = useState(17);
@@ -15,7 +18,50 @@ export const ExportModal = ({ isOpen, onClose, onExport }) => {
     const [shuffleData, setShuffleData] = useState(true);
     const [includeUnannotated, setIncludeUnannotated] = useState(true);
 
+    // Sync state with projectConfig when modal opens
+    useEffect(() => {
+        if (isOpen && projectConfig.exportSettings) {
+            const s = projectConfig.exportSettings;
+            if (s.includeVisibility !== undefined) setIncludeVisibility(s.includeVisibility);
+            if (s.customPath !== undefined) setCustomPath(s.customPath);
+            if (s.numKeypoints !== undefined) setNumKeypoints(s.numKeypoints);
+            if (s.trainRatio !== undefined) setTrainRatio(Math.round(s.trainRatio * 100));
+            if (s.valRatio !== undefined) setValRatio(Math.round(s.valRatio * 100));
+            if (s.testRatio !== undefined) setTestRatio(Math.round(s.testRatio * 100));
+            if (s.shuffle !== undefined) setShuffleData(s.shuffle);
+            if (s.includeUnannotated !== undefined) setIncludeUnannotated(s.includeUnannotated);
+        }
+    }, [isOpen, projectConfig]);
+
+    // Save settings helper
+    const saveSettings = async (updates) => {
+        const currentSettings = {
+            includeVisibility,
+            customPath,
+            numKeypoints,
+            trainRatio: trainRatio / 100,
+            valRatio: valRatio / 100,
+            testRatio: testRatio / 100,
+            shuffle: shuffleData,
+            includeUnannotated,
+            ...updates
+        };
+        await updateProjectConfig(currentProject, { exportSettings: currentSettings });
+    };
+
     if (!isOpen) return null;
+
+    if (configLoading) {
+        return createPortal(
+            <div className="modal-overlay" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div className="modal-content-modern" style={{ width: 'auto', padding: '2rem', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <Loader2 size={24} className="spin" />
+                    <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>加载配置...</span>
+                </div>
+            </div>,
+            document.body
+        );
+    }
 
     const totalRatio = trainRatio + valRatio + testRatio;
     const isRatioValid = totalRatio === 100;
@@ -26,6 +72,7 @@ export const ExportModal = ({ isOpen, onClose, onExport }) => {
             const data = await res.json();
             if (data.path) {
                 setCustomPath(data.path);
+                saveSettings({ customPath: data.path });
             }
         } catch (err) {
             console.error('Failed to select folder:', err);
@@ -54,20 +101,28 @@ export const ExportModal = ({ isOpen, onClose, onExport }) => {
         const t = Math.max(0, Math.min(100, parseInt(v) || 0));
         setTrainRatio(t);
         // Auto-adjust val to fit, test gets remainder
-        if (t + valRatio > 100) setValRatio(100 - t);
-        setTestRatio(Math.max(0, 100 - t - Math.min(valRatio, 100 - t)));
+        let newVal = valRatio;
+        if (t + newVal > 100) newVal = 100 - t;
+        const newTest = Math.max(0, 100 - t - Math.min(newVal, 100 - t));
+        setValRatio(newVal);
+        setTestRatio(newTest);
+        saveSettings({ trainRatio: t / 100, valRatio: newVal / 100, testRatio: newTest / 100 });
     };
 
     const handleValChange = (v) => {
         const val = Math.max(0, Math.min(100, parseInt(v) || 0));
         setValRatio(val);
-        setTestRatio(Math.max(0, 100 - trainRatio - val));
+        const newTest = Math.max(0, 100 - trainRatio - val);
+        setTestRatio(newTest);
+        saveSettings({ valRatio: val / 100, testRatio: newTest / 100 });
     };
 
     const handleTestChange = (v) => {
         const t = Math.max(0, Math.min(100, parseInt(v) || 0));
         setTestRatio(t);
-        setValRatio(Math.max(0, 100 - trainRatio - t));
+        const newVal = Math.max(0, 100 - trainRatio - t);
+        setValRatio(newVal);
+        saveSettings({ testRatio: t / 100, valRatio: newVal / 100 });
     };
 
     return createPortal(
@@ -101,7 +156,10 @@ export const ExportModal = ({ isOpen, onClose, onExport }) => {
                             <input
                                 type="checkbox"
                                 checked={includeVisibility}
-                                onChange={(e) => setIncludeVisibility(e.target.checked)}
+                                onChange={(e) => {
+                                    setIncludeVisibility(e.target.checked);
+                                    saveSettings({ includeVisibility: e.target.checked });
+                                }}
                             />
                             <span style={{ fontSize: '14px', fontWeight: 500 }}>包含可见性 (v=2)</span>
                         </label>
@@ -110,7 +168,10 @@ export const ExportModal = ({ isOpen, onClose, onExport }) => {
                             <input
                                 type="checkbox"
                                 checked={includeUnannotated}
-                                onChange={(e) => setIncludeUnannotated(e.target.checked)}
+                                onChange={(e) => {
+                                    setIncludeUnannotated(e.target.checked);
+                                    saveSettings({ includeUnannotated: e.target.checked });
+                                }}
                             />
                             <span style={{ fontSize: '14px', fontWeight: 500 }}>包含未标注数据 (生成空标签文件)</span>
                         </label>
@@ -137,7 +198,11 @@ export const ExportModal = ({ isOpen, onClose, onExport }) => {
                                 min="1"
                                 max="100"
                                 value={numKeypoints}
-                                onChange={(e) => setNumKeypoints(parseInt(e.target.value) || 17)}
+                                onChange={(e) => {
+                                    const val = parseInt(e.target.value) || 17;
+                                    setNumKeypoints(val);
+                                    saveSettings({ numKeypoints: val });
+                                }}
                                 className="input-sm"
                                 style={{ width: '90px', height: '50px', textAlign: 'center', background: 'rgba(0,0,0,0.4)', fontWeight: 800, fontSize: '1.25rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.1)' }}
                             />
@@ -222,7 +287,10 @@ export const ExportModal = ({ isOpen, onClose, onExport }) => {
                             <input
                                 type="checkbox"
                                 checked={shuffleData}
-                                onChange={(e) => setShuffleData(e.target.checked)}
+                                onChange={(e) => {
+                                    setShuffleData(e.target.checked);
+                                    saveSettings({ shuffle: e.target.checked });
+                                }}
                             />
                             <span style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '14px', fontWeight: 500 }}>
                                 <Shuffle size={16} className="text-accent" /> 随机打乱样本顺序

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 
 const ProjectContext = createContext();
 
@@ -11,6 +11,9 @@ export const ProjectProvider = ({ children }) => {
     const [view, setView] = useState('dashboard'); // 'dashboard', 'gallery', 'editor', 'export', 'training'
     const [selectedImage, setSelectedImage] = useState(null);
     const [loading, setLoading] = useState(false);
+    const [configLoading, setConfigLoading] = useState(false);
+    const [projectConfig, setProjectConfig] = useState({ classMapping: {}, exportSettings: {}, trainingSettings: {} });
+    const updateTimeoutRef = useRef(null);
 
     // --- Actions ---
 
@@ -41,6 +44,45 @@ export const ProjectProvider = ({ children }) => {
         }
     }, []);
 
+    const fetchProjectConfig = useCallback(async (projectId) => {
+        if (!projectId) return;
+        setConfigLoading(true);
+        try {
+            const res = await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/config`);
+            const data = await res.json();
+            setProjectConfig(data);
+        } catch (err) {
+            console.error("Failed to fetch project config", err);
+        } finally {
+            setConfigLoading(false);
+        }
+    }, []);
+
+    const updateProjectConfig = (projectId, updates) => {
+        if (!projectId) return;
+
+        // Update local state immediately for UI responsiveness
+        setProjectConfig(prev => {
+            const next = { ...prev, ...updates };
+
+            // Debounce the backend update
+            if (updateTimeoutRef.current) clearTimeout(updateTimeoutRef.current);
+            updateTimeoutRef.current = setTimeout(async () => {
+                try {
+                    await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/config`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(next)
+                    });
+                } catch (err) {
+                    console.error("Failed to sync project config to backend", err);
+                }
+            }, 500);
+
+            return next;
+        });
+    };
+
     const createProject = async (name) => {
         try {
             const res = await fetch('http://localhost:5000/api/projects', {
@@ -61,14 +103,21 @@ export const ProjectProvider = ({ children }) => {
 
     const deleteProject = async (projectId) => {
         try {
-            await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}`, { method: 'DELETE' });
-            await fetchProjects();
-            if (currentProject === projectId) {
-                setCurrentProject(null);
-                setView('dashboard');
+            const res = await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}`, { method: 'DELETE' });
+            if (res.ok) {
+                await fetchProjects();
+                if (currentProject === projectId) {
+                    setCurrentProject(null);
+                    setView('dashboard');
+                }
+                return { success: true, message: '项目已删除' };
+            } else {
+                const data = await res.json();
+                return { success: false, message: data.error || '删除失败' };
             }
         } catch (err) {
             console.error("Failed to delete project", err);
+            return { success: false, message: '删除失败：网络错误' };
         }
     };
 
@@ -77,6 +126,7 @@ export const ProjectProvider = ({ children }) => {
         setCurrentProject(projectId);
         setView('gallery');
         fetchImages(projectId);
+        fetchProjectConfig(projectId);
     };
 
     const openEditor = (image) => {
@@ -136,14 +186,27 @@ export const ProjectProvider = ({ children }) => {
     const exportCollaboration = async (projectId) => {
         try {
             const url = `http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/collaboration/export`;
+            const res = await fetch(url);
+
+            if (!res.ok) {
+                const data = await res.json();
+                return { success: false, message: data.error || '导出失败' };
+            }
+
+            const blob = await res.blob();
+            const downloadUrl = window.URL.createObjectURL(blob);
             const link = document.createElement('a');
-            link.href = url;
+            link.href = downloadUrl;
             link.setAttribute('download', `${projectId}_collaboration.zip`);
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
+            window.URL.revokeObjectURL(downloadUrl);
+
+            return { success: true, message: '协作包导出成功' };
         } catch (err) {
             console.error("Failed to export collaboration package", err);
+            return { success: false, message: '导出失败：网络错误或服务器异常' };
         }
     };
 
@@ -289,7 +352,10 @@ export const ProjectProvider = ({ children }) => {
         selectFolder,
         scanImages,
         importImages,
-        getImportHistory
+        getImportHistory,
+        projectConfig,
+        configLoading,
+        updateProjectConfig
     };
 
     return (

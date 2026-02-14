@@ -10,7 +10,7 @@ import { TrainingDashboard } from './training/TrainingDashboard';
 import { TrainingForm, AugmentationForm } from './training/TrainingForms';
 
 export const TrainingConfig = () => {
-    const { currentProject, goBack } = useProject();
+    const { currentProject, configLoading, goBack } = useProject();
     const {
         config,
         status,
@@ -41,6 +41,15 @@ export const TrainingConfig = () => {
             }
         }
     };
+
+    if (configLoading) {
+        return (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', background: 'var(--bg-primary)', color: 'var(--text-secondary)', gap: '12px' }}>
+                <RefreshCw size={24} className="spin" />
+                <span style={{ fontWeight: 600 }}>加载训练配置...</span>
+            </div>
+        );
+    }
 
     return (
         <div style={{

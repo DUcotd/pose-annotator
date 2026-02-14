@@ -108,7 +108,7 @@ const Toggle = ({ checked, onChange, label, desc }) => (
 );
 
 export const DatasetExport = () => {
-    const { currentProject, exportProject, exportCollaboration, goBack } = useProject();
+    const { currentProject, projectConfig, configLoading, updateProjectConfig, exportProject, exportCollaboration, goBack } = useProject();
     const [includeVisibility, setIncludeVisibility] = useState(true);
     const [customPath, setCustomPath] = useState('');
     const [numKeypoints, setNumKeypoints] = useState(17);
@@ -142,7 +142,36 @@ export const DatasetExport = () => {
             }
         };
         fetchStats();
-    }, [currentProject]);
+
+        // Sync state with projectConfig
+        if (projectConfig.exportSettings) {
+            const s = projectConfig.exportSettings;
+            if (s.includeVisibility !== undefined) setIncludeVisibility(s.includeVisibility);
+            if (s.customPath !== undefined) setCustomPath(s.customPath);
+            if (s.numKeypoints !== undefined) setNumKeypoints(s.numKeypoints);
+            if (s.trainRatio !== undefined) setTrainRatio(Math.round(s.trainRatio * 100));
+            if (s.valRatio !== undefined) setValRatio(Math.round(s.valRatio * 100));
+            if (s.testRatio !== undefined) setTestRatio(Math.round(s.testRatio * 100));
+            if (s.shuffle !== undefined) setShuffleData(s.shuffle);
+            if (s.includeUnannotated !== undefined) setIncludeUnannotated(s.includeUnannotated);
+        }
+    }, [currentProject, projectConfig]);
+
+    // Save settings helper
+    const saveSettings = async (updates) => {
+        const currentSettings = {
+            includeVisibility,
+            customPath,
+            numKeypoints,
+            trainRatio: (typeof trainRatio === 'number' ? trainRatio : 0) / 100,
+            valRatio: (typeof valRatio === 'number' ? valRatio : 0) / 100,
+            testRatio: (typeof testRatio === 'number' ? testRatio : 0) / 100,
+            shuffle: shuffleData,
+            includeUnannotated,
+            ...updates
+        };
+        await updateProjectConfig(currentProject, { exportSettings: currentSettings });
+    };
 
     const totalRatio = trainRatio + valRatio + testRatio;
     const isRatioValid = totalRatio === 100;
@@ -161,6 +190,7 @@ export const DatasetExport = () => {
             const data = await res.json();
             if (data.path) {
                 setCustomPath(data.path);
+                saveSettings({ customPath: data.path });
             }
         } catch (err) {
             console.error('Failed to select folder:', err);
@@ -200,10 +230,15 @@ export const DatasetExport = () => {
         }
     };
 
-    const handleCollaborationExport = () => {
-        setNotification({ type: 'success', message: '正在准备项目协作包，即将开始下载...' });
-        exportCollaboration(currentProject);
-        setTimeout(() => setNotification(null), 5000);
+    const handleCollaborationExport = async () => {
+        setNotification({ type: 'success', message: '正在准备项目协作包，请稍候...' });
+        const result = await exportCollaboration(currentProject);
+        if (result.success) {
+            setNotification({ type: 'success', message: '✅ 协作包导出成功！已开始下载。' });
+            setTimeout(() => setNotification(null), 8000);
+        } else {
+            setNotification({ type: 'error', message: `❌ 导出失败: ${result.message}` });
+        }
     };
 
     const handleTrainChange = (v) => {
@@ -215,14 +250,19 @@ export const DatasetExport = () => {
         setTrainRatio(t);
         // Auto-adjust val and test
         const remaining = 100 - t;
+        let newValRatio = valRatio;
+        let newTestRatio = testRatio;
         if (valRatio + testRatio === 0) {
-            setValRatio(remaining);
+            newValRatio = remaining;
+            newTestRatio = 0;
         } else {
             const currentSubtotal = valRatio + testRatio;
-            const newVal = Math.round((valRatio / currentSubtotal) * remaining);
-            setValRatio(newVal);
-            setTestRatio(remaining - newVal);
+            newValRatio = Math.round((valRatio / currentSubtotal) * remaining);
+            newTestRatio = remaining - newValRatio;
         }
+        setValRatio(newValRatio);
+        setTestRatio(newTestRatio);
+        saveSettings({ trainRatio: t / 100, valRatio: newValRatio / 100, testRatio: newTestRatio / 100 });
     };
 
     const handleValChange = (v) => {
@@ -233,12 +273,18 @@ export const DatasetExport = () => {
         const val = Math.max(0, Math.min(100, parseInt(v) || 0));
         setValRatio(val);
         // Adjust test to fit, if train + val > 100, adjust train
+        let newTrain = trainRatio;
+        let newTest = testRatio;
         if (trainRatio + val > 100) {
-            setTrainRatio(100 - val);
-            setTestRatio(0);
+            newTrain = 100 - val;
+            newTest = 0;
+            setTrainRatio(newTrain);
+            setTestRatio(newTest);
         } else {
-            setTestRatio(100 - trainRatio - val);
+            newTest = 100 - trainRatio - val;
+            setTestRatio(newTest);
         }
+        saveSettings({ trainRatio: newTrain / 100, valRatio: val / 100, testRatio: newTest / 100 });
     };
 
     const handleTestChange = (v) => {
@@ -249,13 +295,28 @@ export const DatasetExport = () => {
         const t = Math.max(0, Math.min(100, parseInt(v) || 0));
         setTestRatio(t);
         // Adjust val to fit, if train + test > 100, adjust train
+        let newTrain = trainRatio;
+        let newVal = valRatio;
         if (trainRatio + t > 100) {
-            setTrainRatio(100 - t);
-            setValRatio(0);
+            newTrain = 100 - t;
+            newVal = 0;
+            setTrainRatio(newTrain);
+            setValRatio(newVal);
         } else {
-            setValRatio(100 - trainRatio - t);
+            newVal = 100 - trainRatio - t;
+            setValRatio(newVal);
         }
+        saveSettings({ trainRatio: newTrain / 100, valRatio: newVal / 100, testRatio: t / 100 });
     };
+
+    if (configLoading) {
+        return (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', background: 'var(--bg-primary)', color: 'var(--text-secondary)', gap: '12px' }}>
+                <Loader2 size={24} className="spin" />
+                <span style={{ fontWeight: 600 }}>加载工程配置...</span>
+            </div>
+        );
+    }
 
     return (
 
@@ -371,13 +432,19 @@ export const DatasetExport = () => {
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                             <Toggle
                                 checked={includeVisibility}
-                                onChange={(e) => setIncludeVisibility(e.target.checked)}
+                                onChange={(e) => {
+                                    setIncludeVisibility(e.target.checked);
+                                    saveSettings({ includeVisibility: e.target.checked });
+                                }}
                                 label="包含可见性标志 (v=2)"
                                 desc="在标签文件中包含关键点可见性信息"
                             />
                             <Toggle
                                 checked={includeUnannotated}
-                                onChange={(e) => setIncludeUnannotated(e.target.checked)}
+                                onChange={(e) => {
+                                    setIncludeUnannotated(e.target.checked);
+                                    saveSettings({ includeUnannotated: e.target.checked });
+                                }}
                                 label="包含未标注数据"
                                 desc="为未标注图片生成空标签文件"
                             />
@@ -394,7 +461,11 @@ export const DatasetExport = () => {
                                     min="1"
                                     max="100"
                                     value={numKeypoints}
-                                    onChange={(e) => setNumKeypoints(parseInt(e.target.value) || 17)}
+                                    onChange={(e) => {
+                                        const val = parseInt(e.target.value) || 17;
+                                        setNumKeypoints(val);
+                                        saveSettings({ numKeypoints: val });
+                                    }}
                                     style={{
                                         width: '90px',
                                         height: '52px',
@@ -519,7 +590,10 @@ export const DatasetExport = () => {
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                             <Toggle
                                 checked={shuffleData}
-                                onChange={(e) => setShuffleData(e.target.checked)}
+                                onChange={(e) => {
+                                    setShuffleData(e.target.checked);
+                                    saveSettings({ shuffle: e.target.checked });
+                                }}
                                 label="随机打乱数据"
                                 desc="使用 Fisher-Yates 算法确保分布均匀"
                             />

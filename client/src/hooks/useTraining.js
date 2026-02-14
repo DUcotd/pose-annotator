@@ -1,6 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useProject } from '../context/ProjectContext';
 
 export const useTraining = (projectId) => {
+    const { projectConfig, updateProjectConfig } = useProject();
+
     const [config, setConfig] = useState({
         model: 'yolov8n.pt',
         data: '',
@@ -26,8 +29,16 @@ export const useTraining = (projectId) => {
         mixup: 0,
         copy_paste: 0,
         erasing: 0.4,
-        crop_fraction: 1.0
+        crop_fraction: 1.0,
+        ...(projectConfig.trainingSettings || {})
     });
+
+    // Handle project change or initial load
+    useEffect(() => {
+        if (projectConfig.trainingSettings) {
+            setConfig(prev => ({ ...prev, ...projectConfig.trainingSettings }));
+        }
+    }, [projectConfig.trainingSettings]);
 
     const [status, setStatus] = useState('idle');
     const [logs, setLogs] = useState([]);
@@ -141,7 +152,10 @@ export const useTraining = (projectId) => {
     };
 
     const updateConfig = (updates) => {
-        setConfig(prev => ({ ...prev, ...updates }));
+        const newConfig = { ...config, ...updates };
+        setConfig(newConfig);
+        // Persist to project config
+        updateProjectConfig(projectId, { trainingSettings: newConfig });
     };
 
     return {

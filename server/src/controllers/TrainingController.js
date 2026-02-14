@@ -331,83 +331,9 @@ function createUtilsRouter(projectsDir) {
     }
   });
 
-  router.post('/import-images', async (req, res) => {
-    const { projectId } = req.params;
-    const { images, mode = 'copy' } = req.body;
-
-    if (!images || !Array.isArray(images) || images.length === 0) {
-      return res.status(400).json({ error: '请提供要导入的图片列表' });
-    }
-
-    const ExportService = require('../services/ExportService');
-    const SafeFileOp = require('../services/FileService');
-    const paths = ExportService.getProjectPaths(projectId, projectsDir);
-
-    await SafeFileOp.ensureDir(paths.uploads);
-    const existingFiles = new Set(fs.readdirSync(paths.uploads));
-
-    const results = { success: [], failed: [], skipped: [], duplicates: [] };
-
-    for (const imageInfo of images) {
-      const { path: sourcePath, name: originalName } = imageInfo;
-
-      if (!fs.existsSync(sourcePath)) {
-        results.failed.push({ path: sourcePath, error: '源文件不存在' });
-        continue;
-      }
-
-      let targetName = originalName;
-      let counter = 1;
-      while (existingFiles.has(targetName)) {
-        const ext = path.extname(originalName);
-        const baseName = path.basename(originalName, ext);
-        targetName = `${baseName}_${Date.now()}_${counter}${ext}`;
-        counter++;
-      }
-
-      if (targetName !== originalName) {
-        results.duplicates.push({ original: originalName, renamed: targetName });
-      }
-
-      const targetPath = path.join(paths.uploads, targetName);
-
-      try {
-        if (mode === 'copy') {
-          await fs.promises.copyFile(sourcePath, targetPath);
-        } else {
-          await fs.promises.rename(sourcePath, targetPath);
-        }
-
-        existingFiles.add(targetName);
-        results.success.push({ originalName, targetName });
-      } catch (err) {
-        results.failed.push({ path: sourcePath, error: err.message });
-      }
-    }
-
-    res.json({
-      success: true,
-      message: `成功导入 ${results.success.length}/${images.length} 张图片`,
-      results
-    });
-  });
-
-  router.get('/:projectId/import-history', (req, res) => {
-    const { projectId } = req.params;
-    const ExportService = require('../services/ExportService');
-    const paths = ExportService.getProjectPaths(projectId, projectsDir);
-    const historyPath = path.join(paths.root, 'import-history.json');
-
-    if (!fs.existsSync(historyPath)) {
-      return res.json({ history: [] });
-    }
-
-    try {
-      const history = JSON.parse(fs.readFileSync(historyPath, 'utf8'));
-      res.json({ history });
-    } catch (e) {
-      res.json({ history: [] });
-    }
+  router.get('/import-history', (req, res) => {
+    // This route was incorrectly placed here and moved to ProjectController.js
+    res.status(410).json({ error: 'This route has moved to /api/projects/:projectId/import-history' });
   });
 
   return router;

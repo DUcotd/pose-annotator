@@ -1,25 +1,43 @@
 import React, { useState } from 'react';
 import { useProject } from '../context/ProjectContext';
-import { 
-    ProjectCard, 
-    CreateProjectCard, 
-    EmptyState, 
-    HeroSection, 
+import {
+    ProjectCard,
+    CreateProjectCard,
+    EmptyState,
+    HeroSection,
     DashboardStats,
-    CreateProjectModal, 
+    CreateProjectModal,
+    ConfirmModal,
     QuickGuideModal,
-    Toast 
+    Toast
 } from './dashboard';
 
 export const ProjectDashboard = ({ projects = [], onCreateProject, onSelectProject, onDeleteProject }) => {
     const { importCollaboration, renumberProject } = useProject();
     const [isCreating, setIsCreating] = useState(false);
     const [isGuideOpen, setIsGuideOpen] = useState(false);
+    const [isConfirming, setIsConfirming] = useState(false);
+    const [projectToDelete, setProjectToDelete] = useState(null);
     const [notification, setNotification] = useState(null);
 
     const handleRenumber = async (projectId) => {
         const result = await renumberProject(projectId);
         setNotification({ type: result.success ? 'success' : 'error', message: result.message });
+    };
+
+    const handleDeleteProject = (projectId) => {
+        setProjectToDelete(projectId);
+        setIsConfirming(true);
+    };
+
+    const confirmDelete = async () => {
+        if (!projectToDelete) return;
+        const result = await onDeleteProject(projectToDelete);
+        setNotification({
+            type: result.success ? 'success' : 'error',
+            message: result.message
+        });
+        setProjectToDelete(null);
     };
 
     const handleImportProject = async () => {
@@ -38,16 +56,16 @@ export const ProjectDashboard = ({ projects = [], onCreateProject, onSelectProje
     const closeNotification = () => setNotification(null);
 
     return (
-        <div style={{ 
-            padding: '0 3rem 0 3rem', 
-            maxWidth: '1600px', 
-            margin: '0 auto', 
-            height: '100%', 
-            display: 'flex', 
-            flexDirection: 'column' 
+        <div style={{
+            padding: '0 3rem 0 3rem',
+            maxWidth: '1600px',
+            margin: '0 auto',
+            height: '100%',
+            display: 'flex',
+            flexDirection: 'column'
         }}>
             {/* Hero Section */}
-            <HeroSection 
+            <HeroSection
                 onCreate={() => setIsCreating(true)}
                 onImport={handleImportProject}
                 onGuide={() => setIsGuideOpen(true)}
@@ -70,7 +88,7 @@ export const ProjectDashboard = ({ projects = [], onCreateProject, onSelectProje
                                     project={project}
                                     index={index}
                                     onClick={() => onSelectProject(project.id)}
-                                    onDelete={onDeleteProject}
+                                    onDelete={handleDeleteProject}
                                     onRenumber={handleRenumber}
                                 />
                             ))}
@@ -89,18 +107,28 @@ export const ProjectDashboard = ({ projects = [], onCreateProject, onSelectProje
             }} />
 
             {/* Modals */}
-            <CreateProjectModal 
+            <CreateProjectModal
                 isOpen={isCreating}
                 onClose={() => setIsCreating(false)}
                 onSubmit={handleCreateProject}
             />
 
-            <QuickGuideModal 
+            <QuickGuideModal
                 isOpen={isGuideOpen}
                 onClose={() => setIsGuideOpen(false)}
             />
 
-            <Toast 
+            <ConfirmModal
+                isOpen={isConfirming}
+                onClose={() => setIsConfirming(false)}
+                onConfirm={confirmDelete}
+                title="删除项目"
+                message={`确定要删除项目 "${projectToDelete}" 吗？此操作不可撤销，所有图片和标注都将丢失。`}
+                confirmText="彻底删除"
+                type="danger"
+            />
+
+            <Toast
                 notification={notification}
                 onClose={closeNotification}
             />
