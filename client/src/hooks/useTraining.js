@@ -5,7 +5,7 @@ export const useTraining = (projectId) => {
     const { projectConfig, updateProjectConfig } = useProject();
 
     const [config, setConfig] = useState({
-        model: 'yolov8n.pt',
+        model: 'yolov8n-pose.pt',
         data: '',
         epochs: 150,
         batch: 2,
@@ -59,6 +59,7 @@ export const useTraining = (projectId) => {
     const [logs, setLogs] = useState([]);
     const [metrics, setMetrics] = useState([]);
     const [stats, setStats] = useState(null);
+    const [datasetInfo, setDatasetInfo] = useState(null);
     const [showAdvanced, setShowAdvanced] = useState(false);
     const pollIntervalRef = useRef(null);
 
@@ -71,6 +72,17 @@ export const useTraining = (projectId) => {
             console.error("Failed to fetch environment info", err);
         }
     }, []);
+
+    const fetchDatasetInfo = useCallback(async () => {
+        if (!projectId) return;
+        try {
+            const res = await fetch(`http://localhost:5000/api/projects/${projectId}/dataset/info`);
+            const data = await res.json();
+            setDatasetInfo(data);
+        } catch (err) {
+            console.error("Failed to fetch dataset info", err);
+        }
+    }, [projectId]);
 
     const stopPolling = useCallback(() => {
         if (pollIntervalRef.current) {
@@ -117,9 +129,10 @@ export const useTraining = (projectId) => {
             checkStatus();
             fetchStats();
             fetchEnvInfo();
+            fetchDatasetInfo();
         }
         return () => stopPolling();
-    }, [projectId, checkStatus, fetchStats, fetchEnvInfo, stopPolling]);
+    }, [projectId, checkStatus, fetchStats, fetchEnvInfo, fetchDatasetInfo, stopPolling]);
 
     const handleStart = async () => {
         try {
@@ -192,6 +205,7 @@ export const useTraining = (projectId) => {
         logs,
         metrics,
         stats,
+        datasetInfo,
         showAdvanced,
         setShowAdvanced,
         handleStart,
@@ -200,6 +214,7 @@ export const useTraining = (projectId) => {
         handleBrowseProject,
         updateConfig,
         refreshStats: fetchStats,
-        refreshEnv: fetchEnvInfo
+        refreshEnv: fetchEnvInfo,
+        refreshDatasetInfo: fetchDatasetInfo
     };
 };

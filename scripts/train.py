@@ -831,7 +831,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Train YOLOv8-Pose for Fish Keypoints')
 
     parser.add_argument('--data', type=str, default='data.yaml', help='Path to data.yaml')
-    parser.add_argument('--model', type=str, default='yolov8s-pose.pt', help='Base model')
+    parser.add_argument('--model', type=str, default='yolov8n-pose.pt', help='Base model')
     parser.add_argument('--epochs', type=int, default=150, help='Number of epochs')
     parser.add_argument('--batch', type=int, default=2, help='Batch size')
     parser.add_argument('--imgsz', type=int, default=1280, help='Image input size')

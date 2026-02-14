@@ -113,6 +113,43 @@ function createTrainingRouter(projectsDir) {
     res.json(status);
   });
 
+  router.get('/:projectId/dataset/info', (req, res) => {
+    const { projectId } = req.params;
+    const paths = ExportService.getProjectPaths(projectId, projectsDir);
+    const datasetPath = paths.dataset;
+    const yamlPath = PathUtils.join(datasetPath, 'data.yaml');
+    
+    const result = {
+      datasetPath,
+      yamlPath,
+      exists: fs.existsSync(yamlPath),
+      imagesPath: {
+        train: PathUtils.join(datasetPath, 'images', 'train'),
+        val: PathUtils.join(datasetPath, 'images', 'val'),
+        test: PathUtils.join(datasetPath, 'images', 'test')
+      },
+      labelsPath: {
+        train: PathUtils.join(datasetPath, 'labels', 'train'),
+        val: PathUtils.join(datasetPath, 'labels', 'val'),
+        test: PathUtils.join(datasetPath, 'labels', 'test')
+      }
+    };
+    
+    if (result.exists) {
+      try {
+        const yamlContent = fs.readFileSync(yamlPath, 'utf8');
+        const yaml = require('yaml');
+        const parsed = yaml.parse(yamlContent);
+        result.kptShape = parsed.kpt_shape;
+        result.names = parsed.names;
+      } catch (e) {
+        result.parseError = e.message;
+      }
+    }
+    
+    res.json(result);
+  });
+
   router.get('/:projectId/train/stream', (req, res) => {
     const { projectId } = req.params;
 

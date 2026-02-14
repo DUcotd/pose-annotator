@@ -4,11 +4,11 @@ import { Cpu, Settings, FolderOpen, FileText, Server, Zap, TrendingUp, Target } 
 import { SectionCard, Toggle } from './CommonComponents';
 
 const modelOptions = [
-    { id: 'yolov8n.pt', label: 'YOLOv8n (Nano) - 轻量快速', size: '6.2MB', speed: '最快' },
-    { id: 'yolov8s.pt', label: 'YOLOv8s (Small) - 均衡', size: '22.5MB', speed: '快速' },
-    { id: 'yolov8m.pt', label: 'YOLOv8m (Medium) - 精度', size: '52MB', speed: '中等' },
-    { id: 'yolov8l.pt', label: 'YOLOv8l (Large) - 高精度', size: '87.7MB', speed: '较慢' },
-    { id: 'yolov8x.pt', label: 'YOLOv8x (XLarge) - 顶级', size: '130MB', speed: '最慢' }
+    { id: 'yolov8n-pose.pt', label: 'YOLOv8n-pose (Nano) - 轻量快速', size: '6.5MB', speed: '最快' },
+    { id: 'yolov8s-pose.pt', label: 'YOLOv8s-pose (Small) - 均衡', size: '23MB', speed: '快速' },
+    { id: 'yolov8m-pose.pt', label: 'YOLOv8m-pose (Medium) - 精度', size: '52MB', speed: '中等' },
+    { id: 'yolov8l-pose.pt', label: 'YOLOv8l-pose (Large) - 高精度', size: '88MB', speed: '较慢' },
+    { id: 'yolov8x-pose.pt', label: 'YOLOv8x-pose (XLarge) - 顶级', size: '131MB', speed: '最慢' }
 ];
 
 const optimizerOptions = [

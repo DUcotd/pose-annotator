@@ -1,14 +1,18 @@
 import React, { useState, useMemo } from 'react';
-import { ChevronLeft, ChevronRight, Image as ImageIcon, CheckCircle, RefreshCw, FolderOpen, Clock } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Image as ImageIcon, CheckCircle, RefreshCw, FolderOpen, Clock, Trash2, X, AlertTriangle } from 'lucide-react';
 import { ImageUpload } from './ImageUpload';
 import { ImageDiscovery } from './ImageDiscovery';
 import { ImportHistory } from './ImportHistory';
+import { useProject } from '../context/ProjectContext';
+import { createPortal } from 'react-dom';
 
 const PAGE_SIZE = 60;
 
-const ThumbnailCard = ({ imageObj, projectId, index, onSelectImage, isSelected }) => {
+const ThumbnailCard = ({ imageObj, projectId, index, onSelectImage, isSelected, onDelete }) => {
     const [isLoaded, setIsLoaded] = useState(false);
     const [errorCount, setErrorCount] = useState(0);
+    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+    const [isDeleting, setIsDeleting] = useState(false);
 
     const img = typeof imageObj === 'string' ? imageObj : imageObj.name;
     const hasAnnotation = typeof imageObj === 'string' ? false : imageObj.hasAnnotation;
@@ -26,84 +30,250 @@ const ThumbnailCard = ({ imageObj, projectId, index, onSelectImage, isSelected }
         return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
     };
 
+    const handleDelete = async (e) => {
+        e.stopPropagation();
+        setShowDeleteConfirm(true);
+    };
+
+    const confirmDelete = async () => {
+        setIsDeleting(true);
+        await onDelete(img);
+        setIsDeleting(false);
+        setShowDeleteConfirm(false);
+    };
+
     return (
-        <div
-            className="image-card"
-            style={{
-                transitionDelay: `${(index % 8) * 0.05}s`,
-                position: 'relative',
-                ...(isSelected ? {
-                    borderColor: 'rgba(77, 161, 255, 0.6)',
-                    boxShadow: '0 0 0 2px rgba(77, 161, 255, 0.3), 0 12px 25px rgba(0, 0, 0, 0.4)'
-                } : {})
-            }}
-            onClick={() => onSelectImage(img)}
-        >
-            <div className="image-card-container">
-                {/* Skeleton Loader */}
-                {!isLoaded && <div className="skeleton" style={{ position: 'absolute', inset: 0, zIndex: 1 }} />}
+        <>
+            <div
+                className="image-card"
+                style={{
+                    transitionDelay: `${(index % 8) * 0.05}s`,
+                    position: 'relative',
+                    ...(isSelected ? {
+                        borderColor: 'rgba(77, 161, 255, 0.6)',
+                        boxShadow: '0 0 0 2px rgba(77, 161, 255, 0.3), 0 12px 25px rgba(0, 0, 0, 0.4)'
+                    } : {})
+                }}
+                onClick={() => onSelectImage(img)}
+            >
+                <div className="image-card-container">
+                    {!isLoaded && <div className="skeleton" style={{ position: 'absolute', inset: 0, zIndex: 1 }} />}
 
-                <img
-                    src={currentSrc}
-                    alt={img}
-                    loading="lazy"
-                    decoding="async"
-                    className={`fade-in-image ${isLoaded ? 'loaded' : ''}`}
-                    style={{ zIndex: 2 }}
-                    onLoad={() => setIsLoaded(true)}
-                    onError={() => {
-                        if (errorCount === 0) {
-                            setErrorCount(1);
-                        }
+                    <img
+                        src={currentSrc}
+                        alt={img}
+                        loading="lazy"
+                        decoding="async"
+                        className={`fade-in-image ${isLoaded ? 'loaded' : ''}`}
+                        style={{ zIndex: 2 }}
+                        onLoad={() => setIsLoaded(true)}
+                        onError={() => {
+                            if (errorCount === 0) {
+                                setErrorCount(1);
+                            }
+                        }}
+                    />
+
+                    {hasAnnotation && (
+                        <div style={{
+                            position: 'absolute',
+                            top: '8px',
+                            right: '8px',
+                            zIndex: 10,
+                            background: 'rgba(16, 185, 129, 0.9)',
+                            color: 'white',
+                            padding: '4px',
+                            borderRadius: '50%',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                            backdropFilter: 'blur(4px)',
+                            border: '1px solid rgba(255,255,255,0.2)'
+                        }} title="已标注">
+                            <CheckCircle size={14} fill="currentColor" />
+                        </div>
+                    )}
+
+                    {imageSize && (
+                        <div style={{
+                            position: 'absolute',
+                            bottom: '32px',
+                            left: '8px',
+                            zIndex: 10,
+                            background: 'rgba(0, 0, 0, 0.7)',
+                            color: 'rgba(255, 255, 255, 0.8)',
+                            padding: '2px 6px',
+                            borderRadius: '6px',
+                            fontSize: '10px',
+                            fontWeight: 600,
+                            backdropFilter: 'blur(4px)',
+                            border: '1px solid rgba(255,255,255,0.1)'
+                        }}>
+                            {formatSize(imageSize)}
+                        </div>
+                    )}
+
+                    <button
+                        onClick={handleDelete}
+                        title="删除图片"
+                        style={{
+                            position: 'absolute',
+                            top: '8px',
+                            left: '8px',
+                            zIndex: 10,
+                            background: 'rgba(239, 68, 68, 0.9)',
+                            color: 'white',
+                            padding: '6px',
+                            borderRadius: '8px',
+                            border: 'none',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            opacity: 0,
+                            transition: 'opacity 0.2s, transform 0.2s',
+                            transform: 'scale(0.9)'
+                        }}
+                        className="delete-btn"
+                    >
+                        <Trash2 size={14} />
+                    </button>
+                </div>
+                <div className="image-card-label" style={{ opacity: 1, transform: 'translateY(0)' }}>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{img}</span>
+                </div>
+            </div>
+
+            <style>{`
+                .image-card:hover .delete-btn {
+                    opacity: 1 !important;
+                    transform: scale(1) !important;
+                }
+                .delete-btn:hover {
+                    background: rgba(220, 38, 38, 1) !important;
+                }
+            `}</style>
+
+            {showDeleteConfirm && createPortal(
+                <div style={{
+                    position: 'fixed',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    background: 'rgba(0, 0, 0, 0.7)',
+                    backdropFilter: 'blur(8px)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    zIndex: 10000
+                }}
+                onClick={() => !isDeleting && setShowDeleteConfirm(false)}
+                >
+                    <div style={{
+                        background: 'linear-gradient(135deg, rgba(22, 27, 34, 0.98), rgba(13, 17, 23, 0.98))',
+                        borderRadius: '20px',
+                        padding: '2rem',
+                        maxWidth: '400px',
+                        width: '90%',
+                        border: '1px solid rgba(239, 68, 68, 0.3)',
+                        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)'
                     }}
-                />
+                    onClick={e => e.stopPropagation()}
+                    >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '1.5rem' }}>
+                            <div style={{
+                                width: '48px',
+                                height: '48px',
+                                borderRadius: '14px',
+                                background: 'rgba(239, 68, 68, 0.15)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                color: '#ef4444'
+                            }}>
+                                <AlertTriangle size={24} />
+                            </div>
+                            <div>
+                                <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                                    确认删除
+                                </h3>
+                                <p style={{ margin: '4px 0 0 0', color: 'var(--text-secondary)', fontSize: '13px' }}>
+                                    此操作不可撤销
+                                </p>
+                            </div>
+                        </div>
 
-                {/* Status Badge */}
-                {hasAnnotation && (
-                    <div style={{
-                        position: 'absolute',
-                        top: '8px',
-                        right: '8px',
-                        zIndex: 10,
-                        background: 'rgba(16, 185, 129, 0.9)',
-                        color: 'white',
-                        padding: '4px',
-                        borderRadius: '50%',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-                        backdropFilter: 'blur(4px)',
-                        border: '1px solid rgba(255,255,255,0.2)'
-                    }} title="已标注">
-                        <CheckCircle size={14} fill="currentColor" />
-                    </div>
-                )}
+                        <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem', fontSize: '14px', lineHeight: 1.6 }}>
+                            确定要删除图片 <strong style={{ color: 'var(--text-primary)' }}>{img}</strong> 吗？
+                            {hasAnnotation && (
+                                <span style={{ color: '#fbbf24', display: 'block', marginTop: '8px' }}>
+                                    ⚠️ 该图片已有标注数据，删除后将一并移除。
+                                </span>
+                            )}
+                        </p>
 
-                {/* Image Size Badge */}
-                {imageSize && (
-                    <div style={{
-                        position: 'absolute',
-                        bottom: '32px',
-                        left: '8px',
-                        zIndex: 10,
-                        background: 'rgba(0, 0, 0, 0.7)',
-                        color: 'rgba(255, 255, 255, 0.8)',
-                        padding: '2px 6px',
-                        borderRadius: '6px',
-                        fontSize: '10px',
-                        fontWeight: 600,
-                        backdropFilter: 'blur(4px)',
-                        border: '1px solid rgba(255,255,255,0.1)'
-                    }}>
-                        {formatSize(imageSize)}
+                        <p style={{ color: '#60a5fa', fontSize: '13px', marginBottom: '1.5rem' }}>
+                            删除后，剩余图片将自动重新编号以保持连续。
+                        </p>
+
+                        <div style={{ display: 'flex', gap: '12px' }}>
+                            <button
+                                onClick={() => setShowDeleteConfirm(false)}
+                                disabled={isDeleting}
+                                style={{
+                                    flex: 1,
+                                    padding: '12px',
+                                    borderRadius: '12px',
+                                    background: 'rgba(255, 255, 255, 0.05)',
+                                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                                    color: 'var(--text-primary)',
+                                    fontSize: '14px',
+                                    fontWeight: 600,
+                                    cursor: isDeleting ? 'not-allowed' : 'pointer',
+                                    opacity: isDeleting ? 0.5 : 1
+                                }}
+                            >
+                                取消
+                            </button>
+                            <button
+                                onClick={confirmDelete}
+                                disabled={isDeleting}
+                                style={{
+                                    flex: 1,
+                                    padding: '12px',
+                                    borderRadius: '12px',
+                                    background: 'linear-gradient(135deg, #ef4444, #dc2626)',
+                                    border: 'none',
+                                    color: 'white',
+                                    fontSize: '14px',
+                                    fontWeight: 600,
+                                    cursor: isDeleting ? 'not-allowed' : 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: '8px'
+                                }}
+                            >
+                                {isDeleting ? (
+                                    <>
+                                        <RefreshCw size={16} className="animate-spin" />
+                                        删除中...
+                                    </>
+                                ) : (
+                                    <>
+                                        <Trash2 size={16} />
+                                        确认删除
+                                    </>
+                                )}
+                            </button>
+                        </div>
                     </div>
-                )}
-            </div>
-            <div className="image-card-label" style={{ opacity: 1, transform: 'translateY(0)' }}>
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{img}</span>
-            </div>
-        </div>
+                </div>,
+                document.body
+            )}
+        </>
     );
 };
 
@@ -115,6 +285,14 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
     const [showStats, setShowStats] = useState(false);
     const [stats, setStats] = useState(null);
     const [loadingStats, setLoadingStats] = useState(false);
+    const { deleteImage } = useProject();
+
+    const handleDeleteImage = async (imageId) => {
+        const result = await deleteImage(projectId, imageId);
+        if (result.success) {
+            onUpload();
+        }
+    };
 
     const fetchStats = async () => {
         setLoadingStats(true);
@@ -285,6 +463,7 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
                             index={index}
                             onSelectImage={onSelectImage}
                             isSelected={selectedImage === (typeof item === 'string' ? item : item.name)}
+                            onDelete={handleDeleteImage}
                         />
                     );
                 })}

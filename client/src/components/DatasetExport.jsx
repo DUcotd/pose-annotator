@@ -116,6 +116,8 @@ export const DatasetExport = () => {
     const [notification, setNotification] = useState(null);
     const [exportStats, setExportStats] = useState(null);
     const [isLoadingStats, setIsLoadingStats] = useState(true);
+    const [exportResult, setExportResult] = useState(null);
+    const [showExportModal, setShowExportModal] = useState(false);
 
     const [trainRatio, setTrainRatio] = useState(80);
     const [valRatio, setValRatio] = useState(20);
@@ -211,22 +213,16 @@ export const DatasetExport = () => {
             includeUnannotated
         });
 
-        let message = result.message;
-        if (result.success && result.stats) {
-            const s = result.stats;
-            setExportStats(s);
-            const splitInfo = [
-                s.train > 0 && `训练: ${s.train}`,
-                s.val > 0 && `验证: ${s.val}`,
-                s.test > 0 && `测试: ${s.test}`
-            ].filter(Boolean).join(' | ');
-            message = `✅ 导出完成！${s.images}/${s.totalImages} 张图片 (${splitInfo})，共 ${s.objects} 个目标`;
-        }
-
-        setNotification({ type: result.success ? 'success' : 'error', message });
         setIsExporting(false);
+
         if (result.success) {
-            setTimeout(() => setNotification(null), 10000);
+            setExportResult(result);
+            setShowExportModal(true);
+            if (result.stats) {
+                setExportStats(result.stats);
+            }
+        } else {
+            setNotification({ type: 'error', message: result.message || '导出失败' });
         }
     };
 
@@ -790,8 +786,155 @@ export const DatasetExport = () => {
                 document.body
             )}
 
+            {/* Export Result Modal */}
+            {showExportModal && exportResult && createPortal(
+                <div style={{
+                    position: 'fixed',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    background: 'rgba(0, 0, 0, 0.7)',
+                    backdropFilter: 'blur(8px)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    zIndex: 10000,
+                    animation: 'fadeIn 0.3s ease'
+                }}
+                onClick={() => setShowExportModal(false)}
+                >
+                    <div style={{
+                        background: 'linear-gradient(135deg, rgba(22, 27, 34, 0.98), rgba(13, 17, 23, 0.98))',
+                        borderRadius: '24px',
+                        padding: '2rem',
+                        maxWidth: '560px',
+                        width: '90%',
+                        border: '1px solid rgba(34, 197, 94, 0.3)',
+                        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+                        animation: 'scaleIn 0.3s ease'
+                    }}
+                    onClick={e => e.stopPropagation()}
+                    >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '1.5rem' }}>
+                            <div style={{
+                                width: '56px',
+                                height: '56px',
+                                borderRadius: '16px',
+                                background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.2), rgba(74, 222, 128, 0.1))',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                color: '#4ade80'
+                            }}>
+                                <CheckCircle size={28} />
+                            </div>
+                            <div>
+                                <h3 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                                    导出完成
+                                </h3>
+                                <p style={{ margin: '4px 0 0 0', color: 'var(--text-secondary)', fontSize: '14px' }}>
+                                    YOLO Pose 数据集已成功生成
+                                </p>
+                            </div>
+                        </div>
+
+                        {exportResult.stats && (
+                            <div style={{
+                                display: 'grid',
+                                gridTemplateColumns: 'repeat(4, 1fr)',
+                                gap: '12px',
+                                marginBottom: '1.5rem'
+                            }}>
+                                {[
+                                    { label: '图片总数', value: exportResult.stats.images, color: '99,102,241' },
+                                    { label: '训练集', value: exportResult.stats.train, color: '34,197,94' },
+                                    { label: '验证集', value: exportResult.stats.val, color: '251,191,36' },
+                                    { label: '目标数', value: exportResult.stats.objects, color: '236,72,153' }
+                                ].map(item => (
+                                    <div key={item.label} style={{
+                                        background: `rgba(${item.color}, 0.1)`,
+                                        borderRadius: '12px',
+                                        padding: '12px',
+                                        textAlign: 'center'
+                                    }}>
+                                        <div style={{ fontSize: '1.25rem', fontWeight: 800, color: `rgb(${item.color})` }}>{item.value}</div>
+                                        <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '4px' }}>{item.label}</div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        <div style={{
+                            background: 'rgba(0, 0, 0, 0.3)',
+                            borderRadius: '12px',
+                            padding: '16px',
+                            marginBottom: '1.5rem'
+                        }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                                <FolderOpen size={16} style={{ color: 'var(--text-tertiary)' }} />
+                                <span style={{ fontSize: '12px', color: 'var(--text-tertiary)', fontWeight: 600 }}>导出路径</span>
+                            </div>
+                            <div style={{
+                                fontFamily: 'monospace',
+                                fontSize: '13px',
+                                color: '#60a5fa',
+                                wordBreak: 'break-all',
+                                background: 'rgba(0, 0, 0, 0.2)',
+                                padding: '12px',
+                                borderRadius: '8px'
+                            }}>
+                                {exportResult.path}
+                            </div>
+                        </div>
+
+                        <div style={{
+                            background: 'rgba(59, 130, 246, 0.1)',
+                            borderRadius: '12px',
+                            padding: '12px 16px',
+                            marginBottom: '1.5rem',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '12px'
+                        }}>
+                            <Info size={18} style={{ color: '#60a5fa' }} />
+                            <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
+                                训练时将自动使用此数据集路径
+                            </span>
+                        </div>
+
+                        <button
+                            onClick={() => setShowExportModal(false)}
+                            style={{
+                                width: '100%',
+                                padding: '14px',
+                                borderRadius: '12px',
+                                background: 'linear-gradient(135deg, #22c55e, #4ade80)',
+                                border: 'none',
+                                color: 'white',
+                                fontSize: '15px',
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                                transition: 'all 0.2s ease'
+                            }}
+                        >
+                            确定
+                        </button>
+                    </div>
+                </div>,
+                document.body
+            )}
+
 
             <style>{`
+                @keyframes fadeIn {
+                    from { opacity: 0; }
+                    to { opacity: 1; }
+                }
+                @keyframes scaleIn {
+                    from { transform: scale(0.95); opacity: 0; }
+                    to { transform: scale(1); opacity: 1; }
+                }
                 @keyframes slideUp {
                     from { transform: translateY(100px); opacity: 0; }
                     to { transform: translateY(0); opacity: 1; }

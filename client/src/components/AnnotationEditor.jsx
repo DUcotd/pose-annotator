@@ -1,12 +1,13 @@
 
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { Save, ArrowLeft, Trash2, Crosshair, Box, MousePointer2, ChevronDown, ChevronRight, ChevronLeft, Layers, ZoomIn, ZoomOut, Maximize, Tag, HelpCircle, Undo2, Redo2, RotateCcw, Grid3X3, Link, CheckCircle, Play, X, AlertTriangle } from 'lucide-react';
+import { Save, ArrowLeft, Trash2, Crosshair, Box, MousePointer2, ChevronDown, ChevronRight, ChevronLeft, Layers, ZoomIn, ZoomOut, Maximize, Tag, HelpCircle, Undo2, Redo2, RotateCcw, Grid3X3, Link, CheckCircle, Play, X, AlertTriangle, RefreshCw } from 'lucide-react';
+import { createPortal } from 'react-dom';
 import { useProject } from '../context/ProjectContext';
 import { ClassInputModal } from './ClassInputModal';
 import { ClassManagerModal } from './ClassManagerModal';
 
 export function AnnotationEditor({ image, projectId, onBack }) {
-    const { images, openEditor, goToTraining, currentProject, exportProject } = useProject();
+    const { images, openEditor, goToTraining, currentProject, exportProject, deleteImage } = useProject();
     const [annotations, setAnnotations] = useState([]);
     const [mode, setMode] = useState('bbox'); // 'bbox' | 'keypoint' | 'select'
     const [isDrawing, setIsDrawing] = useState(false);
@@ -43,6 +44,10 @@ export function AnnotationEditor({ image, projectId, onBack }) {
     const [showCompletionDialog, setShowCompletionDialog] = useState(false);
     const [isExporting, setIsExporting] = useState(false);
     const [exportStatus, setExportStatus] = useState(null);
+
+    // Delete Image State
+    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+    const [isDeletingImage, setIsDeletingImage] = useState(false);
 
     const imageRef = useRef(null);
     const containerRef = useRef(null);
@@ -631,6 +636,16 @@ export function AnnotationEditor({ image, projectId, onBack }) {
         setExpandedGroups(prev => ({ ...prev, [id]: !prev[id] }));
     };
 
+    const handleDeleteCurrentImage = async () => {
+        setIsDeletingImage(true);
+        const result = await deleteImage(projectId, image, true, currentIndex);
+        setIsDeletingImage(false);
+        
+        if (result.success) {
+            setShowDeleteConfirm(false);
+        }
+    };
+
     const handleContextMenu = (e) => {
         e.preventDefault();
         if (isDrawing) {
@@ -807,6 +822,14 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                         <Tag size={20} />
                     </button>
                     <button 
+                        onClick={() => setShowDeleteConfirm(true)}
+                        title="删除当前图片" 
+                        className="tool-btn"
+                        style={{ color: '#ef4444' }}
+                    >
+                        <Trash2 size={20} />
+                    </button>
+                    <button 
                         onClick={() => setShowHelpPanel(prev => !prev)} 
                         title="快捷键帮助 (?)" 
                         className="tool-btn"
@@ -829,8 +852,9 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                     <div className="editor-image-wrapper">
                         <img
                             ref={imageRef}
-                            src={`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/uploads/${encodeURIComponent(image)}`}
+                            src={`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/uploads/${encodeURIComponent(image)}?t=${Date.now()}`}
                             alt="Target"
+                            key={image}
                             onLoad={handleImageLoad}
                             onError={() => {
                                 console.error('Image failed to load');
@@ -1489,6 +1513,135 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                         </div>
                     </div>
                 </div>
+            )}
+
+            {/* Delete Image Confirmation Dialog */}
+            {showDeleteConfirm && createPortal(
+                <div style={{
+                    position: 'fixed',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    background: 'rgba(0, 0, 0, 0.7)',
+                    backdropFilter: 'blur(8px)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    zIndex: 10000
+                }}
+                onClick={() => !isDeletingImage && setShowDeleteConfirm(false)}
+                >
+                    <div style={{
+                        background: 'linear-gradient(135deg, rgba(22, 27, 34, 0.98), rgba(13, 17, 23, 0.98))',
+                        borderRadius: '20px',
+                        padding: '2rem',
+                        maxWidth: '400px',
+                        width: '90%',
+                        border: '1px solid rgba(239, 68, 68, 0.3)',
+                        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)'
+                    }}
+                    onClick={e => e.stopPropagation()}
+                    >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '1.5rem' }}>
+                            <div style={{
+                                width: '48px',
+                                height: '48px',
+                                borderRadius: '14px',
+                                background: 'rgba(239, 68, 68, 0.15)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                color: '#ef4444'
+                            }}>
+                                <AlertTriangle size={24} />
+                            </div>
+                            <div>
+                                <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                                    删除图片
+                                </h3>
+                                <p style={{ margin: '4px 0 0 0', color: 'var(--text-secondary)', fontSize: '13px' }}>
+                                    此操作不可撤销
+                                </p>
+                            </div>
+                        </div>
+
+                        <p style={{ color: 'var(--text-secondary)', marginBottom: '1rem', fontSize: '14px', lineHeight: 1.6 }}>
+                            确定要删除当前图片 <strong style={{ color: 'var(--text-primary)' }}>{image}</strong> 吗？
+                        </p>
+
+                        {annotationStats.bboxes > 0 && (
+                            <div style={{
+                                background: 'rgba(251, 191, 36, 0.1)',
+                                borderRadius: '10px',
+                                padding: '12px',
+                                marginBottom: '1rem',
+                                border: '1px solid rgba(251, 191, 36, 0.2)'
+                            }}>
+                                <p style={{ margin: 0, color: '#fbbf24', fontSize: '13px' }}>
+                                    ⚠️ 该图片已有 {annotationStats.bboxes} 个标注框和 {annotationStats.keypoints} 个关键点，删除后将一并移除。
+                                </p>
+                            </div>
+                        )}
+
+                        <p style={{ color: '#60a5fa', fontSize: '13px', marginBottom: '1.5rem' }}>
+                            删除后，剩余图片将自动重新编号以保持连续。
+                        </p>
+
+                        <div style={{ display: 'flex', gap: '12px' }}>
+                            <button
+                                onClick={() => setShowDeleteConfirm(false)}
+                                disabled={isDeletingImage}
+                                style={{
+                                    flex: 1,
+                                    padding: '12px',
+                                    borderRadius: '12px',
+                                    background: 'rgba(255, 255, 255, 0.05)',
+                                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                                    color: 'var(--text-primary)',
+                                    fontSize: '14px',
+                                    fontWeight: 600,
+                                    cursor: isDeletingImage ? 'not-allowed' : 'pointer',
+                                    opacity: isDeletingImage ? 0.5 : 1
+                                }}
+                            >
+                                取消
+                            </button>
+                            <button
+                                onClick={handleDeleteCurrentImage}
+                                disabled={isDeletingImage}
+                                style={{
+                                    flex: 1,
+                                    padding: '12px',
+                                    borderRadius: '12px',
+                                    background: 'linear-gradient(135deg, #ef4444, #dc2626)',
+                                    border: 'none',
+                                    color: 'white',
+                                    fontSize: '14px',
+                                    fontWeight: 600,
+                                    cursor: isDeletingImage ? 'not-allowed' : 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: '8px'
+                                }}
+                            >
+                                {isDeletingImage ? (
+                                    <>
+                                        <RefreshCw size={16} className="animate-spin" />
+                                        删除中...
+                                    </>
+                                ) : (
+                                    <>
+                                        <Trash2 size={16} />
+                                        确认删除
+                                    </>
+                                )}
+                            </button>
+                        </div>
+                    </div>
+                </div>,
+                document.body
             )}
         </div >
     );

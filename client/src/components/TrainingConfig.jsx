@@ -1,6 +1,7 @@
 import React, { useRef, useEffect } from 'react';
 import {
-    Play, Square, RefreshCw, Database, CheckCircle, Layers, ArrowLeft, ChevronDown, ChevronRight
+    Play, Square, RefreshCw, Database, CheckCircle, Layers, ArrowLeft, ChevronDown, ChevronRight,
+    FolderOpen, FileText, AlertCircle
 } from 'lucide-react';
 import { useProject } from '../context/ProjectContext';
 import { useTraining } from '../hooks/useTraining';
@@ -18,6 +19,7 @@ export const TrainingConfig = () => {
         logs,
         metrics,
         stats,
+        datasetInfo,
         showAdvanced,
         setShowAdvanced,
         handleStart: startTraining,
@@ -166,6 +168,72 @@ export const TrainingConfig = () => {
                             color="251,191,36"
                             gradient="linear-gradient(135deg, rgba(251,191,36,0.15), rgba(252,211,77,0.05))"
                         />
+                    </div>
+
+                    {/* Dataset Path Info */}
+                    <div style={{
+                        background: datasetInfo?.exists 
+                            ? 'rgba(34, 197, 94, 0.08)' 
+                            : 'rgba(251, 191, 36, 0.08)',
+                        borderRadius: '16px',
+                        padding: '1rem 1.25rem',
+                        border: `1px solid ${datasetInfo?.exists 
+                            ? 'rgba(34, 197, 94, 0.2)' 
+                            : 'rgba(251, 191, 36, 0.2)'}`,
+                        flexShrink: 0
+                    }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
+                            {datasetInfo?.exists ? (
+                                <CheckCircle size={20} style={{ color: '#4ade80' }} />
+                            ) : (
+                                <AlertCircle size={20} style={{ color: '#fbbf24' }} />
+                            )}
+                            <span style={{ 
+                                fontSize: '14px', 
+                                fontWeight: 700, 
+                                color: datasetInfo?.exists ? '#4ade80' : '#fbbf24' 
+                            }}>
+                                {datasetInfo?.exists ? '数据集已就绪' : '数据集未导出'}
+                            </span>
+                            {datasetInfo?.kptShape && (
+                                <span style={{
+                                    fontSize: '11px',
+                                    background: 'rgba(99,102,241,0.15)',
+                                    color: '#818cf8',
+                                    padding: '2px 8px',
+                                    borderRadius: '6px',
+                                    marginLeft: 'auto'
+                                }}>
+                                    {datasetInfo.kptShape[0]} 关键点
+                                </span>
+                            )}
+                        </div>
+                        
+                        {datasetInfo?.exists ? (
+                            <div style={{
+                                background: 'rgba(0, 0, 0, 0.2)',
+                                borderRadius: '10px',
+                                padding: '10px 14px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '10px'
+                            }}>
+                                <FileText size={16} style={{ color: 'var(--text-tertiary)', flexShrink: 0 }} />
+                                <div style={{ 
+                                    fontFamily: 'monospace', 
+                                    fontSize: '12px', 
+                                    color: '#60a5fa',
+                                    wordBreak: 'break-all',
+                                    flex: 1
+                                }}>
+                                    {datasetInfo.yamlPath}
+                                </div>
+                            </div>
+                        ) : (
+                            <div style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
+                                请先导出数据集：点击左侧导航栏的「导出数据集」
+                            </div>
+                        )}
                     </div>
 
                     {/* Dashboard */}

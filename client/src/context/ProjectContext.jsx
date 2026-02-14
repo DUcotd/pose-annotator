@@ -292,6 +292,36 @@ export const ProjectProvider = ({ children }) => {
         }
     };
 
+    const deleteImage = async (projectId, imageId, navigateToNext = false, currentIndex = 0) => {
+        try {
+            const res = await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/images/${encodeURIComponent(imageId)}`, {
+                method: 'DELETE'
+            });
+            const data = await res.json();
+            if (res.ok) {
+                if (navigateToNext && data.remainingCount > 0) {
+                    const targetIndex = Math.max(0, Math.min(currentIndex, data.remainingCount - 1));
+                    const ext = imageId.substring(imageId.lastIndexOf('.'));
+                    const newImageName = String(targetIndex + 1).padStart(6, '0') + ext;
+                    setSelectedImage(newImageName);
+                } else if (navigateToNext && data.remainingCount === 0) {
+                    setView('gallery');
+                    setSelectedImage(null);
+                }
+                
+                await fetchImages(projectId);
+                await fetchProjects();
+                
+                return { success: true, message: data.message, remainingCount: data.remainingCount };
+            } else {
+                return { success: false, message: data.error || '删除失败' };
+            }
+        } catch (err) {
+            console.error("Failed to delete image", err);
+            return { success: false, message: '删除失败：网络错误' };
+        }
+    };
+
     const selectFolder = async () => {
         try {
             const res = await fetch('http://localhost:5000/api/utils/select-folder', {
@@ -380,6 +410,7 @@ export const ProjectProvider = ({ children }) => {
         exportCollaboration,
         importCollaboration,
         renumberProject,
+        deleteImage,
         selectFolder,
         scanImages,
         importImages,

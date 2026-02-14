@@ -551,6 +551,89 @@ app.post('/api/projects/:projectId/renumber-all', async (req, res) => {
     }
 });
 
+app.delete('/api/projects/:projectId/images/:imageId', async (req, res) => {
+    const { projectId, imageId } = req.params;
+    const paths = getProjectPaths(projectId);
+
+    try {
+        const imagePath = path.join(paths.uploads, imageId);
+        const annotationPath = path.join(paths.annotations, `${imageId}.json`);
+        const thumbnailPath = path.join(paths.thumbnails, imageId);
+
+        let deleted = false;
+
+        if (fs.existsSync(imagePath)) {
+            fs.unlinkSync(imagePath);
+            deleted = true;
+        }
+
+        if (fs.existsSync(annotationPath)) {
+            fs.unlinkSync(annotationPath);
+        }
+
+        if (fs.existsSync(thumbnailPath)) {
+            fs.unlinkSync(thumbnailPath);
+        }
+
+        if (!deleted) {
+            return res.status(404).json({ error: 'Image not found' });
+        }
+
+        const files = fs.readdirSync(paths.uploads)
+            .filter(f => /\.(jpg|jpeg|png|gif|webp)$/i.test(f))
+            .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+
+        const renumberResults = [];
+        for (let i = 0; i < files.length; i++) {
+            const oldName = files[i];
+            const ext = path.extname(oldName);
+            const newName = String(i + 1).padStart(6, '0') + ext;
+
+            if (oldName === newName) continue;
+
+            const oldPath = path.join(paths.uploads, oldName);
+            const newPath = path.join(paths.uploads, newName);
+
+            fs.renameSync(oldPath, newPath);
+
+            const oldAnnPath = path.join(paths.annotations, `${oldName}.json`);
+            const newAnnPath = path.join(paths.annotations, `${newName}.json`);
+            if (fs.existsSync(oldAnnPath)) {
+                fs.renameSync(oldAnnPath, newAnnPath);
+            }
+
+            const oldThumbPath = path.join(paths.thumbnails, oldName);
+            const newThumbPath = path.join(paths.thumbnails, newName);
+            if (fs.existsSync(oldThumbPath)) {
+                fs.renameSync(oldThumbPath, newThumbPath);
+            }
+
+            renumberResults.push({ old: oldName, new: newName });
+        }
+
+        const configPath = path.join(paths.root, 'config.json');
+        let config = { classMapping: {} };
+        if (fs.existsSync(configPath)) {
+            config = JSON.parse(fs.readFileSync(configPath));
+        }
+        config.nextImageId = files.length + 1;
+        fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+
+        console.log(`Deleted image ${imageId} and renumbered ${renumberResults.length} files in project ${projectId}`);
+
+        res.json({
+            success: true,
+            message: `图片已删除，已重新编号 ${renumberResults.length} 个文件`,
+            deletedImage: imageId,
+            renumberedCount: renumberResults.length,
+            remainingCount: files.length
+        });
+    } catch (err) {
+        console.error('Failed to delete image:', err.message);
+        res.status(500).json({ error: 'Failed to delete image', details: err.message });
+    }
+});
+
 
 // --- API: UTILS ---
 
@@ -995,7 +1078,6 @@ app.get('/api/projects/:projectId/dataset/stats', (req, res) => {
             if (fs.existsSync(annotationFile)) {
                 try {
                     const data = JSON.parse(fs.readFileSync(annotationFile));
-                    // Check if there are any actual bounding boxes or keypoints
                     if (data.some(a => a.type === 'bbox' || a.type === 'keypoint')) {
                         isAnnotated = true;
                     }
@@ -1017,6 +1099,43 @@ app.get('/api/projects/:projectId/dataset/stats', (req, res) => {
             samples: samples
         });
     });
+});
+
+app.get('/api/projects/:projectId/dataset/info', (req, res) => {
+    const { projectId } = req.params;
+    const paths = getProjectPaths(projectId);
+    const datasetPath = paths.dataset;
+    const yamlPath = path.join(datasetPath, 'data.yaml');
+    
+    const result = {
+        datasetPath,
+        yamlPath,
+        exists: fs.existsSync(yamlPath),
+        imagesPath: {
+            train: path.join(datasetPath, 'images', 'train'),
+            val: path.join(datasetPath, 'images', 'val'),
+            test: path.join(datasetPath, 'images', 'test')
+        },
+        labelsPath: {
+            train: path.join(datasetPath, 'labels', 'train'),
+            val: path.join(datasetPath, 'labels', 'val'),
+            test: path.join(datasetPath, 'labels', 'test')
+        }
+    };
+    
+    if (result.exists) {
+        try {
+            const yamlContent = fs.readFileSync(yamlPath, 'utf8');
+            const yaml = require('yaml');
+            const parsed = yaml.parse(yamlContent);
+            result.kptShape = parsed.kpt_shape;
+            result.names = parsed.names;
+        } catch (e) {
+            result.parseError = e.message;
+        }
+    }
+    
+    res.json(result);
 });
 
 app.post('/api/projects/:projectId/export/yolo', (req, res) => {
