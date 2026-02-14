@@ -82,19 +82,41 @@ def train_model(args):
             for k, v in augment_params.items():
                 print(f"   {k}: {v}")
 
-            results = model.train(
-                data=abs_data_path,
-                epochs=args.epochs,
-                batch=args.batch,
-                imgsz=args.imgsz,
-                project=args.project,
-                name=args.name,
-                device=args.device,
-                workers=args.workers,
+            training_params = {
+                'data': abs_data_path,
+                'epochs': args.epochs,
+                'batch': args.batch,
+                'imgsz': args.imgsz,
+                'project': args.project,
+                'name': args.name,
+                'device': args.device,
+                'workers': args.workers,
+                'patience': args.patience,
+                'optimizer': args.optimizer,
+                'cos_lr': args.cos_lr,
+                'rect': args.rect,
                 **augment_params,
-                exist_ok=True,
-                verbose=True
-            )
+                'exist_ok': True,
+                'verbose': True
+            }
+
+            if args.cache_images:
+                training_params['cache'] = True
+            if hasattr(args, 'close_mosaic') and args.close_mosaic > 0:
+                training_params['close_mosaic'] = args.close_mosaic
+            if hasattr(args, 'loss_pose'):
+                training_params['pose'] = args.loss_pose
+            if hasattr(args, 'loss_box'):
+                training_params['box'] = args.loss_box
+            if hasattr(args, 'loss_cls'):
+                training_params['cls'] = args.loss_cls
+
+            print(f"📊 训练配置:")
+            for k, v in training_params.items():
+                if k not in augment_params:
+                    print(f"   {k}: {v}")
+
+            results = model.train(**training_params)
 
         best_model_path = os.path.join(args.project, args.name, 'weights', 'best.pt')
         print(f"✅ 训练完成！最佳模型已保存至: {best_model_path}")
@@ -117,37 +139,47 @@ if __name__ == "__main__":
 
     parser.add_argument('--data', type=str, default='data.yaml', help='Path to data.yaml')
     parser.add_argument('--model', type=str, default='yolov8s-pose.pt', help='Base model')
-    parser.add_argument('--epochs', type=int, default=100, help='Number of epochs')
-    parser.add_argument('--batch', type=int, default=8, help='Batch size')
-    parser.add_argument('--imgsz', type=int, default=640, help='Image input size')
+    parser.add_argument('--epochs', type=int, default=150, help='Number of epochs')
+    parser.add_argument('--batch', type=int, default=2, help='Batch size')
+    parser.add_argument('--imgsz', type=int, default=1280, help='Image input size')
 
     parser.add_argument('--project', type=str, default='fish_run', help='Project directory')
-    parser.add_argument('--name', type=str, default='exp_auto', help='Experiment name')
+    parser.add_argument('--name', type=str, default='exp_3', help='Experiment name')
 
     parser.add_argument('--device', type=str, default='0', help='Device (0, 1, 2 or cpu)')
     parser.add_argument('--workers', type=int, default=0, help='Dataloader workers')
+    parser.add_argument('--cache_images', action='store_true', help='Cache images to memory')
+    parser.add_argument('--patience', type=int, default=60, help='Early stopping patience')
+    parser.add_argument('--cos_lr', action='store_true', help='Use cosine LR scheduler')
+    parser.add_argument('--optimizer', type=str, default='auto', help='Optimizer (auto, SGD, Adam, AdamW)')
+    parser.add_argument('--rect', action='store_true', help='Use rectangular training')
 
     parser.add_argument('--resume', action='store_true', help='Resume most recent training')
 
-    parser.add_argument('--degrees', type=float, default=0.0, help='Rotation range')
-    parser.add_argument('--translate', type=float, default=0.1, help='Translation fraction')
-    parser.add_argument('--scale', type=float, default=0.5, help='Scale factor')
+    parser.add_argument('--degrees', type=float, default=180.0, help='Rotation range')
+    parser.add_argument('--translate', type=float, default=0.2, help='Translation fraction')
+    parser.add_argument('--scale', type=float, default=0.6, help='Scale factor')
     parser.add_argument('--shear', type=float, default=0.0, help='Shear range')
-    parser.add_argument('--perspective', type=float, default=0.0, help='Perspective distortion')
+    parser.add_argument('--perspective', type=float, default=0.001, help='Perspective distortion')
 
     parser.add_argument('--fliplr', type=float, default=0.5, help='Horizontal flip probability')
-    parser.add_argument('--flipud', type=float, default=0.0, help='Vertical flip probability')
+    parser.add_argument('--flipud', type=float, default=0.5, help='Vertical flip probability')
 
     parser.add_argument('--hsv_h', type=float, default=0.015, help='HSV Hue augmentation')
     parser.add_argument('--hsv_s', type=float, default=0.7, help='HSV Saturation augmentation')
     parser.add_argument('--hsv_v', type=float, default=0.4, help='HSV Value augmentation')
 
-    parser.add_argument('--mosaic', type=float, default=1.0, help='Mosaic augmentation probability')
+    parser.add_argument('--mosaic', type=float, default=0.0, help='Mosaic augmentation probability')
+    parser.add_argument('--close_mosaic', type=int, default=0, help='Close mosaic in last N epochs')
     parser.add_argument('--mixup', type=float, default=0.0, help='MixUp augmentation probability')
     parser.add_argument('--copy_paste', type=float, default=0.0, help='Copy-paste augmentation probability')
 
     parser.add_argument('--erasing', type=float, default=0.4, help='Random erasing probability')
     parser.add_argument('--crop_fraction', type=float, default=1.0, help='Crop fraction')
+
+    parser.add_argument('--loss_pose', type=float, default=25.0, help='Pose loss weight')
+    parser.add_argument('--loss_box', type=float, default=7.5, help='Box loss weight')
+    parser.add_argument('--loss_cls', type=float, default=0.5, help='Class loss weight')
 
     args = parser.parse_args()
 

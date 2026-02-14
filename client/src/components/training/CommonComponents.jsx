@@ -93,7 +93,7 @@ export const SectionCard = ({ icon: Icon, title, color, gradient, children }) =>
     </div>
 );
 
-export const Toggle = ({ checked, onChange, label, desc }) => (
+export const Toggle = ({ checked, onChange, label, desc, disabled = false }) => (
     <label style={{
         display: 'flex',
         alignItems: 'center',
@@ -102,8 +102,9 @@ export const Toggle = ({ checked, onChange, label, desc }) => (
         borderRadius: '14px',
         background: 'rgba(255,255,255,0.025)',
         border: '1px solid rgba(255,255,255,0.06)',
-        cursor: 'pointer',
-        transition: 'all 0.25s ease'
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        transition: 'all 0.25s ease',
+        opacity: disabled ? 0.5 : 1
     }}>
         <div>
             <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>{label}</div>
@@ -132,6 +133,7 @@ export const Toggle = ({ checked, onChange, label, desc }) => (
                 type="checkbox"
                 checked={checked}
                 onChange={onChange}
+                disabled={disabled}
                 style={{ opacity: 0, width: 0, height: 0 }}
             />
         </div>

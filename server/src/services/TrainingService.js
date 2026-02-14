@@ -36,6 +36,12 @@ class TrainingService {
       '--workers', String(config.workers || 0)
     ];
 
+    if (config.cache_images) args.push('--cache_images');
+    args.push('--patience', String(config.patience || 60));
+    if (config.cos_lr) args.push('--cos_lr');
+    args.push('--optimizer', config.optimizer || 'auto');
+    if (config.rect) args.push('--rect');
+
     if (config.augmentationEnabled !== false) {
       args.push('--degrees', String(config.degrees || 0));
       args.push('--translate', String(config.translate || 0.1));
@@ -48,6 +54,7 @@ class TrainingService {
       args.push('--hsv_s', String(config.hsv_s || 0.7));
       args.push('--hsv_v', String(config.hsv_v || 0.4));
       args.push('--mosaic', String(config.mosaic || 1.0));
+      args.push('--close_mosaic', String(config.close_mosaic || 0));
       args.push('--mixup', String(config.mixup || 0));
       args.push('--copy_paste', String(config.copy_paste || 0));
       args.push('--erasing', String(config.erasing || 0.4));
@@ -56,6 +63,10 @@ class TrainingService {
       args.push('--degrees', '0', '--translate', '0', '--scale', '0');
       args.push('--mosaic', '0');
     }
+
+    args.push('--loss_pose', String(config.loss_pose || 25.0));
+    args.push('--loss_box', String(config.loss_box || 7.5));
+    args.push('--loss_cls', String(config.loss_cls || 0.5));
 
     return args;
   }

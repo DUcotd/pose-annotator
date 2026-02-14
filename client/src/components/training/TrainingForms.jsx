@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Cpu, Settings, FolderOpen, FileText } from 'lucide-react';
+import { Cpu, Settings, FolderOpen, FileText, Server, Zap, TrendingUp, Target } from 'lucide-react';
 import { SectionCard, Toggle } from './CommonComponents';
 
 const modelOptions = [
@@ -11,6 +11,8 @@ const modelOptions = [
     { id: 'yolov8x.pt', label: 'YOLOv8x (XLarge) - 顶级', size: '130MB', speed: '最慢' }
 ];
 
+const optimizerOptions = ['auto', 'SGD', 'Adam', 'AdamW'];
+
 export const TrainingForm = ({ config, updateConfig, status, onBrowseData, envInfo }) => {
     const [dropdownOpen, setDropdownOpen] = useState(false);
     const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0, width: 0 });
@@ -19,7 +21,6 @@ export const TrainingForm = ({ config, updateConfig, status, onBrowseData, envIn
 
     const isRunning = status === 'running' || status === 'starting';
 
-    // ... useEffect remains same ...
     useEffect(() => {
         const handleClickOutside = (event) => {
             if (dropdownOpen && dropdownTriggerRef.current && !dropdownTriggerRef.current.contains(event.target)) {
@@ -51,7 +52,6 @@ export const TrainingForm = ({ config, updateConfig, status, onBrowseData, envIn
         <>
             <SectionCard icon={Cpu} title="基础配置" color="99,102,241" gradient="linear-gradient(135deg, rgba(99,102,241,0.15), rgba(139,92,246,0.05))">
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-                    {/* Model Dropdown */}
                     <div style={{ position: 'relative' }} ref={dropdownRef}>
                         <label style={{ fontSize: '13px', color: 'var(--text-tertiary)', marginBottom: '8px', display: 'block', fontWeight: 600 }}>预训练模型</label>
                         <div
@@ -166,6 +166,45 @@ export const TrainingForm = ({ config, updateConfig, status, onBrowseData, envIn
                         </div>
                     </div>
 
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                        <div>
+                            <label style={{ fontSize: '13px', color: 'var(--text-tertiary)', marginBottom: '8px', display: 'block', fontWeight: 600 }}>图片尺寸 (Imgsz)</label>
+                            <input
+                                type="number"
+                                value={config.imgsz}
+                                onChange={(e) => updateConfig({ imgsz: parseInt(e.target.value) })}
+                                disabled={isRunning}
+                                style={{
+                                    width: '100%',
+                                    background: 'rgba(0,0,0,0.25)',
+                                    border: '1px solid rgba(255,255,255,0.1)',
+                                    borderRadius: '12px',
+                                    padding: '12px 16px',
+                                    color: 'white',
+                                    fontSize: '14px'
+                                }}
+                            />
+                        </div>
+                        <div>
+                            <label style={{ fontSize: '13px', color: 'var(--text-tertiary)', marginBottom: '8px', display: 'block', fontWeight: 600 }}>实验名称</label>
+                            <input
+                                type="text"
+                                value={config.name}
+                                onChange={(e) => updateConfig({ name: e.target.value })}
+                                disabled={isRunning}
+                                style={{
+                                    width: '100%',
+                                    background: 'rgba(0,0,0,0.25)',
+                                    border: '1px solid rgba(255,255,255,0.1)',
+                                    borderRadius: '12px',
+                                    padding: '12px 16px',
+                                    color: 'white',
+                                    fontSize: '14px'
+                                }}
+                            />
+                        </div>
+                    </div>
+
                     <div>
                         <label style={{ fontSize: '13px', color: 'var(--text-tertiary)', marginBottom: '8px', display: 'block', fontWeight: 600 }}>数据集配置 (data.yaml)</label>
                         <div style={{ display: 'flex', gap: '8px' }}>
@@ -204,7 +243,6 @@ export const TrainingForm = ({ config, updateConfig, status, onBrowseData, envIn
                         </div>
                     </div>
 
-                    {/* Environment Info */}
                     {envInfo && (
                         <div style={{
                             marginTop: '0.5rem',
@@ -262,6 +300,215 @@ export const TrainingForm = ({ config, updateConfig, status, onBrowseData, envIn
     );
 };
 
+export const HardwareForm = ({ config, updateConfig, status }) => {
+    const isRunning = status === 'running' || status === 'starting';
+    return (
+        <SectionCard icon={Server} title="硬件与性能" color="168,85,247" gradient="linear-gradient(135deg, rgba(168,85,247,0.15), rgba(139,92,246,0.05))">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                    <div>
+                        <label style={{ fontSize: '13px', color: 'var(--text-tertiary)', marginBottom: '8px', display: 'block', fontWeight: 600 }}>设备 (Device)</label>
+                        <input
+                            type="text"
+                            value={config.device}
+                            onChange={(e) => updateConfig({ device: e.target.value })}
+                            disabled={isRunning}
+                            style={{
+                                width: '100%',
+                                background: 'rgba(0,0,0,0.25)',
+                                border: '1px solid rgba(255,255,255,0.1)',
+                                borderRadius: '12px',
+                                padding: '12px 16px',
+                                color: 'white',
+                                fontSize: '14px'
+                            }}
+                        />
+                    </div>
+                    <div>
+                        <label style={{ fontSize: '13px', color: 'var(--text-tertiary)', marginBottom: '8px', display: 'block', fontWeight: 600 }}>数据加载线程 (Workers)</label>
+                        <input
+                            type="number"
+                            value={config.workers}
+                            onChange={(e) => updateConfig({ workers: parseInt(e.target.value) })}
+                            disabled={isRunning}
+                            style={{
+                                width: '100%',
+                                background: 'rgba(0,0,0,0.25)',
+                                border: '1px solid rgba(255,255,255,0.1)',
+                                borderRadius: '12px',
+                                padding: '12px 16px',
+                                color: 'white',
+                                fontSize: '14px'
+                            }}
+                        />
+                    </div>
+                </div>
+                <Toggle
+                    checked={config.cache_images}
+                    onChange={(e) => updateConfig({ cache_images: e.target.checked })}
+                    label="缓存图片到内存"
+                    desc="RAM > 16G 建议开启，训练速度快 50%"
+                    disabled={isRunning}
+                />
+            </div>
+        </SectionCard>
+    );
+};
+
+export const StrategyForm = ({ config, updateConfig, status }) => {
+    const isRunning = status === 'running' || status === 'starting';
+    return (
+        <SectionCard icon={TrendingUp} title="训练策略" color="251,146,60" gradient="linear-gradient(135deg, rgba(251,146,60,0.15), rgba(245,158,11,0.05))">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                    <div>
+                        <label style={{ fontSize: '13px', color: 'var(--text-tertiary)', marginBottom: '8px', display: 'block', fontWeight: 600 }}>早停轮次 (Patience)</label>
+                        <input
+                            type="number"
+                            value={config.patience}
+                            onChange={(e) => updateConfig({ patience: parseInt(e.target.value) })}
+                            disabled={isRunning}
+                            style={{
+                                width: '100%',
+                                background: 'rgba(0,0,0,0.25)',
+                                border: '1px solid rgba(255,255,255,0.1)',
+                                borderRadius: '12px',
+                                padding: '12px 16px',
+                                color: 'white',
+                                fontSize: '14px'
+                            }}
+                        />
+                    </div>
+                    <div>
+                        <label style={{ fontSize: '13px', color: 'var(--text-tertiary)', marginBottom: '8px', display: 'block', fontWeight: 600 }}>优化器</label>
+                        <select
+                            value={config.optimizer}
+                            onChange={(e) => updateConfig({ optimizer: e.target.value })}
+                            disabled={isRunning}
+                            style={{
+                                width: '100%',
+                                background: 'rgba(0,0,0,0.25)',
+                                border: '1px solid rgba(255,255,255,0.1)',
+                                borderRadius: '12px',
+                                padding: '12px 16px',
+                                color: 'white',
+                                fontSize: '14px'
+                            }}
+                        >
+                            {optimizerOptions.map(opt => (
+                                <option key={opt} value={opt}>{opt}</option>
+                            ))}
+                        </select>
+                    </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                    <div>
+                        <label style={{ fontSize: '13px', color: 'var(--text-tertiary)', marginBottom: '8px', display: 'block', fontWeight: 600 }}>关闭马赛克轮次</label>
+                        <input
+                            type="number"
+                            value={config.close_mosaic}
+                            onChange={(e) => updateConfig({ close_mosaic: parseInt(e.target.value) })}
+                            disabled={isRunning}
+                            style={{
+                                width: '100%',
+                                background: 'rgba(0,0,0,0.25)',
+                                border: '1px solid rgba(255,255,255,0.1)',
+                                borderRadius: '12px',
+                                padding: '12px 16px',
+                                color: 'white',
+                                fontSize: '14px'
+                            }}
+                        />
+                    </div>
+                </div>
+                <Toggle
+                    checked={config.cos_lr}
+                    onChange={(e) => updateConfig({ cos_lr: e.target.checked })}
+                    label="余弦退火学习率"
+                    desc="让后期收敛更精准"
+                    disabled={isRunning}
+                />
+                <Toggle
+                    checked={config.rect}
+                    onChange={(e) => updateConfig({ rect: e.target.checked })}
+                    label="矩形训练"
+                    desc="使用矩形图片进行训练"
+                    disabled={isRunning}
+                />
+            </div>
+        </SectionCard>
+    );
+};
+
+export const LossForm = ({ config, updateConfig, status }) => {
+    const isRunning = status === 'running' || status === 'starting';
+    return (
+        <SectionCard icon={Target} title="损失函数权重" color="236,72,153" gradient="linear-gradient(135deg, rgba(236,72,153,0.15), rgba(217,70,239,0.05))">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                <div>
+                    <label style={{ fontSize: '13px', color: 'var(--text-tertiary)', marginBottom: '8px', display: 'block', fontWeight: 600 }}>关键点损失权重 (Pose)</label>
+                    <input
+                        type="number"
+                        step="0.1"
+                        value={config.loss_pose}
+                        onChange={(e) => updateConfig({ loss_pose: parseFloat(e.target.value) })}
+                        disabled={isRunning}
+                        style={{
+                            width: '100%',
+                            background: 'rgba(0,0,0,0.25)',
+                            border: '1px solid rgba(255,255,255,0.1)',
+                            borderRadius: '12px',
+                            padding: '12px 16px',
+                            color: 'white',
+                            fontSize: '14px'
+                        }}
+                    />
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                    <div>
+                        <label style={{ fontSize: '13px', color: 'var(--text-tertiary)', marginBottom: '8px', display: 'block', fontWeight: 600 }}>边框损失权重 (Box)</label>
+                        <input
+                            type="number"
+                            step="0.1"
+                            value={config.loss_box}
+                            onChange={(e) => updateConfig({ loss_box: parseFloat(e.target.value) })}
+                            disabled={isRunning}
+                            style={{
+                                width: '100%',
+                                background: 'rgba(0,0,0,0.25)',
+                                border: '1px solid rgba(255,255,255,0.1)',
+                                borderRadius: '12px',
+                                padding: '12px 16px',
+                                color: 'white',
+                                fontSize: '14px'
+                            }}
+                        />
+                    </div>
+                    <div>
+                        <label style={{ fontSize: '13px', color: 'var(--text-tertiary)', marginBottom: '8px', display: 'block', fontWeight: 600 }}>类别损失权重 (Cls)</label>
+                        <input
+                            type="number"
+                            step="0.1"
+                            value={config.loss_cls}
+                            onChange={(e) => updateConfig({ loss_cls: parseFloat(e.target.value) })}
+                            disabled={isRunning}
+                            style={{
+                                width: '100%',
+                                background: 'rgba(0,0,0,0.25)',
+                                border: '1px solid rgba(255,255,255,0.1)',
+                                borderRadius: '12px',
+                                padding: '12px 16px',
+                                color: 'white',
+                                fontSize: '14px'
+                            }}
+                        />
+                    </div>
+                </div>
+            </div>
+        </SectionCard>
+    );
+};
+
 export const AugmentationForm = ({ config, updateConfig, status }) => {
     const isRunning = status === 'running' || status === 'starting';
 
@@ -291,6 +538,7 @@ export const AugmentationForm = ({ config, updateConfig, status }) => {
                 onChange={(e) => updateConfig({ augmentationEnabled: e.target.checked })}
                 label="启用数据增强"
                 desc="通过几何变换和颜色抖动提升模型泛化能力"
+                disabled={isRunning}
             />
 
             <div style={{ marginTop: '1.5rem', opacity: config.augmentationEnabled ? 1 : 0.5 }}>
@@ -308,6 +556,21 @@ export const AugmentationForm = ({ config, updateConfig, status }) => {
                     label="缩放比例 (scale)"
                     value={config.scale} min={0} max={1} step={0.05}
                     onChange={(v) => updateConfig({ scale: v })}
+                />
+                <SliderField
+                    label="左右翻转 (fliplr)"
+                    value={config.fliplr} min={0} max={1} step={0.05}
+                    onChange={(v) => updateConfig({ fliplr: v })}
+                />
+                <SliderField
+                    label="上下翻转 (flipud)"
+                    value={config.flipud} min={0} max={1} step={0.05}
+                    onChange={(v) => updateConfig({ flipud: v })}
+                />
+                <SliderField
+                    label="透视变换 (perspective)"
+                    value={config.perspective} min={0} max={0.01} step={0.0005}
+                    onChange={(v) => updateConfig({ perspective: v })}
                 />
                 <SliderField
                     label="Mosaic 概率"

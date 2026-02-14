@@ -7,29 +7,41 @@ export const useTraining = (projectId) => {
     const [config, setConfig] = useState({
         model: 'yolov8n.pt',
         data: '',
-        epochs: 10,
-        batch: 8,
-        imgsz: 640,
+        epochs: 150,
+        batch: 2,
+        imgsz: 1280,
         device: '0',
         project: '',
-        name: 'exp_auto',
+        name: 'exp_3',
+
+        workers: 0,
+        cache_images: false,
+        patience: 60,
+        cos_lr: true,
+        optimizer: 'auto',
+        rect: true,
 
         augmentationEnabled: true,
-        degrees: 0,
-        translate: 0.1,
-        scale: 0.5,
+        degrees: 180,
+        translate: 0.2,
+        scale: 0.6,
         shear: 0,
-        perspective: 0,
+        perspective: 0.001,
         fliplr: 0.5,
-        flipud: 0,
+        flipud: 0.5,
         hsv_h: 0.015,
         hsv_s: 0.7,
         hsv_v: 0.4,
-        mosaic: 1.0,
+        mosaic: 0.0,
+        close_mosaic: 0,
         mixup: 0,
         copy_paste: 0,
         erasing: 0.4,
         crop_fraction: 1.0,
+
+        loss_pose: 25.0,
+        loss_box: 7.5,
+        loss_cls: 0.5,
         ...(projectConfig.trainingSettings || {})
     });
 
@@ -45,6 +57,7 @@ export const useTraining = (projectId) => {
     const [logs, setLogs] = useState([]);
     const [metrics, setMetrics] = useState([]);
     const [stats, setStats] = useState(null);
+    const [showAdvanced, setShowAdvanced] = useState(false);
     const pollIntervalRef = useRef(null);
 
     const fetchEnvInfo = useCallback(async () => {
@@ -177,6 +190,8 @@ export const useTraining = (projectId) => {
         logs,
         metrics,
         stats,
+        showAdvanced,
+        setShowAdvanced,
         handleStart,
         handleStop,
         handleBrowseData,
