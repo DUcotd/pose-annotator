@@ -6,6 +6,8 @@ const TrainingService = require('../services/TrainingService');
 const ExportService = require('../services/ExportService');
 const ProcessManager = require('../managers/ProcessManager');
 const settings = require('../config/settings');
+const PathUtils = require('../utils/PathUtils');
+const { validateTrainConfig, formatValidationErrors } = require('../utils/ValidationUtils');
 
 function createTrainingRouter(projectsDir) {
   const router = express.Router();
@@ -14,33 +16,79 @@ function createTrainingRouter(projectsDir) {
     const { projectId } = req.params;
     const config = req.body;
 
-    const paths = ExportService.getProjectPaths(projectId, projectsDir);
-    const dataYamlPath = config.data && typeof config.data === 'string' && config.data.trim() !== ''
-      ? (path.isAbsolute(config.data) ? config.data : path.join(paths.root, config.data))
-      : path.join(paths.dataset, 'data.yaml');
+    const validationResult = validateTrainConfig(config);
+    if (!validationResult.valid) {
+      const formattedError = formatValidationErrors(validationResult);
+      logger.warn(`Training config validation failed: ${JSON.stringify(formattedError)}`);
+      return res.status(400).json(formattedError);
+    }
 
-    if (!fs.existsSync(dataYamlPath)) {
+    const paths = ExportService.getProjectPaths(projectId, projectsDir);
+    const defaultYamlPath = PathUtils.join(paths.dataset, 'data.yaml');
+    
+    const parsedPath = PathUtils.parseYamlPath(config.data, defaultYamlPath, paths.root);
+    const dataYamlPath = parsedPath.path;
+
+    const pathValidation = PathUtils.validateForYaml(dataYamlPath);
+    if (!pathValidation.valid) {
+      const errorMsg = PathUtils.formatErrorMessage(pathValidation, config.data);
       return res.status(400).json({
-        error: `Dataset config not found at: ${dataYamlPath}. Please ensure the path is correct or export the dataset first.`
+        error: errorMsg,
+        code: 'INVALID_PATH'
+      });
+    }
+
+    const existsCheck = PathUtils.checkFileExists(dataYamlPath);
+    if (!existsCheck.exists) {
+      const pathInfo = PathUtils.getDetailedPathInfo(dataYamlPath);
+      let errorDetails = `配置文件未找到: ${dataYamlPath}`;
+      
+      if (pathInfo.error) {
+        errorDetails += `\n系统错误: ${pathInfo.error}`;
+      }
+      
+      errorDetails += '\n\n可能的解决方案:';
+      errorDetails += '\n1. 请确保已导出数据集';
+      errorDetails += '\n2. 检查 data.yaml 文件是否存在于正确位置';
+      errorDetails += '\n3. 尝试重新导出数据集';
+      
+      return res.status(400).json({
+        error: errorDetails,
+        code: 'DATASET_NOT_FOUND',
+        suggestedPath: PathUtils.toYoloFormat(defaultYamlPath),
+        providedPath: config.data
       });
     }
 
     try {
+      const yoloDataPath = PathUtils.toYoloFormat(dataYamlPath);
+      const yoloProjectPath = config.project ? PathUtils.toYoloFormat(PathUtils.resolve(config.project)) : PathUtils.toYoloFormat(paths.root);
+      
       const result = await TrainingService.start(projectId, {
         ...config,
-        data: dataYamlPath,
-        project: config.project || paths.root
+        data: yoloDataPath,
+        project: yoloProjectPath
       });
       res.json({ message: 'Training started', ...result });
     } catch (err) {
       logger.error(`Failed to start training for ${projectId}:`, err);
-      res.status(500).json({ error: err.message });
+      
+      let userFriendlyMessage = err.message;
+      if (err.message.includes('CUDA') || err.message.includes('GPU') || err.message.includes('cuda')) {
+        userFriendlyMessage = `硬件相关错误: ${err.message}`;
+      } else if (err.message.includes('data.yaml') || err.message.includes('dataset')) {
+        userFriendlyMessage = `数据集配置错误: ${err.message}`;
+      }
+      
+      res.status(500).json({ error: userFriendlyMessage });
     }
   });
 
   router.get('/:projectId/train/status', (req, res) => {
     const { projectId } = req.params;
     const status = TrainingService.getStatus(projectId);
+    const logStats = ProcessManager.getLogStats(projectId);
+    status.logStats = logStats;
     res.json(status);
   });
 
@@ -96,6 +144,123 @@ function createTrainingRouter(projectsDir) {
       res.json({ message: 'Training stopped' });
     } catch (err) {
       logger.error(`Failed to stop training for ${projectId}:`, err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  router.post('/:projectId/train/dry-run', async (req, res) => {
+    const { projectId } = req.params;
+    const config = req.body;
+
+    const paths = ExportService.getProjectPaths(projectId, projectsDir);
+    const defaultYamlPath = PathUtils.join(paths.dataset, 'data.yaml');
+    
+    const parsedPath = PathUtils.parseYamlPath(config.data, defaultYamlPath, paths.root);
+    const dataYamlPath = parsedPath.path;
+
+    const pathValidation = PathUtils.validateForYaml(dataYamlPath);
+    if (!pathValidation.valid) {
+      const errorMsg = PathUtils.formatErrorMessage(pathValidation, config.data);
+      return res.status(400).json({
+        error: errorMsg,
+        code: 'INVALID_PATH'
+      });
+    }
+
+    const existsCheck = PathUtils.checkFileExists(dataYamlPath);
+    if (!existsCheck.exists) {
+      return res.status(400).json({
+        error: `配置文件未找到: ${dataYamlPath}`,
+        code: 'DATASET_NOT_FOUND'
+      });
+    }
+
+    try {
+      const yoloDataPath = PathUtils.toYoloFormat(dataYamlPath);
+      const yoloProjectPath = config.project ? PathUtils.toYoloFormat(PathUtils.resolve(config.project)) : PathUtils.toYoloFormat(paths.root);
+      
+      const result = await TrainingService.startDryRun(projectId, {
+        ...config,
+        data: yoloDataPath,
+        project: yoloProjectPath
+      });
+      res.json({ message: 'Dry run started', ...result });
+    } catch (err) {
+      logger.error(`Failed to start dry run for ${projectId}:`, err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  router.get('/queue/status', (req, res) => {
+    const queueStatus = TrainingService.getQueueStatus();
+    res.json(queueStatus);
+  });
+
+  router.get('/:projectId/train/check-resume', (req, res) => {
+    const { projectId } = req.params;
+    const { name } = req.query;
+    
+    const paths = ExportService.getProjectPaths(projectId, projectsDir);
+    const projectDir = paths.run;
+    
+    const weightsDir = path.join(projectDir, name || 'exp', 'weights');
+    const lastPtPath = path.join(weightsDir, 'last.pt');
+    
+    const fs = require('fs');
+    
+    if (!fs.existsSync(lastPtPath)) {
+      return res.json({
+        available: false,
+        message: 'No previous training found'
+      });
+    }
+    
+    res.json({
+      available: true,
+      lastPtPath: lastPtPath,
+      message: 'Previous training checkpoint found'
+    });
+  });
+
+  router.delete('/queue/job/:jobId', async (req, res) => {
+    const { jobId } = req.params;
+    try {
+      const result = await TrainingService.removeJob(jobId);
+      res.json(result);
+    } catch (err) {
+      logger.error(`Failed to remove job ${jobId}:`, err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  router.post('/queue/job/:jobId/cancel', async (req, res) => {
+    const { jobId } = req.params;
+    try {
+      const result = await TrainingService.cancelJob(jobId);
+      res.json(result);
+    } catch (err) {
+      logger.error(`Failed to cancel job ${jobId}:`, err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  router.post('/queue/reorder', async (req, res) => {
+    const { fromIndex, toIndex } = req.body;
+    try {
+      const result = await TrainingService.reorderQueue(fromIndex, toIndex);
+      res.json(result);
+    } catch (err) {
+      logger.error(`Failed to reorder queue:`, err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  router.delete('/queue/clear', async (req, res) => {
+    try {
+      const result = await TrainingService.clearQueue();
+      res.json(result);
+    } catch (err) {
+      logger.error(`Failed to clear queue:`, err);
       res.status(500).json({ error: err.message });
     }
   });

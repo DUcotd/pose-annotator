@@ -3,6 +3,7 @@ const path = require('path');
 const { imageSize: sizeOf } = require('image-size');
 const logger = require('../utils/logger');
 const SafeFileOp = require('./FileService');
+const PathUtils = require('../utils/PathUtils');
 
 class ExportService {
   constructor() {
@@ -265,12 +266,15 @@ class ExportService {
     }
 
     const kptShapeDim = includeVisibility ? 3 : 2;
+    
+    const yamlPath = PathUtils.toYoloFormat(datasetRootPath);
+    
     let splitPaths = '';
     if (splitCounts.train > 0) splitPaths += `train: images/train\n`;
     if (splitCounts.val > 0) splitPaths += `val: images/val\n`;
     if (splitCounts.test > 0) splitPaths += `test: images/test\n`;
 
-    const yamlContent = `path: ${datasetRootPath}
+    const yamlContent = `path: ${yamlPath}
 ${splitPaths}
 kpt_shape: [${FIXED_NUM_KEYPOINTS}, ${kptShapeDim}]
 flip_idx: [${FLIP_IDX.join(', ')}]

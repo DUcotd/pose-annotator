@@ -11,7 +11,121 @@ const modelOptions = [
     { id: 'yolov8x.pt', label: 'YOLOv8x (XLarge) - 顶级', size: '130MB', speed: '最慢' }
 ];
 
-const optimizerOptions = ['auto', 'SGD', 'Adam', 'AdamW'];
+const optimizerOptions = [
+    { value: 'auto', label: 'Auto (自动)' },
+    { value: 'SGD', label: 'SGD' },
+    { value: 'Adam', label: 'Adam' },
+    { value: 'AdamW', label: 'AdamW' }
+];
+
+const deviceOptions = [
+    { value: '0', label: 'GPU 0 (默认显卡)' },
+    { value: '1', label: 'GPU 1 (第二张显卡)' },
+    { value: 'cpu', label: 'CPU (无显卡模式)' }
+];
+
+const CustomSelect = ({ value, options, onChange, disabled, label }) => {
+    const [dropdownOpen, setDropdownOpen] = useState(false);
+    const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0, width: 0 });
+    const dropdownRef = useRef(null);
+    const dropdownTriggerRef = useRef(null);
+
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (dropdownOpen && dropdownTriggerRef.current && !dropdownTriggerRef.current.contains(event.target)) {
+                const dropdownEl = document.getElementById('custom-select-portal');
+                if (dropdownEl && !dropdownEl.contains(event.target)) {
+                    setDropdownOpen(false);
+                }
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, [dropdownOpen]);
+
+    const handleClick = () => {
+        if (!disabled) {
+            if (!dropdownOpen && dropdownTriggerRef.current) {
+                const rect = dropdownTriggerRef.current.getBoundingClientRect();
+                setDropdownPosition({
+                    top: rect.bottom + 8,
+                    left: rect.left,
+                    width: rect.width
+                });
+            }
+            setDropdownOpen(!dropdownOpen);
+        }
+    };
+
+    const selectedOption = options.find(opt => opt.value === value);
+
+    return (
+        <div style={{ position: 'relative' }} ref={dropdownRef}>
+            <div
+                ref={dropdownTriggerRef}
+                onClick={handleClick}
+                style={{
+                    background: 'rgba(0,0,0,0.25)',
+                    border: '1px solid rgba(255,255,255,0.1)',
+                    borderRadius: '12px',
+                    padding: '12px 16px',
+                    cursor: disabled ? 'not-allowed' : 'pointer',
+                    opacity: disabled ? 0.6 : 1,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between'
+                }}
+            >
+                <span style={{ fontSize: '14px', color: 'white' }}>{selectedOption?.label || '请选择'}</span>
+                <div style={{ transform: dropdownOpen ? 'rotate(180deg)' : 'rotate(0)', transition: 'transform 0.2s' }}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M6 9l6 6 6-6" />
+                    </svg>
+                </div>
+            </div>
+
+            {dropdownOpen && createPortal(
+                <div
+                    id="custom-select-portal"
+                    style={{
+                        position: 'fixed',
+                        top: dropdownPosition.top,
+                        left: dropdownPosition.left,
+                        width: dropdownPosition.width,
+                        background: 'rgba(30,35,45,0.98)',
+                        border: '1px solid rgba(255,255,255,0.1)',
+                        borderRadius: '12px',
+                        overflow: 'hidden',
+                        zIndex: 9999,
+                        boxShadow: '0 10px 40px rgba(0,0,0,0.5)'
+                    }}
+                >
+                    {options.map(option => (
+                        <div
+                            key={option.value}
+                            onClick={() => {
+                                onChange(option.value);
+                                setDropdownOpen(false);
+                            }}
+                            style={{
+                                padding: '12px 16px',
+                                cursor: 'pointer',
+                                background: value === option.value ? 'rgba(99,102,241,0.15)' : 'transparent',
+                                borderBottom: '1px solid rgba(255,255,255,0.04)',
+                                transition: 'background 0.2s'
+                            }}
+                        >
+                            <span style={{ fontSize: '14px', color: value === option.value ? '#818cf8' : 'white' }}>
+                                {option.label}
+                            </span>
+                        </div>
+                    ))}
+                </div>,
+                document.body
+            )}
+        </div>
+    );
+};
 
 export const TrainingForm = ({ config, updateConfig, status, onBrowseData, envInfo }) => {
     const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -302,26 +416,18 @@ export const TrainingForm = ({ config, updateConfig, status, onBrowseData, envIn
 
 export const HardwareForm = ({ config, updateConfig, status }) => {
     const isRunning = status === 'running' || status === 'starting';
+    
     return (
         <SectionCard icon={Server} title="硬件与性能" color="168,85,247" gradient="linear-gradient(135deg, rgba(168,85,247,0.15), rgba(139,92,246,0.05))">
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                     <div>
                         <label style={{ fontSize: '13px', color: 'var(--text-tertiary)', marginBottom: '8px', display: 'block', fontWeight: 600 }}>设备 (Device)</label>
-                        <input
-                            type="text"
+                        <CustomSelect
                             value={config.device}
-                            onChange={(e) => updateConfig({ device: e.target.value })}
+                            options={deviceOptions}
+                            onChange={(val) => updateConfig({ device: val })}
                             disabled={isRunning}
-                            style={{
-                                width: '100%',
-                                background: 'rgba(0,0,0,0.25)',
-                                border: '1px solid rgba(255,255,255,0.1)',
-                                borderRadius: '12px',
-                                padding: '12px 16px',
-                                color: 'white',
-                                fontSize: '14px'
-                            }}
                         />
                     </div>
                     <div>
@@ -381,24 +487,12 @@ export const StrategyForm = ({ config, updateConfig, status }) => {
                     </div>
                     <div>
                         <label style={{ fontSize: '13px', color: 'var(--text-tertiary)', marginBottom: '8px', display: 'block', fontWeight: 600 }}>优化器</label>
-                        <select
+                        <CustomSelect
                             value={config.optimizer}
-                            onChange={(e) => updateConfig({ optimizer: e.target.value })}
+                            options={optimizerOptions}
+                            onChange={(val) => updateConfig({ optimizer: val })}
                             disabled={isRunning}
-                            style={{
-                                width: '100%',
-                                background: 'rgba(0,0,0,0.25)',
-                                border: '1px solid rgba(255,255,255,0.1)',
-                                borderRadius: '12px',
-                                padding: '12px 16px',
-                                color: 'white',
-                                fontSize: '14px'
-                            }}
-                        >
-                            {optimizerOptions.map(opt => (
-                                <option key={opt} value={opt}>{opt}</option>
-                            ))}
-                        </select>
+                        />
                     </div>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
@@ -433,6 +527,13 @@ export const StrategyForm = ({ config, updateConfig, status }) => {
                     onChange={(e) => updateConfig({ rect: e.target.checked })}
                     label="矩形训练"
                     desc="使用矩形图片进行训练"
+                    disabled={isRunning}
+                />
+                <Toggle
+                    checked={config.resume}
+                    onChange={(e) => updateConfig({ resume: e.target.checked })}
+                    label="断点续训 (Resume)"
+                    desc="从上次中断的地方继续训练"
                     disabled={isRunning}
                 />
             </div>

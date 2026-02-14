@@ -42,6 +42,8 @@ export const useTraining = (projectId) => {
         loss_pose: 25.0,
         loss_box: 7.5,
         loss_cls: 0.5,
+        resume: false,
+        export_formats: '',
         ...(projectConfig.trainingSettings || {})
     });
 
