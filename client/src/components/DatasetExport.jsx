@@ -106,22 +106,30 @@ export const DatasetExport = () => {
     };
 
     const handleTrainChange = (v) => {
+        if (v === '') {
+            setTrainRatio('');
+            return;
+        }
         const t = Math.max(0, Math.min(100, parseInt(v) || 0));
         setTrainRatio(t);
-        if (t + valRatio > 100) setValRatio(100 - t);
-        setTestRatio(Math.max(0, 100 - t - Math.min(valRatio, 100 - t)));
     };
 
     const handleValChange = (v) => {
+        if (v === '') {
+            setValRatio('');
+            return;
+        }
         const val = Math.max(0, Math.min(100, parseInt(v) || 0));
         setValRatio(val);
-        setTestRatio(Math.max(0, 100 - trainRatio - val));
     };
 
     const handleTestChange = (v) => {
+        if (v === '') {
+            setTestRatio('');
+            return;
+        }
         const t = Math.max(0, Math.min(100, parseInt(v) || 0));
         setTestRatio(t);
-        setValRatio(Math.max(0, 100 - trainRatio - t));
     };
 
     const StatCard = ({ icon: Icon, label, value, subValue, color, gradient }) => (
@@ -398,19 +406,27 @@ export const DatasetExport = () => {
                                         </div>
                                         <div style={{ position: 'relative', display: 'inline-block' }}>
                                             <input
-                                                type="number" min="0" max="100"
+                                                type="text"
+                                                inputMode="numeric"
+                                                pattern="[0-9]*"
+                                                min="0" max="100"
                                                 value={item.value}
-                                                onChange={(e) => item.setter(e.target.value)}
+                                                onChange={(e) => {
+                                                    const val = e.target.value.replace(/[^0-9]/g, '');
+                                                    if (val === '' || (parseInt(val) >= 0 && parseInt(val) <= 100)) {
+                                                        item.setter(val);
+                                                    }
+                                                }}
                                                 style={{
-                                                    width: '72px', 
-                                                    background: 'rgba(255,255,255,0.05)', 
-                                                    border: `1px solid rgba(255,255,255,0.1)`, 
+                                                    width: '72px',
+                                                    background: 'rgba(255,255,255,0.05)',
+                                                    border: `1px solid rgba(255,255,255,0.1)`,
                                                     color: 'white',
-                                                    textAlign: 'center', 
-                                                    outline: 'none', 
-                                                    fontSize: '1.25rem', 
-                                                    fontWeight: 700, 
-                                                    borderRadius: '12px', 
+                                                    textAlign: 'center',
+                                                    outline: 'none',
+                                                    fontSize: '1.25rem',
+                                                    fontWeight: 700,
+                                                    borderRadius: '12px',
                                                     padding: '10px 8px'
                                                 }}
                                             />

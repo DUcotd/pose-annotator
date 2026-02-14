@@ -56,7 +56,8 @@
     "inherits": "^2.0.4",
     "isarray": "^2.0.5",
     "multer": "^2.0.2",
-    "sharp": "^0.34.5"
+    "sharp": "^0.34.5",
+    "winston": "^3.19.0"
   },
   "devDependencies": {
     "concurrently": "^9.2.1",
