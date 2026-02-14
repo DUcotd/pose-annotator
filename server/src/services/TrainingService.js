@@ -18,6 +18,7 @@ class TrainingService {
     this.retryState = {};
     this.isShuttingDown = false;
     this.jobQueue = new JobQueue();
+    this.csvWatchers = new Map();
     
     this.setupProcessCleanup();
     this.setupQueueListeners();
@@ -78,6 +79,7 @@ class TrainingService {
     const job = this.jobQueue.addJob(config, priority);
     
     const currentRunning = this.processes.getRunning();
+    // 当前策略为全局单任务串行，防止用户多GPU同时训练导致资源耗尽
     if (currentRunning.length === 0) {
       this.processNextJob();
     }
@@ -283,6 +285,9 @@ class TrainingService {
 
     const projectPath = config.project || '';
     const csvWatcher = this.watchResultsCSV(projectId, projectPath);
+    if (csvWatcher) {
+      this.csvWatchers.set(projectId, csvWatcher);
+    }
 
     const child = spawn(pythonCmd, args, {
       windowsHide: true,
@@ -438,6 +443,13 @@ class TrainingService {
     child.on('close', (code) => {
       const retryState = this.retryState[projectId];
       
+      const watcher = this.csvWatchers.get(projectId);
+      if (watcher) {
+        watcher.close();
+        this.csvWatchers.delete(projectId);
+        logger.debug(`Closed CSV watcher for project ${projectId}`);
+      }
+      
       if (code === 0) {
         const status = 'completed';
         this.processes.setStatus(projectId, status);
@@ -507,6 +519,25 @@ class TrainingService {
     retryState.retryCount = retryCount + 1;
     
     const newBatch = Math.max(1, Math.floor(config.batch / OOM_BATCH_DIVISOR));
+    
+    if (config.batch === 1 || newBatch === config.batch) {
+      this.processes.addLog(projectId, {
+        type: 'error',
+        msg: `❌ Batch Size 已降至 1 仍然显存不足，无法继续自动修复。请尝试减小 imgsz 或更换更小的模型。`,
+        time: Date.now()
+      });
+      
+      this.processes.addLog(projectId, {
+        type: 'suggestion',
+        msg: `💡 建议解决方案:\n1. 使用更小的模型 (yolov8n 或 yolov8s)\n2. 减小 imgsz 图片尺寸\n3. 使用 CPU 模式训练 (device: cpu)\n4. 检查显卡驱动是否需要更新`,
+        time: Date.now()
+      });
+      
+      retryState.isRetrying = false;
+      this.processes.setStatus(projectId, 'failed');
+      return;
+    }
+    
     retryState.batchHistory.push(newBatch);
     
     this.processes.addLog(projectId, {

@@ -208,6 +208,13 @@ def export_model(model, args, model_path):
         
         print(f"📦 将导出以下格式: {', '.join(export_formats)}")
         
+        for pkg in ['pandas', 'matplotlib']:
+            try:
+                __import__(pkg)
+            except ImportError:
+                print(f"⚠️ 警告: {pkg} 未安装，导出和绘图功能可能受限", flush=True)
+                print(f"   安装命令: pip install {pkg}", flush=True)
+        
         results = {
             "event": "export_start",
             "formats": export_formats,
@@ -595,7 +602,9 @@ def validate_config(args):
         'cv2': '4.8.0',
         'PIL': '10.0.0',
         'numpy': '1.24.0',
-        'yaml': '6.0'
+        'yaml': '6.0',
+        'pandas': '2.0.0',
+        'matplotlib': '3.7.0'
     }
     
     all_deps_ok = True

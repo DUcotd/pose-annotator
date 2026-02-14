@@ -64,6 +64,15 @@ function createTrainingRouter(projectsDir) {
       const yoloDataPath = PathUtils.toYoloFormat(dataYamlPath);
       const yoloProjectPath = config.project ? PathUtils.toYoloFormat(PathUtils.resolve(config.project)) : PathUtils.toYoloFormat(paths.root);
       
+      const pathCheck = PathUtils.normalizeYamlPaths(dataYamlPath);
+      if (!pathCheck.valid && pathCheck.issues) {
+        logger.warn(`Detected backslash paths in YAML: ${JSON.stringify(pathCheck.issues)}`);
+        const convertResult = PathUtils.convertYamlPaths(dataYamlPath);
+        if (convertResult.success) {
+          logger.info('Auto-converted backslash paths in YAML to forward slashes');
+        }
+      }
+      
       const result = await TrainingService.start(projectId, {
         ...config,
         data: yoloDataPath,

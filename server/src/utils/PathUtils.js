@@ -167,6 +167,90 @@ const PathUtils = {
     messages.push('- 尝试使用绝对路径而非相对路径');
 
     return messages.join('\n');
+  },
+
+  convertYamlPaths(yamlPath) {
+    const fs = require('fs');
+    
+    try {
+      if (!fs.existsSync(yamlPath)) {
+        return { success: false, error: '文件不存在' };
+      }
+
+      let content = fs.readFileSync(yamlPath, 'utf-8');
+      const originalContent = content;
+      
+      const pathFields = ['path', 'train', 'val', 'test', 'nc', 'names'];
+      let modified = false;
+
+      for (const field of pathFields) {
+        const regex = new RegExp(`^(\\s*${field}:\\s*)([^\\n]+)`, 'gm');
+        content = content.replace(regex, (match, prefix, value) => {
+          const trimmedValue = value.trim();
+          if (trimmedValue.includes('\\')) {
+            modified = true;
+            const converted = trimmedValue.replace(/\\\\/g, '/').replace(/\\/g, '/');
+            return `${prefix}${converted}`;
+          }
+          return match;
+        });
+      }
+
+      if (modified) {
+        fs.writeFileSync(yamlPath, content, 'utf-8');
+        return { success: true, message: '已转换 YAML 中的反斜杠路径为正斜杠' };
+      }
+
+      return { success: true, message: '无需转换，路径格式正确' };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  },
+
+  normalizeYamlPaths(yamlPath) {
+    const fs = require('fs');
+    
+    try {
+      if (!fs.existsSync(yamlPath)) {
+        return { valid: false, error: 'YAML 文件不存在' };
+      }
+
+      const yaml = require('yaml');
+      const content = fs.readFileSync(yamlPath, 'utf-8');
+      const parsed = yaml.parse(content);
+      
+      if (!parsed) {
+        return { valid: false, error: 'YAML 文件为空或格式错误' };
+      }
+
+      const pathsToCheck = ['path', 'train', 'val', 'test'];
+      const issues = [];
+
+      for (const field of pathsToCheck) {
+        if (parsed[field] && typeof parsed[field] === 'string') {
+          if (parsed[field].includes('\\')) {
+            issues.push({
+              field,
+              original: parsed[field],
+              converted: parsed[field].replace(/\\/g, '/')
+            });
+          }
+        }
+      }
+
+      if (issues.length > 0) {
+        return {
+          valid: false,
+          issues,
+          message: '检测到 YAML 中存在反斜杠路径',
+          suggestion: '建议运行 PathUtils.convertYamlPaths() 进行修复'
+        };
+      }
+
+      return { valid: true, message: 'YAML 路径格式正确' };
+    } catch (err) {
+      return { valid: false, error: err.message };
+    }
   }
 };
 
