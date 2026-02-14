@@ -109,11 +109,40 @@ class TrainingService {
             logger.debug(`Failed to parse JSON log: ${e.message}`);
           }
         } else {
+          const trimmed = line.trim();
           this.processes.addLog(projectId, {
             type: 'stdout',
-            msg: line.trim(),
+            msg: trimmed,
             time: Date.now()
           });
+
+          // Fallback parsing for standard YOLO output
+          // Epoch GPU_mem box_loss cls_loss dfl_loss
+          const metricMatch = trimmed.match(/^(\d+)\/(\d+)\s+([\d.]+G)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)/);
+          if (metricMatch) {
+            const [full, epoch, totalEpochs, gpuMem, boxLoss, clsLoss, dflLoss] = metricMatch;
+            this.processes.addMetric(projectId, {
+              epoch: parseInt(epoch),
+              totalEpochs: parseInt(totalEpochs),
+              gpu_mem: gpuMem,
+              box_loss: parseFloat(boxLoss),
+              cls_loss: parseFloat(clsLoss),
+              dfl_loss: parseFloat(dflLoss),
+              time: Date.now()
+            });
+          }
+
+          // Validation row for mAP: "all images instances P R mAP50 mAP50-95"
+          const mapMatch = trimmed.match(/^all\s+\d+\s+\d+\s+[\d.]+\s+[\d.]+\s+([\d.]+)\s+([\d.]+)/);
+          if (mapMatch) {
+            const map50 = parseFloat(mapMatch[1]);
+            const map50_95 = parseFloat(mapMatch[2]);
+            this.processes.addMetric(projectId, {
+              mAP50: map50,
+              mAP50_95: map50_95,
+              time: Date.now()
+            });
+          }
         }
       });
     });

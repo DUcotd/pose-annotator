@@ -78,19 +78,162 @@ class PythonEnvService {
     }
   }
 
-  async autoDetect() {
-    const candidates = this.getCandidates();
+  searchCondaExecutable() {
+    const roots = [
+      path.join(process.env.USERPROFILE || '', 'miniconda3'),
+      path.join(process.env.USERPROFILE || '', 'anaconda3'),
+      'C:\\ProgramData\\miniconda3',
+      'C:\\ProgramData\\anaconda3',
+      'D:\\miniconda3',
+      'D:\\anaconda3'
+    ];
 
-    for (const candidate of candidates) {
-      if (!candidate.path) continue;
-      const result = await this.validatePython(candidate.path);
-      if (result.valid) {
-        logger.info(`Auto-detected Python: ${candidate.path} (${candidate.source})`);
-        return { path: candidate.path, ...result };
+    const subPaths = [
+      path.join('condabin', 'conda.bat'),
+      path.join('Scripts', 'conda.exe'),
+      path.join('bin', 'conda')
+    ];
+
+    // 1. Try PATH
+    try {
+      execSync('conda --version', { stdio: 'ignore', windowsHide: true });
+      return 'conda';
+    } catch (e) { }
+
+    // 2. Try common installation roots
+    for (const root of roots) {
+      for (const sub of subPaths) {
+        const fullPath = path.join(root, sub);
+        if (fs.existsSync(fullPath)) {
+          return fullPath;
+        }
+      }
+    }
+    return null;
+  }
+
+  async listCondaEnvs() {
+    const condaExec = this.searchCondaExecutable();
+    if (!condaExec) {
+      logger.debug('Conda executable not found in common locations');
+      return [];
+    }
+
+    try {
+      logger.debug(`Using conda executable: ${condaExec}`);
+      const output = execSync(`"${condaExec}" env list --json`, { encoding: 'utf8', windowsHide: true });
+      const data = JSON.parse(output);
+      if (data.envs && Array.isArray(data.envs)) {
+        return data.envs.map(envPath => {
+          const isWindows = process.platform === 'win32';
+          const pythonPath = isWindows ? path.join(envPath, 'python.exe') : path.join(envPath, 'bin', 'python');
+          const name = path.basename(envPath);
+          return {
+            path: pythonPath,
+            name: name === 'anaconda3' || name === 'miniconda3' ? 'base' : name,
+            source: 'conda'
+          };
+        });
+      }
+    } catch (e) {
+      logger.error('Failed to list conda envs:', e.message);
+    }
+    return [];
+  }
+
+  async scanAll() {
+    const candidates = new Map();
+
+    // 1. Current system path
+    try {
+      if (process.platform === 'win32') {
+        const output = execSync('where.exe python.exe', { encoding: 'utf8', windowsHide: true });
+        output.split('\r\n').forEach(p => {
+          const trimmed = p.trim();
+          if (trimmed && fs.existsSync(trimmed)) {
+            candidates.set(trimmed, { path: trimmed, name: 'System', source: 'system' });
+          }
+        });
+      } else {
+        const output = execSync('which python3', { encoding: 'utf8', windowsHide: true });
+        const trimmed = output.trim();
+        if (trimmed && fs.existsSync(trimmed)) {
+          candidates.set(trimmed, { path: trimmed, name: 'System', source: 'system' });
+        }
+      }
+    } catch (e) { }
+
+    // 2. Conda environments (via command)
+    const condaEnvs = await this.listCondaEnvs();
+    condaEnvs.forEach(env => {
+      if (fs.existsSync(env.path)) {
+        candidates.set(env.path, env);
+      }
+    });
+
+    // 2.1 Conda environments (direct FS fallback)
+    const roots = [
+      path.join(process.env.USERPROFILE || '', 'miniconda3'),
+      path.join(process.env.USERPROFILE || '', 'anaconda3'),
+      'C:\\ProgramData\\miniconda3',
+      'C:\\ProgramData\\anaconda3',
+      'D:\\miniconda3',
+      'D:\\anaconda3'
+    ];
+    for (const root of roots) {
+      const envsDir = path.join(root, 'envs');
+      if (fs.existsSync(envsDir)) {
+        try {
+          const envs = fs.readdirSync(envsDir);
+          for (const envName of envs) {
+            const envPath = path.join(envsDir, envName);
+            const isWindows = process.platform === 'win32';
+            const pythonPath = isWindows ? path.join(envPath, 'python.exe') : path.join(envPath, 'bin', 'python');
+            if (fs.existsSync(pythonPath) && !candidates.has(pythonPath)) {
+              candidates.set(pythonPath, { path: pythonPath, name: envName, source: 'conda' });
+            }
+          }
+        } catch (e) { }
       }
     }
 
-    logger.warn('No valid Python environment found');
+    // 3. Project venv
+    const projectVenv = process.platform === 'win32'
+      ? path.join(process.cwd(), 'venv', 'Scripts', 'python.exe')
+      : path.join(process.cwd(), 'venv', 'bin', 'python');
+    if (fs.existsSync(projectVenv)) {
+      candidates.set(projectVenv, { path: projectVenv, name: 'Project Venv', source: 'venv' });
+    }
+
+    // 4. Default fixed paths
+    defaultConfig.python.defaultPaths.forEach(p => {
+      if (fs.existsSync(p)) {
+        candidates.set(p, { path: p, name: path.basename(path.dirname(p)), source: 'default' });
+      }
+    });
+
+    const results = [];
+    for (const [path, info] of candidates) {
+      const validation = await this.validatePython(path);
+      if (validation.valid) {
+        results.push({
+          ...info,
+          ...validation
+        });
+      }
+    }
+
+    return results;
+  }
+
+  async autoDetect() {
+    const results = await this.scanAll();
+    if (results.length > 0) {
+      // Prioritize: user_config (handled by getBestPython) > venv > conda > system
+      const prio = { 'venv': 0, 'conda': 1, 'system': 2, 'default': 3 };
+      results.sort((a, b) => (prio[a.source] || 99) - (prio[b.source] || 99));
+      return results[0];
+    }
     return null;
   }
 

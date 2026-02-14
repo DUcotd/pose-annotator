@@ -140,6 +140,17 @@ function createSettingsRouter() {
     res.json(result);
   });
 
+  router.get('/scan-envs', async (req, res) => {
+    const PythonEnvService = require('../services/PythonEnvService');
+    try {
+      const results = await PythonEnvService.scanAll();
+      res.json(results);
+    } catch (err) {
+      logger.error('Failed to scan Python environments:', err);
+      res.status(500).json({ error: 'Failed to scan environments' });
+    }
+  });
+
   return router;
 }
 

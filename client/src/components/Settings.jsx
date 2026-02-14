@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { 
-    Settings as SettingsIcon, CheckCircle, AlertTriangle, RefreshCw, 
+import {
+    Settings as SettingsIcon, CheckCircle, AlertTriangle, RefreshCw,
     FolderOpen, Info, ArrowLeft, Terminal, Cpu, Save
 } from 'lucide-react';
 import { createPortal } from 'react-dom';
@@ -11,9 +11,12 @@ export const Settings = ({ onBack }) => {
     const [validationResult, setValidationResult] = useState(null);
     const [isSaving, setIsSaving] = useState(false);
     const [saveMessage, setSaveMessage] = useState(null);
+    const [detectedEnvs, setDetectedEnvs] = useState([]);
+    const [isScanning, setIsScanning] = useState(false);
 
     useEffect(() => {
         fetchSettings();
+        handleScan();
     }, []);
 
     const fetchSettings = async () => {
@@ -41,8 +44,24 @@ export const Settings = ({ onBack }) => {
         }
     };
 
-    const handleValidate = async () => {
-        if (!pythonPath.trim()) {
+    const handleScan = async () => {
+        setIsScanning(true);
+        try {
+            const res = await fetch('http://localhost:5000/api/settings/scan-envs');
+            const data = await res.json();
+            if (Array.isArray(data)) {
+                setDetectedEnvs(data);
+            }
+        } catch (err) {
+            console.error('Failed to scan environments:', err);
+        } finally {
+            setIsScanning(false);
+        }
+    };
+
+    const handleValidate = async (customPath) => {
+        const path = customPath || pythonPath;
+        if (!path.trim()) {
             setValidationResult({ valid: false, error: '请先输入或选择 Python 路径' });
             return;
         }
@@ -54,7 +73,7 @@ export const Settings = ({ onBack }) => {
             const res = await fetch('http://localhost:5000/api/settings/validate-python', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ pythonPath })
+                body: JSON.stringify({ pythonPath: path })
             });
             const data = await res.json();
             setValidationResult(data);
@@ -76,7 +95,7 @@ export const Settings = ({ onBack }) => {
                 body: JSON.stringify({ pythonPath })
             });
             const data = await res.json();
-            
+
             if (data.success) {
                 setSaveMessage({ type: 'success', text: '✓ 设置已保存，训练时将使用此 Python 路径' });
                 setTimeout(() => setSaveMessage(null), 5000);
@@ -130,7 +149,7 @@ export const Settings = ({ onBack }) => {
             <div style={{ maxWidth: '800px', margin: '0 auto', padding: '2rem' }}>
                 {/* Header */}
                 <div style={{ marginBottom: '2.5rem' }}>
-                    <button 
+                    <button
                         onClick={onBack}
                         style={{
                             background: 'rgba(255,255,255,0.05)',
@@ -192,11 +211,31 @@ export const Settings = ({ onBack }) => {
                     </p>
 
                     {/* Path Input */}
-                    <div style={{ marginBottom: '1rem' }}>
-                        <label style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '8px' }}>
-                            Python 解释器路径
-                        </label>
-                        <div style={{ display: 'flex', gap: '10px' }}>
+                    <div style={{ marginBottom: '1.5rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                            <label style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                                Python 解释器路径
+                            </label>
+                            <button
+                                onClick={handleScan}
+                                disabled={isScanning}
+                                style={{
+                                    background: 'none',
+                                    border: 'none',
+                                    color: 'var(--accent-primary)',
+                                    fontSize: '12px',
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '4px'
+                                }}
+                            >
+                                <RefreshCw size={12} className={isScanning ? 'spin' : ''} />
+                                {isScanning ? '扫描中...' : '重新扫描环境'}
+                            </button>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '10px', marginBottom: '1rem' }}>
                             <input
                                 type="text"
                                 value={pythonPath}
@@ -236,7 +275,7 @@ export const Settings = ({ onBack }) => {
                                 <FolderOpen size={20} />
                             </button>
                             <button
-                                onClick={handleValidate}
+                                onClick={() => handleValidate()}
                                 disabled={isValidating || !pythonPath.trim()}
                                 style={{
                                     width: '52px',
@@ -254,6 +293,143 @@ export const Settings = ({ onBack }) => {
                             >
                                 {isValidating ? <RefreshCw size={20} className="spin" /> : <CheckCircle size={20} />}
                             </button>
+                        </div>
+
+                        {/* Detected Environments List */}
+                        <div style={{ marginTop: '1.5rem' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                                <Terminal size={16} style={{ color: 'var(--text-tertiary)' }} />
+                                <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                                    自动检测到的环境
+                                </span>
+                            </div>
+
+                            {isScanning ? (
+                                <div style={{
+                                    padding: '2.5rem',
+                                    borderRadius: '16px',
+                                    background: 'rgba(255,255,255,0.02)',
+                                    border: '1px dashed rgba(255,255,255,0.1)',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    alignItems: 'center',
+                                    gap: '12px',
+                                    color: 'var(--text-tertiary)'
+                                }}>
+                                    <RefreshCw size={24} className="spin" style={{ color: 'var(--accent-primary)' }} />
+                                    <div style={{ fontSize: '14px', fontWeight: 500 }}>正在深度扫描 Python 环境...</div>
+                                    <div style={{ fontSize: '12px', opacity: 0.7 }}>正在查找 Conda, 系统路径和虚拟环境</div>
+                                </div>
+                            ) : detectedEnvs.length > 0 ? (
+                                <div style={{
+                                    display: 'grid',
+                                    gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))',
+                                    gap: '12px',
+                                    maxHeight: '400px',
+                                    overflowY: 'auto',
+                                    padding: '4px'
+                                }} className="custom-scrollbar">
+                                    {detectedEnvs.map((env, i) => (
+                                        <div
+                                            key={i}
+                                            onClick={() => {
+                                                setPythonPath(env.path);
+                                                setValidationResult(env);
+                                            }}
+                                            style={{
+                                                padding: '16px',
+                                                cursor: 'pointer',
+                                                background: pythonPath === env.path ? 'rgba(99,102,241,0.08)' : 'rgba(255,255,255,0.03)',
+                                                border: `1px solid ${pythonPath === env.path ? 'rgba(99,102,241,0.4)' : 'rgba(255,255,255,0.08)'}`,
+                                                borderRadius: '14px',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '14px',
+                                                transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                                                position: 'relative',
+                                                overflow: 'hidden'
+                                            }}
+                                            onMouseEnter={(e) => {
+                                                if (pythonPath !== env.path) {
+                                                    e.currentTarget.style.background = 'rgba(255,255,255,0.06)';
+                                                    e.currentTarget.style.borderColor = 'rgba(255,255,255,0.15)';
+                                                }
+                                            }}
+                                            onMouseLeave={(e) => {
+                                                if (pythonPath !== env.path) {
+                                                    e.currentTarget.style.background = 'rgba(255,255,255,0.03)';
+                                                    e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)';
+                                                }
+                                            }}
+                                        >
+                                            <div style={{
+                                                width: '40px',
+                                                height: '40px',
+                                                borderRadius: '12px',
+                                                background: env.source === 'conda' ? 'rgba(74,222,128,0.1)' : 'rgba(99,102,241,0.1)',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                color: env.source === 'conda' ? '#4ade80' : '#818cf8',
+                                                flexShrink: 0
+                                            }}>
+                                                {env.source === 'conda' ? <RefreshCw size={20} /> : <Terminal size={20} />}
+                                            </div>
+                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
+                                                    <span style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)' }}>{env.name}</span>
+                                                    {env.hasUltralytics && (
+                                                        <div style={{
+                                                            fontSize: '10px',
+                                                            background: 'rgba(34,197,94,0.15)',
+                                                            color: '#4ade80',
+                                                            padding: '2px 6px',
+                                                            borderRadius: '6px',
+                                                            fontWeight: 600,
+                                                            border: '1px solid rgba(34,197,94,0.2)'
+                                                        }}>
+                                                            YOLO 已就绪
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', opacity: 0.8 }}>
+                                                    {env.path}
+                                                </div>
+                                            </div>
+                                            {pythonPath === env.path ? (
+                                                <CheckCircle size={20} style={{ color: '#6366f1', flexShrink: 0 }} />
+                                            ) : (
+                                                <div style={{
+                                                    width: '20px',
+                                                    height: '20px',
+                                                    borderRadius: '50%',
+                                                    border: '2px solid rgba(255,255,255,0.1)',
+                                                    flexShrink: 0
+                                                }} />
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div style={{
+                                    padding: '2.5rem',
+                                    borderRadius: '16px',
+                                    background: 'rgba(239,68,68,0.02)',
+                                    border: '1px dashed rgba(239,68,68,0.2)',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    alignItems: 'center',
+                                    gap: '12px',
+                                    color: 'var(--text-tertiary)',
+                                    textAlign: 'center'
+                                }}>
+                                    <AlertTriangle size={24} style={{ color: '#f87171' }} />
+                                    <div style={{ fontSize: '14px', fontWeight: 500, color: '#f87171' }}>未检测到 Python 环境</div>
+                                    <div style={{ fontSize: '12px', maxWidth: '300px' }}>
+                                        请尝试手动点击右上方「重新扫描环境」，或点击左侧文件夹图标手动浏览 python.exe 文件。
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </div>
 
@@ -274,18 +450,25 @@ export const Settings = ({ onBack }) => {
                             ) : (
                                 <AlertTriangle size={18} style={{ color: '#f87171', flexShrink: 0 }} />
                             )}
-                            <span style={{ 
-                                fontSize: '14px', 
-                                color: validationResult.valid ? '#4ade80' : '#f87171',
-                                fontWeight: 500 
-                            }}>
-                                {validationResult.message || validationResult.error}
-                            </span>
+                            <div style={{ flex: 1 }}>
+                                <div style={{
+                                    fontSize: '14px',
+                                    color: validationResult.valid ? '#4ade80' : '#f87171',
+                                    fontWeight: 500
+                                }}>
+                                    {validationResult.message || validationResult.error}
+                                </div>
+                                {validationResult.valid && !validationResult.hasUltralytics && (
+                                    <div style={{ fontSize: '12px', color: '#fbbf24', marginTop: '4px' }}>
+                                        提示：此环境缺少 ultralytics 库，训练可能无法启动。
+                                    </div>
+                                )}
+                            </div>
                             {validationResult.valid && validationResult.version && (
-                                <span style={{ 
-                                    fontSize: '12px', 
+                                <span style={{
+                                    fontSize: '12px',
                                     color: 'var(--text-tertiary)',
-                                    marginLeft: 'auto' 
+                                    marginLeft: 'auto'
                                 }}>
                                     {validationResult.version}
                                 </span>
@@ -315,7 +498,7 @@ export const Settings = ({ onBack }) => {
                         }}
                     >
                         {isSaving ? (
-                            <RefreshCw size={18} className="spin" /> 
+                            <RefreshCw size={18} className="spin" />
                         ) : (
                             <>
                                 <Save size={18} /> 保存设置
@@ -343,23 +526,23 @@ export const Settings = ({ onBack }) => {
                 {/* Info Cards */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                     <InfoCard icon={Info} title="配置优先级" color="99,102,241">
-                        系统使用以下优先级选择 Python 路径：<br/>
-                        1. 用户配置路径 (最高优先级)<br/>
-                        2. 硬编码备选路径<br/>
+                        系统使用以下优先级选择 Python 路径：<br />
+                        1. 用户配置路径 (最高优先级)<br />
+                        2. 硬编码备选路径<br />
                         3. Conda 回退机制 (最低优先级)
                     </InfoCard>
-                    
+
                     <InfoCard icon={Cpu} title="路径示例 (Windows)" color="34,197,94">
-                        常见 Python 路径：<br/>
-                        • Anaconda: <code style={{ color: '#4ade80' }}>D:\Anaconda3\python.exe</code><br/>
-                        • Miniconda: <code style={{ color: '#4ade80' }}>D:\miniconda3\python.exe</code><br/>
+                        常见 Python 路径：<br />
+                        • Anaconda: <code style={{ color: '#4ade80' }}>D:\Anaconda3\python.exe</code><br />
+                        • Miniconda: <code style={{ color: '#4ade80' }}>D:\miniconda3\python.exe</code><br />
                         • Conda 环境: <code style={{ color: '#4ade80' }}>D:\miniconda3\envs\yolo\python.exe</code>
                     </InfoCard>
 
                     <InfoCard icon={AlertTriangle} title="故障排除" color="251,191,36">
-                        如果训练失败，请确保：<br/>
-                        • Python 路径指向正确的 python.exe<br/>
-                        • 已安装 ultralytics: <code style={{ color: '#fbbf24' }}>pip install ultralytics</code><br/>
+                        如果训练失败，请确保：<br />
+                        • Python 路径指向正确的 python.exe<br />
+                        • 已安装 ultralytics: <code style={{ color: '#fbbf24' }}>pip install ultralytics</code><br />
                         • 已安装 torch: <code style={{ color: '#fbbf24' }}>pip install torch</code>
                     </InfoCard>
                 </div>

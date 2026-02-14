@@ -1,10 +1,111 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useProject } from '../context/ProjectContext';
-import { 
-    Download, Shuffle, FolderOpen, ArrowLeft, CheckCircle, Info, Database, 
+import {
+    Download, Shuffle, FolderOpen, ArrowLeft, CheckCircle, Info, Database,
     Target, Layout, Share2, FileImage, Box, PieChart, TrendingUp, Loader2
 } from 'lucide-react';
+
+const StatCard = ({ icon: Icon, label, value, subValue, color, gradient }) => (
+    <div style={{
+        background: 'rgba(0,0,0,0.25)',
+        borderRadius: '16px',
+        padding: '1.25rem',
+        border: '1px solid rgba(255,255,255,0.06)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '1rem',
+        transition: 'all 0.3s ease'
+    }}>
+        <div style={{
+            width: '48px',
+            height: '48px',
+            borderRadius: '14px',
+            background: gradient || `rgba(${color}, 0.15)`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: `rgb(${color})`
+        }}>
+            <Icon size={22} />
+        </div>
+        <div>
+            <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.5px' }}>{label}</div>
+            <div style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--text-primary)' }}>{value}</div>
+            {subValue && <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }}>{subValue}</div>}
+        </div>
+    </div>
+);
+
+const SectionCard = ({ icon: Icon, title, color, children, gradient }) => (
+    <div className="glass-panel-modern" style={{
+        padding: '1.75rem',
+        borderRadius: '24px',
+        border: '1px solid rgba(255,255,255,0.06)',
+        background: 'rgba(255,255,255,0.02)'
+    }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '1.5rem' }}>
+            <div style={{
+                background: gradient || `rgba(${color}, 0.12)`,
+                color: `rgb(${color})`,
+                padding: '12px',
+                borderRadius: '14px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+            }}>
+                <Icon size={22} />
+            </div>
+            <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 700, color: 'var(--text-primary)' }}>{title}</h3>
+        </div>
+        {children}
+    </div>
+);
+
+const Toggle = ({ checked, onChange, label, desc }) => (
+    <label style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '1.25rem',
+        borderRadius: '16px',
+        background: 'rgba(255,255,255,0.025)',
+        border: '1px solid rgba(255,255,255,0.06)',
+        cursor: 'pointer',
+        transition: 'all 0.25s ease'
+    }}>
+        <div>
+            <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>{label}</div>
+            {desc && <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '4px' }}>{desc}</div>}
+        </div>
+        <div style={{
+            width: '48px',
+            height: '26px',
+            borderRadius: '13px',
+            background: checked ? 'linear-gradient(135deg, #22c55e, #4ade80)' : 'rgba(255,255,255,0.1)',
+            position: 'relative',
+            transition: 'all 0.3s ease'
+        }}>
+            <div style={{
+                width: '20px',
+                height: '20px',
+                borderRadius: '50%',
+                background: 'white',
+                position: 'absolute',
+                top: '3px',
+                left: checked ? '25px' : '3px',
+                transition: 'all 0.3s ease',
+                boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+            }} />
+            <input
+                type="checkbox"
+                checked={checked}
+                onChange={onChange}
+                style={{ opacity: 0, width: 0, height: 0 }}
+            />
+        </div>
+    </label>
+);
 
 export const DatasetExport = () => {
     const { currentProject, exportProject, exportCollaboration, goBack } = useProject();
@@ -112,6 +213,16 @@ export const DatasetExport = () => {
         }
         const t = Math.max(0, Math.min(100, parseInt(v) || 0));
         setTrainRatio(t);
+        // Auto-adjust val and test
+        const remaining = 100 - t;
+        if (valRatio + testRatio === 0) {
+            setValRatio(remaining);
+        } else {
+            const currentSubtotal = valRatio + testRatio;
+            const newVal = Math.round((valRatio / currentSubtotal) * remaining);
+            setValRatio(newVal);
+            setTestRatio(remaining - newVal);
+        }
     };
 
     const handleValChange = (v) => {
@@ -121,6 +232,13 @@ export const DatasetExport = () => {
         }
         const val = Math.max(0, Math.min(100, parseInt(v) || 0));
         setValRatio(val);
+        // Adjust test to fit, if train + val > 100, adjust train
+        if (trainRatio + val > 100) {
+            setTrainRatio(100 - val);
+            setTestRatio(0);
+        } else {
+            setTestRatio(100 - trainRatio - val);
+        }
     };
 
     const handleTestChange = (v) => {
@@ -130,125 +248,32 @@ export const DatasetExport = () => {
         }
         const t = Math.max(0, Math.min(100, parseInt(v) || 0));
         setTestRatio(t);
+        // Adjust val to fit, if train + test > 100, adjust train
+        if (trainRatio + t > 100) {
+            setTrainRatio(100 - t);
+            setValRatio(0);
+        } else {
+            setValRatio(100 - trainRatio - t);
+        }
     };
 
-    const StatCard = ({ icon: Icon, label, value, subValue, color, gradient }) => (
-        <div style={{
-            background: 'rgba(0,0,0,0.25)',
-            borderRadius: '16px',
-            padding: '1.25rem',
-            border: '1px solid rgba(255,255,255,0.06)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '1rem',
-            transition: 'all 0.3s ease'
-        }}>
-            <div style={{
-                width: '48px',
-                height: '48px',
-                borderRadius: '14px',
-                background: gradient || `rgba(${color}, 0.15)`,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: `rgb(${color})`
-            }}>
-                <Icon size={22} />
-            </div>
-            <div>
-                <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.5px' }}>{label}</div>
-                <div style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--text-primary)' }}>{value}</div>
-                {subValue && <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }}>{subValue}</div>}
-            </div>
-        </div>
-    );
-
-    const SectionCard = ({ icon: Icon, title, color, children, gradient }) => (
-        <div className="glass-panel-modern" style={{ 
-            padding: '1.75rem', 
-            borderRadius: '24px',
-            border: '1px solid rgba(255,255,255,0.06)',
-            background: 'rgba(255,255,255,0.02)'
-        }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '1.5rem' }}>
-                <div style={{ 
-                    background: gradient || `rgba(${color}, 0.12)`, 
-                    color: `rgb(${color})`, 
-                    padding: '12px', 
-                    borderRadius: '14px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center'
-                }}>
-                    <Icon size={22} />
-                </div>
-                <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 700, color: 'var(--text-primary)' }}>{title}</h3>
-            </div>
-            {children}
-        </div>
-    );
-
-    const Toggle = ({ checked, onChange, label, desc }) => (
-        <label style={{ 
-            display: 'flex', 
-            alignItems: 'center', 
-            justifyContent: 'space-between',
-            padding: '1.25rem', 
-            borderRadius: '16px', 
-            background: 'rgba(255,255,255,0.025)', 
-            border: '1px solid rgba(255,255,255,0.06)',
-            cursor: 'pointer',
-            transition: 'all 0.25s ease'
-        }}>
-            <div>
-                <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>{label}</div>
-                {desc && <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '4px' }}>{desc}</div>}
-            </div>
-            <div style={{
-                width: '48px',
-                height: '26px',
-                borderRadius: '13px',
-                background: checked ? 'linear-gradient(135deg, #22c55e, #4ade80)' : 'rgba(255,255,255,0.1)',
-                position: 'relative',
-                transition: 'all 0.3s ease'
-            }}>
-                <div style={{
-                    width: '20px',
-                    height: '20px',
-                    borderRadius: '50%',
-                    background: 'white',
-                    position: 'absolute',
-                    top: '3px',
-                    left: checked ? '25px' : '3px',
-                    transition: 'all 0.3s ease',
-                    boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
-                }} />
-                <input 
-                    type="checkbox" 
-                    checked={checked}
-                    onChange={onChange}
-                    style={{ opacity: 0, width: 0, height: 0 }}
-                />
-            </div>
-        </label>
-    );
-
     return (
-        <div style={{ 
-            padding: '2rem 3rem', 
-            height: '100%', 
+
+        <div style={{
+            padding: '2rem 3rem',
+            height: '100%',
             overflowY: 'auto',
             background: 'linear-gradient(135deg, rgba(13,17,23,0.95) 0%, rgba(22,27,34,0.98) 100%)'
         }} className="custom-scrollbar">
             <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
                 {/* Header */}
                 <div style={{ marginBottom: '2.5rem' }}>
-                    <button 
-                        onClick={goBack} 
-                        className="icon-btn" 
-                        style={{ 
-                            background: 'rgba(255,255,255,0.05)', 
-                            width: '44px', 
+                    <button
+                        onClick={goBack}
+                        className="icon-btn"
+                        style={{
+                            background: 'rgba(255,255,255,0.05)',
+                            width: '44px',
                             height: '44px',
                             borderRadius: '12px',
                             marginBottom: '1rem',
@@ -279,39 +304,39 @@ export const DatasetExport = () => {
                 </div>
 
                 {/* Stats Preview */}
-                <div style={{ 
-                    display: 'grid', 
-                    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', 
+                <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
                     gap: '1rem',
                     marginBottom: '2rem'
                 }}>
-                    <StatCard 
-                        icon={FileImage} 
-                        label="总图片数" 
-                        value={isLoadingStats ? <div className="skeleton-inline" /> : (exportStats?.totalImages || 0)} 
+                    <StatCard
+                        icon={FileImage}
+                        label="总图片数"
+                        value={isLoadingStats ? <div className="skeleton-inline" /> : (exportStats?.totalImages || 0)}
                         subValue="项目中的所有图片"
                         color="99,102,241"
                         gradient="linear-gradient(135deg, rgba(99,102,241,0.2), rgba(139,92,246,0.1))"
                     />
-                    <StatCard 
-                        icon={Box} 
-                        label="已标注" 
-                        value={isLoadingStats ? <div className="skeleton-inline" /> : (exportStats?.images || 0)} 
+                    <StatCard
+                        icon={Box}
+                        label="已标注"
+                        value={isLoadingStats ? <div className="skeleton-inline" /> : (exportStats?.images || 0)}
                         subValue="将包含在数据集中"
                         color="34,197,94"
                         gradient="linear-gradient(135deg, rgba(34,197,94,0.2), rgba(74,222,128,0.1))"
                     />
-                    <StatCard 
-                        icon={Target} 
-                        label="标注目标" 
-                        value={isLoadingStats ? <div className="skeleton-inline" /> : (exportStats?.totalImages ? Math.round(exportStats.images * 1.5) : '—')} 
+                    <StatCard
+                        icon={Target}
+                        label="标注目标"
+                        value={isLoadingStats ? <div className="skeleton-inline" /> : (exportStats?.totalImages ? Math.round(exportStats.images * 1.5) : '—')}
                         subValue="预估边界框 + 关键点"
                         color="251,191,36"
                         gradient="linear-gradient(135deg, rgba(251,191,36,0.2), rgba(252,211,77,0.1))"
                     />
-                    <StatCard 
-                        icon={PieChart} 
-                        label="标注率" 
+                    <StatCard
+                        icon={PieChart}
+                        label="标注率"
                         value={isLoadingStats ? <div className="skeleton-inline" /> : (exportStats?.totalImages ? Math.round((exportStats.images / exportStats.totalImages) * 100) + '%' : '0%')}
                         subValue={!isLoadingStats ? `${exportStats?.images || 0} / ${exportStats?.totalImages || 0}` : '加载中...'}
                         color="77,161,255"
@@ -340,17 +365,17 @@ export const DatasetExport = () => {
 
                 {/* Main Content Grid */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))', gap: '1.5rem' }}>
-                    
+
                     {/* Data Options */}
                     <SectionCard icon={Database} title="数据配置" color="99,102,241">
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                            <Toggle 
+                            <Toggle
                                 checked={includeVisibility}
                                 onChange={(e) => setIncludeVisibility(e.target.checked)}
                                 label="包含可见性标志 (v=2)"
                                 desc="在标签文件中包含关键点可见性信息"
                             />
-                            <Toggle 
+                            <Toggle
                                 checked={includeUnannotated}
                                 onChange={(e) => setIncludeUnannotated(e.target.checked)}
                                 label="包含未标注数据"
@@ -371,13 +396,13 @@ export const DatasetExport = () => {
                                     value={numKeypoints}
                                     onChange={(e) => setNumKeypoints(parseInt(e.target.value) || 17)}
                                     style={{
-                                        width: '90px', 
-                                        height: '52px', 
-                                        textAlign: 'center', 
-                                        background: 'rgba(255,255,255,0.06)', 
-                                        fontWeight: 800, 
-                                        fontSize: '1.25rem', 
-                                        borderRadius: '12px', 
+                                        width: '90px',
+                                        height: '52px',
+                                        textAlign: 'center',
+                                        background: 'rgba(255,255,255,0.06)',
+                                        fontWeight: 800,
+                                        fontSize: '1.25rem',
+                                        borderRadius: '12px',
                                         border: '1px solid rgba(255,255,255,0.1)',
                                         color: 'white',
                                         outline: 'none'
@@ -432,17 +457,17 @@ export const DatasetExport = () => {
                                             />
                                             <span style={{ position: 'absolute', right: '-14px', top: '50%', transform: 'translateY(-50%)', fontSize: '13px', color: 'var(--text-tertiary)' }}>%</span>
                                         </div>
-                                        <div style={{ 
-                                            marginTop: '10px', 
-                                            height: '6px', 
-                                            background: 'rgba(255,255,255,0.08)', 
+                                        <div style={{
+                                            marginTop: '10px',
+                                            height: '6px',
+                                            background: 'rgba(255,255,255,0.08)',
                                             borderRadius: '3px',
                                             overflow: 'hidden'
                                         }}>
-                                            <div style={{ 
-                                                width: `${item.value}%`, 
-                                                height: '100%', 
-                                                background: item.gradient, 
+                                            <div style={{
+                                                width: `${item.value}%`,
+                                                height: '100%',
+                                                background: item.gradient,
                                                 transition: 'width 0.4s ease',
                                                 borderRadius: '3px'
                                             }} />
@@ -452,18 +477,18 @@ export const DatasetExport = () => {
                             </div>
 
                             {/* Visual Bar */}
-                            <div style={{ 
-                                position: 'relative', 
+                            <div style={{
+                                position: 'relative',
                                 padding: '4px 0',
                                 marginBottom: '1rem'
                             }}>
                                 <div style={{
-                                    width: '100%', 
-                                    height: '16px', 
-                                    background: 'rgba(255,255,255,0.05)', 
+                                    width: '100%',
+                                    height: '16px',
+                                    background: 'rgba(255,255,255,0.05)',
                                     borderRadius: '8px',
-                                    overflow: 'hidden', 
-                                    display: 'flex', 
+                                    overflow: 'hidden',
+                                    display: 'flex',
                                     boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.5)'
                                 }}>
                                     <div style={{ width: `${trainRatio}%`, background: 'linear-gradient(90deg, #22c55e, #4ade80)', transition: 'width 0.5s ease' }} />
@@ -474,13 +499,13 @@ export const DatasetExport = () => {
 
                             {!isRatioValid && (
                                 <div style={{
-                                    color: '#f87171', 
-                                    fontSize: '13px', 
-                                    marginTop: '1rem', 
+                                    color: '#f87171',
+                                    fontSize: '13px',
+                                    marginTop: '1rem',
                                     padding: '12px',
-                                    background: 'rgba(239, 68, 68, 0.1)', 
-                                    borderRadius: '12px', 
-                                    textAlign: 'center', 
+                                    background: 'rgba(239, 68, 68, 0.1)',
+                                    borderRadius: '12px',
+                                    textAlign: 'center',
                                     fontWeight: 600
                                 }}>
                                     ⚠️ 比例之和必须等于 100% (当前: {totalRatio}%)
@@ -492,7 +517,7 @@ export const DatasetExport = () => {
                     {/* Export Options */}
                     <SectionCard icon={Download} title="导出设置" color="34,197,94">
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                            <Toggle 
+                            <Toggle
                                 checked={shuffleData}
                                 onChange={(e) => setShuffleData(e.target.checked)}
                                 label="随机打乱数据"
@@ -509,27 +534,27 @@ export const DatasetExport = () => {
                                         placeholder="默认导出至项目根目录"
                                         value={customPath}
                                         readOnly
-                                        style={{ 
-                                            flex: 1, 
-                                            height: '52px', 
-                                            padding: '0 18px', 
-                                            fontSize: '13px', 
-                                            background: 'rgba(0,0,0,0.25)', 
-                                            border: '1px solid rgba(255,255,255,0.1)', 
-                                            borderRadius: '14px', 
+                                        style={{
+                                            flex: 1,
+                                            height: '52px',
+                                            padding: '0 18px',
+                                            fontSize: '13px',
+                                            background: 'rgba(0,0,0,0.25)',
+                                            border: '1px solid rgba(255,255,255,0.1)',
+                                            borderRadius: '14px',
                                             color: 'var(--text-secondary)',
                                             outline: 'none'
                                         }}
                                     />
                                     <button
                                         onClick={handleSelectFolder}
-                                        style={{ 
-                                            width: '52px', 
-                                            height: '52px', 
-                                            padding: 0, 
-                                            borderRadius: '14px', 
-                                            display: 'flex', 
-                                            alignItems: 'center', 
+                                        style={{
+                                            width: '52px',
+                                            height: '52px',
+                                            padding: 0,
+                                            borderRadius: '14px',
+                                            display: 'flex',
+                                            alignItems: 'center',
                                             justifyContent: 'center',
                                             background: 'rgba(255,255,255,0.06)',
                                             border: '1px solid rgba(255,255,255,0.1)',
@@ -548,9 +573,9 @@ export const DatasetExport = () => {
 
                     {/* Collaboration */}
                     <SectionCard icon={Share2} title="项目协作" color="77,161,255">
-                        <div style={{ 
-                            background: 'rgba(0,0,0,0.2)', 
-                            padding: '1.5rem', 
+                        <div style={{
+                            background: 'rgba(0,0,0,0.2)',
+                            padding: '1.5rem',
                             borderRadius: '18px',
                             border: '1px solid rgba(255,255,255,0.04)'
                         }}>
@@ -611,8 +636,8 @@ export const DatasetExport = () => {
                             borderRadius: '20px',
                             justifyContent: 'center',
                             gap: '14px',
-                            background: isExporting || !isRatioValid 
-                                ? 'rgba(255,255,255,0.05)' 
+                            background: isExporting || !isRatioValid
+                                ? 'rgba(255,255,255,0.05)'
                                 : 'linear-gradient(135deg, #22c55e, #4ade80)',
                             border: 'none',
                             color: isExporting || !isRatioValid ? 'var(--text-tertiary)' : 'white',
