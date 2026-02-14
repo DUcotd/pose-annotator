@@ -1,12 +1,12 @@
-# 🤸‍♂️ Pose Annotator: 智能姿态与目标检测标注平台
+# Pose Annotator: 智能姿态与目标检测标注平台
 
-![Version](https://img.shields.io/badge/version-1.2.0-blue.svg)
+![Version](https://img.shields.io/badge/version-1.3.0-blue.svg)
 ![License](https://img.shields.io/badge/license-ISC-green.svg)
 ![React](https://img.shields.io/badge/Frontend-React-61DAFB.svg)
 ![Node](https://img.shields.io/badge/Backend-Node.js-339933.svg)
 ![Electron](https://img.shields.io/badge/Desktop-Electron-47848F.svg)
 
-**Pose Annotator** 是一个专为计算机视觉任务设计的现代、高性能标注工具。它结合了 Web 的灵活性与原生应用的强大性能，支持 **目标检测 (Bounding Box)** 和 **姿态估计 (Keypoint)** 两种标注模式，并深度集成了 YOLOv8 的数据格式导出与模型训练流程。
+**Pose Annotator** 是一个专为计算机视觉任务设计的现代、高性能标注工具。它结合了 Web 的灵活性与原生应用的强大性能，支持 **目标检测 (Bounding Box)** 和 **姿态估计 (Keypoint)** 两种标注模式，并深度集成了 YOLOv8-Pose 的数据格式导出与模型训练流程。
 
 ---
 
@@ -27,15 +27,34 @@
 ### 📊 数据管理与导出
 - **项目隔离**：支持多项目管理，数据相互独立。
 - **高级导出**：
-  - **YOLO 格式直出**：一键生成标准 YOLOv8 数据集结构 (`images`, `labels`, `data.yaml`)。
+  - **YOLO Pose 格式直出**：一键生成标准 YOLOv8-Pose 数据集结构 (`images`, `labels`, `data.yaml`)。
   - **数据集划分**：支持自定义 **Train/Val/Test** 比例（如 8:1:1）。
   - **随机打乱**：内置 Fisher-Yates 洗牌算法，确保数据集分布均匀。
   - **灵活配置**：支持导出是否包含不可见点 (Visibility Flag)，支持筛选仅已标注图片。
+  - **导出路径展示**：导出完成后弹窗显示完整保存路径。
 
 ### 🤖 AI 模型训练集成
+- **YOLOv8-Pose 支持**：内置 YOLOv8n-pose/s-pose/m-pose/l-pose/x-pose 模型选项。
 - **内置训练 UI**：无需编写代码，直接在界面配置 Epochs, Batch Size, Model 等参数。
 - **实时监控**：训练日志实时回显，随时掌握训练进度（需配置 Python 环境）。
-- **数据集预览**：训练前自动统计数据集分布，预览样本图片。
+- **数据集状态检测**：训练界面自动检测数据集是否已导出，显示关键点配置信息。
+
+---
+
+## 🆕 v1.3.0 更新内容
+
+### 新增功能
+- **YOLOv8-Pose 模型支持**：修复训练时模型选择问题，现在默认使用 `yolov8n-pose.pt` 等 Pose 模型。
+- **导出路径弹窗**：数据集导出完成后显示详细弹窗，包含导出统计信息和完整保存路径。
+- **训练界面数据集状态**：实时显示数据集是否已导出、关键点数量、data.yaml 路径等信息。
+- **图片删除功能**：
+  - 图库界面：鼠标悬停显示删除按钮，支持批量管理。
+  - 编辑器界面：工具栏新增删除按钮，支持删除当前图片。
+  - 自动重新编号：删除图片后自动重新编号保持连续（000001, 000002...）。
+
+### 修复问题
+- 修复使用普通检测模型训练 Pose 数据集导致的格式错误。
+- 修复删除图片后界面不刷新的问题。
 
 ---
 
@@ -132,19 +151,23 @@ npm run electron:build
 *   **切换模式**：在顶部工具栏切换 **BBox** (矩形框) 或 **Pose** (关键点) 模式。
 *   **快捷键**：
     *   `Delete` / `Backspace`: 删除选中的标注。
-    *   `W` / `A` / `S` / `D`: 微调选中框的位置（如有实现）。
+    *   `A` / `D` 或 `←` / `→`: 切换上一张/下一张图片。
 *   **关键点逻辑**：关键点必须归属于某个矩形框。先画框，再在框内点选关键点。
+*   **删除图片**：在图库或编辑器中点击删除按钮，删除后自动重新编号。
 
 ### 4. 导出数据
 点击 **Export** 按钮，打开导出配置面板：
 *   **Path**: 选择导出目录（支持新建文件夹）。
 *   **Split Ratio**: 设置训练集、验证集、测试集的比例。
 *   **Keypoints**: 设置关键点数量（默认为 17，对应 COCO 格式）。
+*   导出完成后会显示完整路径弹窗。
 
-### 5. 模型训练 (Beta)
-点击 **Train** 按钮，系统会检测 `export` 目录下的 `data.yaml`。
+### 5. 模型训练
+点击 **Train** 按钮，进入训练配置页面：
+*   界面会显示数据集状态（是否已导出、关键点数量）。
+*   选择 Pose 模型（yolov8n-pose ~ yolov8x-pose）。
 *   配置参数后点击 **Start Training**。
-*   **依赖提示**：请确保宿主后的 Python 环境已安装 YOLOv8 (`pip install ultralytics`)，并且 `python` 命令可在终端直接调用。如果使用 Conda 环境，请在 `server.js` 中调整 Python 路径配置。
+*   **依赖提示**：请确保 Python 环境已安装 YOLOv8 (`pip install ultralytics`)。
 
 ---
 
@@ -159,38 +182,85 @@ pose-annotator/
 │   │   │   ├── ClassInputModal.jsx       # 类别输入弹窗
 │   │   │   ├── ClassManagerModal.jsx    # 类别管理弹窗
 │   │   │   ├── DatasetExport.jsx         # 数据集导出页面
-│   │   │   ├── ExportModal.jsx           # 导出弹窗
 │   │   │   ├── ImageGallery.jsx          # 图片画廊
 │   │   │   ├── ImageUpload.jsx           # 图片上传
-│   │   │   ├── MainLayout.jsx             # 主布局
-│   │   │   ├── ProjectDashboard.jsx      # 项目仪表盘
-│   │   │   └── TrainingConfig.jsx         # 训练配置面板
+│   │   │   ├── TrainingConfig.jsx        # 训练配置面板
+│   │   │   └── training/                 # 训练相关组件
 │   │   ├── context/              # React Context
 │   │   │   └── ProjectContext.jsx
-│   │   ├── assets/               # 静态资源
-│   │   ├── App.jsx               # 应用入口
-│   │   ├── App.css               # 应用样式
-│   │   ├── index.css             # 全局样式
-│   │   └── main.jsx              # React 挂载点
-│   ├── public/                   # Vite 公共资源
-│   ├── package.json              # 前端依赖配置
-│   ├── vite.config.js            # Vite 配置
-│   └── index.html                # HTML 模板
+│   │   ├── hooks/                # 自定义 Hooks
+│   │   │   └── useTraining.js
+│   │   └── App.jsx               # 应用入口
+│   └── package.json              # 前端依赖配置
 ├── projects/                     # [自动生成] 项目数据存储目录
 │   └── MyProject/
 │       ├── uploads/              # 原始图片
 │       ├── annotations/          # JSON 标注文件
 │       ├── thumbnails/           # 缩略图缓存
 │       └── dataset/              # 导出的 YOLO 格式数据集
+│           ├── images/           # 图片目录
+│           │   ├── train/
+│           │   ├── val/
+│           │   └── test/
+│           ├── labels/           # 标签目录
+│           └── data.yaml         # YOLO 配置文件
 ├── scripts/                      # 辅助脚本
 │   └── train.py                  # YOLOv8 训练脚本
 ├── docs/                         # 项目文档
 │   └── images/                   # 界面截图
 ├── dist/                         # [自动生成] 构建产物
 ├── server.js                     # Node.js 后端服务
-├── electron-main.js               # Electron 主进程
-├── package.json                   # 项目依赖配置
-└── README.md                      # 项目说明
+├── electron-main.js              # Electron 主进程
+├── package.json                  # 项目依赖配置
+└── README.md                     # 项目说明
+```
+
+---
+
+## 📋 数据格式
+
+### 标注文件格式 (JSON)
+每张图片对应一个 JSON 文件，位于 `projects/{project}/annotations/`：
+
+```json
+[
+  {
+    "id": 1701234567890,
+    "type": "bbox",
+    "x": 100,
+    "y": 150,
+    "width": 200,
+    "height": 300,
+    "classIndex": 0,
+    "label": "person"
+  },
+  {
+    "id": 1701234567891,
+    "type": "keypoint",
+    "x": 150,
+    "y": 180,
+    "keypointIndex": 0,
+    "parentId": 1701234567890
+  }
+]
+```
+
+### YOLO Pose 标签格式
+导出的标签文件格式：
+```
+<class_id> <cx> <cy> <w> <h> <kp1_x> <kp1_y> <kp1_v> <kp2_x> <kp2_y> <kp2_v> ...
+```
+
+### data.yaml 配置
+```yaml
+path: /path/to/dataset
+train: images/train
+val: images/val
+test: images/test
+kpt_shape: [17, 3]
+flip_idx: [0, 1, 2, 4, 3, 6, 5, 8, 7, 10, 9, 12, 11, 14, 13, 16, 15]
+names:
+  0: person
 ```
 
 ---
@@ -198,3 +268,12 @@ pose-annotator/
 ## 📄 许可证
 
 本项目采用 **ISC License** 许可证。
+
+---
+
+## 🙏 致谢
+
+- [YOLOv8](https://github.com/ultralytics/ultralytics) - 强大的目标检测与姿态估计框架
+- [React](https://react.dev/) - 现代 Web 前端框架
+- [Electron](https://www.electronjs.org/) - 跨平台桌面应用框架
+- [sharp](https://sharp.pixelplumbing.com/) - 高性能图像处理库
