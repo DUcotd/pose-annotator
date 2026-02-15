@@ -32,13 +32,13 @@ class ProcessManager extends EventEmitter {
   getLogFilePath(projectId, name = 'exp') {
     const projectPath = this.projectPaths.get(projectId);
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-    
+
     if (projectPath) {
       const logDir = path.join(projectPath, 'logs', 'raw');
       this.ensureLogDir(logDir);
       return path.join(logDir, `training_${timestamp}.log`);
     }
-    
+
     this.ensureLogDir(DEFAULT_LOG_DIR);
     return path.join(DEFAULT_LOG_DIR, `training_${projectId}_${timestamp}.log`);
   }
@@ -47,9 +47,9 @@ class ProcessManager extends EventEmitter {
     if (projectPath) {
       this.setProjectPath(projectId, projectPath);
     }
-    
+
     const logPath = this.getLogFilePath(projectId);
-    
+
     this.processes.set(projectId, {
       projectId,
       status: 'idle',
@@ -61,9 +61,9 @@ class ProcessManager extends EventEmitter {
       endTime: null,
       logFile: logPath
     });
-    
+
     this.initLogFile(projectId, logPath);
-    
+
     return this.get(projectId);
   }
 
@@ -71,13 +71,13 @@ class ProcessManager extends EventEmitter {
     try {
       const handle = fs.openSync(logPath, 'a');
       this.fileHandles.set(projectId, handle);
-      
+
       const header = `\n${'='.repeat(60)}
 Training Session Started: ${new Date().toISOString()}
 Project ID: ${projectId}
 ${'='.repeat(60)}\n`;
       fs.writeSync(handle, header);
-      
+
     } catch (err) {
       logger.error(`Failed to initialize log file for ${projectId}:`, err);
     }
@@ -86,13 +86,13 @@ ${'='.repeat(60)}\n`;
   writeToFile(projectId, message) {
     const handle = this.fileHandles.get(projectId);
     if (!handle) return;
-    
+
     try {
       const stats = fs.fstatSync(handle);
       if (stats.size > MAX_FILE_SIZE) {
         this.rotateLogFile(projectId);
       }
-      
+
       const timestamp = new Date().toISOString();
       fs.writeSync(handle, `[${timestamp}] ${message}\n`);
     } catch (err) {
@@ -104,19 +104,19 @@ ${'='.repeat(60)}\n`;
     const handle = this.fileHandles.get(projectId);
     const process = this.processes.get(projectId);
     if (!handle || !process) return;
-    
+
     try {
       fs.closeSync(handle);
-      
+
       const logPath = process.logFile;
       const rotatedPath = logPath.replace('.log', `_${Date.now()}.log`);
-      
+
       fs.renameSync(logPath, rotatedPath);
-      
+
       const newHandle = fs.openSync(logPath, 'a');
       this.fileHandles.set(projectId, newHandle);
       process.logFile = logPath;
-      
+
       logger.info(`Rotated log file for ${projectId}`);
     } catch (err) {
       logger.error(`Failed to rotate log file: ${err.message}`);
@@ -167,27 +167,27 @@ ${'='.repeat(60)}\n`;
 
   addLog(projectId, log) {
     const process = this.get(projectId);
-    
+
     let logMessage;
     if (typeof log === 'object') {
       logMessage = `[${log.type || 'info'}] ${log.msg || JSON.stringify(log)}`;
     } else {
       logMessage = String(log);
     }
-    
+
     const logEntry = {
       ...(typeof log === 'object' ? log : { type: 'info', msg: log }),
       time: log.time || Date.now()
     };
-    
+
     process.logs.push(logEntry);
-    
+
     if (process.logs.length > MAX_MEMORY_LOGS) {
       process.logs = process.logs.slice(-MAX_MEMORY_LOGS);
     }
-    
+
     this.writeToFile(projectId, logMessage);
-    
+
     this.emit('log', { projectId, log: logEntry });
     return process;
   }
@@ -228,11 +228,11 @@ ${'='.repeat(60)}\n`;
 
   getLogs(projectId, limit = 100, useFile = false) {
     const process = this.get(projectId);
-    
+
     if (useFile) {
       return this.readLogsFromFile(projectId, limit);
     }
-    
+
     const logs = process.logs;
     return logs.slice(-limit);
   }
@@ -240,15 +240,15 @@ ${'='.repeat(60)}\n`;
   readLogsFromFile(projectId, limit = 100) {
     const process = this.get(projectId);
     const logPath = process.logFile || this.getLogFilePath(projectId);
-    
+
     try {
       if (!fs.existsSync(logPath)) {
         return [];
       }
-      
+
       const content = fs.readFileSync(logPath, 'utf-8');
       const lines = content.split('\n').filter(line => line.trim());
-      
+
       return lines.slice(-limit).map(line => {
         const match = line.match(/^\[(.+?)\]\s*(.+)$/);
         if (match) {
@@ -268,7 +268,7 @@ ${'='.repeat(60)}\n`;
 
   searchLogs(projectId, keyword, useFile = false) {
     const logs = useFile ? this.readLogsFromFile(projectId, 10000) : this.get(projectId).logs;
-    
+
     return logs.filter(log => {
       const msg = typeof log === 'string' ? log : (log.msg || JSON.stringify(log));
       return msg.toLowerCase().includes(keyword.toLowerCase());
@@ -277,7 +277,7 @@ ${'='.repeat(60)}\n`;
 
   getLogsByTimeRange(projectId, startTime, endTime, useFile = false) {
     const logs = useFile ? this.readLogsFromFile(projectId, 10000) : this.get(projectId).logs;
-    
+
     return logs.filter(log => {
       const logTime = log.time || Date.now();
       return logTime >= startTime && logTime <= endTime;
@@ -292,7 +292,7 @@ ${'='.repeat(60)}\n`;
   clear(projectId) {
     this.closeLogFile(projectId);
     this.projectPaths.delete(projectId);
-    
+
     if (this.processes.has(projectId)) {
       this.processes.delete(projectId);
     }
@@ -309,22 +309,22 @@ ${'='.repeat(60)}\n`;
   getLogStats(projectId) {
     const process = this.get(projectId);
     const logPath = process.logFile || this.getLogFilePath(projectId);
-    
+
     let fileSize = 0;
     let fileLineCount = 0;
-    
+
     try {
       if (fs.existsSync(logPath)) {
         const stats = fs.statSync(logPath);
         fileSize = stats.size;
-        
+
         const content = fs.readFileSync(logPath, 'utf-8');
         fileLineCount = content.split('\n').length;
       }
     } catch (err) {
       logger.debug(`Failed to get log stats: ${err.message}`);
     }
-    
+
     return {
       memoryLogCount: process.logs.length,
       fileSize,
@@ -335,13 +335,13 @@ ${'='.repeat(60)}\n`;
 
   cleanString(str) {
     if (typeof str !== 'string') return str;
-    
+
     let cleaned = str.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
-    
+
     cleaned = cleaned.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, '');
-    
+
     cleaned = cleaned.replace(/[\u200B-\u200D\uFEFF]/g, '');
-    
+
     return cleaned.trim();
   }
 
@@ -373,7 +373,7 @@ ${'='.repeat(60)}\n`;
   }
 
   deduplicateLogs(logs) {
-    return logs.filter((log, index, self) => 
+    return logs.filter((log, index, self) =>
       index === self.findIndex(l => l.time === log.time && l.msg === log.msg)
     ).sort((a, b) => (a.time || 0) - (b.time || 0));
   }
@@ -391,22 +391,22 @@ ${'='.repeat(60)}\n`;
   exportLogsAsText(projectId, options = {}) {
     const process = this.get(projectId);
     const { includeMetrics = true, includeConfig = true, includeTimestamps = true, format = 'text' } = options;
-    
+
     const lines = [];
     const separator = '═'.repeat(80);
     const subSeparator = '─'.repeat(40);
-    
+
     lines.push(separator);
     lines.push('                    训练日志导出报告');
     lines.push(separator);
     lines.push('');
-    
+
     lines.push('📋 基本信息');
     lines.push(subSeparator);
     lines.push(`项目 ID: ${projectId}`);
     lines.push(`导出时间: ${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}`);
     lines.push(`训练状态: ${this.getStatusText(process.status)}`);
-    
+
     if (process.startTime) {
       lines.push(`开始时间: ${new Date(process.startTime).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}`);
     }
@@ -416,20 +416,76 @@ ${'='.repeat(60)}\n`;
       lines.push(`训练时长: ${this.formatDuration(duration)}`);
     }
     lines.push('');
-    
+
+    // --- 关键错误分析 (Critical Error Analysis) ---
+    // If the process failed, prioritizing detailed error info is crucial.
+    if (process.status === 'failed' || process.errorLogs.length > 0) {
+      lines.push('🛑 关键错误分析 (CRITICAL ERRORS)');
+      lines.push(subSeparator);
+
+      // 1. Check for captured Traceback blocks (most important)
+      const allLogs = [...this.readLogsFromFile(projectId, 2000), ...process.logs];
+      const tracebackLines = [];
+      let capturingTraceback = false;
+
+      // Scan specifically for Python tracebacks in recent logs
+      // We scan from the end backwards to find the last error, or just scan all and filter
+      // Better to scan all efficiently.
+      for (const log of allLogs) {
+        const msg = (log.msg || String(log));
+        if (msg.includes('Traceback (most recent call last):')) {
+          capturingTraceback = true;
+          tracebackLines.push('\n--- PYTHON TRACEBACK START ---');
+        }
+
+        if (capturingTraceback) {
+          tracebackLines.push(this.cleanString(msg));
+          // Heuristic to stop capturing if we hit a new log prefix that isn't indented
+          // Python tracebacks usually are indented except for the start errors.
+          // But mixed output makes this hard. We'll capture until next explicit known system log or enough lines.
+        }
+
+        // Reset if we see a clear system log start, but be careful not to cut off the error
+        if (capturingTraceback && (msg.startsWith('Training completed') || msg.includes('Training failed'))) {
+          capturingTraceback = false;
+          tracebackLines.push('--- PYTHON TRACEBACK END ---\n');
+        }
+      }
+
+      if (tracebackLines.length > 0) {
+        lines.push('检测到 Python 堆栈跟踪 (Traceback):');
+        lines.push('```');
+        lines.push(tracebackLines.join('\n'));
+        lines.push('```');
+        lines.push('');
+      }
+
+      // 2. Print collected raw error logs (stderr)
+      const errorLogs = process.errorLogs || [];
+      if (errorLogs.length > 0) {
+        lines.push('最近的 stderr 错误输出:');
+        errorLogs.slice(-20).forEach(err => {
+          lines.push(`  > ${err}`);
+        });
+        lines.push('');
+      }
+
+      lines.push('');
+    }
+
     if (includeMetrics && process.metrics.length > 0) {
       lines.push('📊 训练指标');
       lines.push(subSeparator);
-      
-      const header = this.padRight('Epoch', 8) + 
-                     this.padRight('Box Loss', 12) + 
-                     this.padRight('Pose Loss', 12) + 
-                     this.padRight('mAP@50', 10) + 
-                     this.padRight('mAP@50-95', 10) + 
-                     this.padRight('LR', 14);
+
+      const header = this.padRight('Epoch', 8) +
+        this.padRight('Box Loss', 12) +
+        this.padRight('Pose Loss', 12) +
+        this.padRight('mAP@50', 10) +
+        this.padRight('mAP@50-95', 10) +
+        this.padRight('LR', 14);
       lines.push(header);
       lines.push('─'.repeat(header.length));
-      
+
       process.metrics.forEach(m => {
         const epoch = this.padRight(String(m.epoch || '-'), 8);
         const boxLoss = this.padRight(m.box_loss !== undefined ? m.box_loss.toFixed(4) : '-', 12);
@@ -440,7 +496,7 @@ ${'='.repeat(60)}\n`;
         lines.push(`${epoch}${boxLoss}${poseLoss}${map50}${map5095}${lr}`);
       });
       lines.push('');
-      
+
       const latest = process.metrics[process.metrics.length - 1];
       if (latest) {
         lines.push('📈 最终指标摘要');
@@ -453,77 +509,55 @@ ${'='.repeat(60)}\n`;
         lines.push('');
       }
     }
-    
-    lines.push('📝 训练日志');
+
+    lines.push('📝 训练日志 (完整)');
     lines.push(subSeparator);
-    
+
     const logs = this.readLogsFromFile(projectId, 10000);
     const allLogs = [...logs, ...process.logs];
     const uniqueLogs = this.deduplicateLogs(allLogs);
-    
+
+    // Grouping is good, but for debugging, chronological order is often better.
+    // However, the user specifically hated the "useless info". 
+    // Let's provide a chronological tail of the logs, including stderr.
+
     const groupedLogs = this.groupLogsByType(uniqueLogs);
-    
-    if (groupedLogs.error && groupedLogs.error.length > 0) {
-      lines.push('');
-      lines.push('❌ 错误日志');
-      groupedLogs.error.forEach(log => {
-        const time = includeTimestamps 
-          ? `[${new Date(log.time || Date.now()).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}] `
-          : '';
-        const msg = this.cleanString(log.msg || String(log));
-        lines.push(`${time}${msg}`);
+    if (groupedLogs.suggestion && groupedLogs.suggestion.length > 0) {
+      lines.push('💡 智能建议 (AI Suggestions)');
+      groupedLogs.suggestion.forEach(log => {
+        lines.push(this.cleanString(log.msg || String(log)));
       });
-    }
-    
-    if (groupedLogs.warning && groupedLogs.warning.length > 0) {
       lines.push('');
-      lines.push('⚠️ 警告日志');
-      groupedLogs.warning.forEach(log => {
-        const time = includeTimestamps 
-          ? `[${new Date(log.time || Date.now()).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}] `
-          : '';
-        const msg = this.cleanString(log.msg || String(log));
-        lines.push(`${time}${msg}`);
-      });
     }
-    
-    if (groupedLogs.system && groupedLogs.system.length > 0) {
-      lines.push('');
-      lines.push('🔧 系统日志');
-      groupedLogs.system.slice(-50).forEach(log => {
-        const time = includeTimestamps 
-          ? `[${new Date(log.time || Date.now()).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}] `
-          : '';
-        const msg = this.cleanString(log.msg || String(log));
-        lines.push(`${time}${msg}`);
-      });
-    }
-    
-    const normalLogs = (groupedLogs.info || []).concat(groupedLogs.stdout || []).slice(-100);
-    if (normalLogs.length > 0) {
-      lines.push('');
-      lines.push('📄 运行日志 (最近 100 条)');
-      normalLogs.forEach(log => {
-        const time = includeTimestamps 
-          ? `[${new Date(log.time || Date.now()).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}] `
-          : '';
-        const msg = this.cleanString(log.msg || String(log));
-        lines.push(`${time}${msg}`);
-      });
-    }
-    
+
+    lines.push('📄 详细运行日志 (最近 200 条)');
+    const tailLogs = uniqueLogs.slice(-200);
+    tailLogs.forEach(log => {
+      const timeStr = includeTimestamps
+        ? `[${new Date(log.time || Date.now()).toLocaleTimeString('zh-CN', { hour12: false })}] `
+        : '';
+
+      let prefix = '';
+      if (log.type === 'error' || log.type === 'stderr') prefix = '🔴 ';
+      else if (log.type === 'warning') prefix = '⚠️ ';
+      else if (log.type === 'system') prefix = '⚙️ ';
+
+      const msg = this.cleanString(log.msg || String(log));
+      lines.push(`${timeStr}${prefix}${msg}`);
+    });
+
     lines.push('');
     lines.push(separator);
     lines.push('                       报告结束');
     lines.push(separator);
-    
+
     return lines.join('\n');
   }
 
   exportLogsAsJson(projectId, options = {}) {
     const process = this.get(projectId);
     const { includeMetrics = true, includeLogs = true } = options;
-    
+
     const exportData = {
       meta: {
         projectId,
@@ -531,12 +565,12 @@ ${'='.repeat(60)}\n`;
         status: process.status,
         startTime: process.startTime ? new Date(process.startTime).toISOString() : null,
         endTime: process.endTime ? new Date(process.endTime).toISOString() : null,
-        duration: process.startTime && process.endTime 
-          ? Math.round((process.endTime - process.startTime) / 1000) 
+        duration: process.startTime && process.endTime
+          ? Math.round((process.endTime - process.startTime) / 1000)
           : null
       }
     };
-    
+
     if (includeMetrics) {
       exportData.metrics = process.metrics.map(m => ({
         epoch: m.epoch,
@@ -568,42 +602,42 @@ ${'='.repeat(60)}\n`;
         }
       }));
     }
-    
+
     if (includeLogs) {
       const logs = this.readLogsFromFile(projectId, 10000);
       const allLogs = [...logs, ...process.logs];
       const uniqueLogs = this.deduplicateLogs(allLogs);
-      
+
       exportData.logs = uniqueLogs.map(log => ({
         timestamp: log.time ? new Date(log.time).toISOString() : null,
         type: log.type || 'info',
         message: this.cleanString(log.msg || String(log))
       }));
     }
-    
+
     return JSON.stringify(exportData, null, 2);
   }
 
   generateTrainingReport(projectId) {
     const process = this.get(projectId);
     const latest = process.metrics[process.metrics.length - 1] || {};
-    
+
     const report = {
       title: '训练报告',
       generatedAt: new Date().toISOString(),
       projectId,
       status: process.status,
-      
+
       summary: {
         startTime: process.startTime ? new Date(process.startTime).toISOString() : null,
         endTime: process.endTime ? new Date(process.endTime).toISOString() : null,
-        duration: process.startTime && process.endTime 
+        duration: process.startTime && process.endTime
           ? this.formatDuration(Math.round((process.endTime - process.startTime) / 1000))
           : null,
         totalEpochs: latest.totalEpochs || latest.epochs || null,
         completedEpochs: latest.epoch || null
       },
-      
+
       finalMetrics: {
         box: {
           mAP50: latest.mAP50,
@@ -624,23 +658,23 @@ ${'='.repeat(60)}\n`;
           dfl: latest.dfl_loss
         }
       },
-      
+
       gpu: {
         avgMemoryPercent: process.metrics.reduce((sum, m) => sum + (m.gpu_memory_percent || 0), 0) / process.metrics.length,
         maxMemoryPercent: Math.max(...process.metrics.map(m => m.gpu_memory_percent || 0)),
         avgUtilization: process.metrics.reduce((sum, m) => sum + (m.gpu_utilization_percent || 0), 0) / process.metrics.length
       },
-      
+
       errors: process.logs.filter(l => l.type === 'error').map(l => l.msg),
       warnings: process.logs.filter(l => l.type === 'warning' || l.type === 'suggestion').map(l => l.msg)
     };
-    
+
     return report;
   }
 
   saveLogsToFile(projectId, outputPath, options = {}) {
     const format = options.format || 'text';
-    
+
     let content;
     if (format === 'json') {
       content = this.exportLogsAsJson(projectId, options);
@@ -649,15 +683,15 @@ ${'='.repeat(60)}\n`;
     } else {
       content = this.exportLogsAsText(projectId, options);
     }
-    
+
     try {
       const dir = path.dirname(outputPath);
       if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
       }
-      
+
       fs.writeFileSync(outputPath, content, 'utf-8');
-      
+
       logger.info(`Logs exported to: ${outputPath}`);
       return { success: true, path: outputPath, size: content.length, format };
     } catch (err) {

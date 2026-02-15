@@ -499,7 +499,7 @@ class TrainingService {
     }
 
     if (line.includes('━━━━') || line.includes('────') || line.includes('╸') ||
-        line.includes('█') || line.includes('▓') || line.includes('▒') || line.includes('░')) {
+      line.includes('█') || line.includes('▓') || line.includes('▒') || line.includes('░')) {
       return true;
     }
 
@@ -579,8 +579,8 @@ class TrainingService {
 
     const child = spawn(pythonCmd, args, {
       windowsHide: true,
-      env: { 
-        ...process.env, 
+      env: {
+        ...process.env,
         KMP_DUPLICATE_LIB_OK: 'TRUE',
         PYTHONIOENCODING: 'utf-8',
         PYTHONUTF8: '1'
@@ -717,25 +717,57 @@ class TrainingService {
       });
     });
 
-    child.stderr.on('data', (data) => {
-      const lines = data.toString().split('\n');
-      lines.forEach(line => {
-        if (line.trim()) {
-          const cleanedLine = this.cleanString(line.trim());
-          if (!cleanedLine) return;
+    let stderrBuffer = '';
+    let isCapturingTraceback = false;
 
-          logger.error(`[Train ${projectId}] ${cleanedLine}`);
+    // Helper to process a complete line from stderr
+    // We define this inside to share closure scope
+    const processStderrLine = (line) => {
+      // Don't modify the line yet if we are capturing traceback, we want raw indent
+      const trimmed = line.trim();
+      if (!trimmed && !isCapturingTraceback) return;
 
-          const classified = this.classifyError(cleanedLine);
+      const cleanedLine = this.cleanString(trimmed);
+      if (!cleanedLine && !isCapturingTraceback) return;
 
+      // 1. Traceback Start Detection
+      if (line.includes('Traceback (most recent call last):')) {
+        isCapturingTraceback = true;
+        this.processes.addLog(projectId, {
+          type: 'stderr',
+          msg: '🔴 ' + line, // Keep raw line structure
+          time: Date.now()
+        });
+        // Also ensure this gets into the error logs for the report
+        this.processes.addErrorLog(projectId, line);
+        return;
+      }
+
+      if (isCapturingTraceback) {
+        // Log formatted traceback lines
+        this.processes.addLog(projectId, {
+          type: 'stderr',
+          msg: '  ' + line, // Indent slightly in UI
+          time: Date.now()
+        });
+
+        // Add to error logs for report
+        this.processes.addErrorLog(projectId, line);
+
+        // Heuristic: End of traceback usually is the error type line (e.g. "ValueError: ...")
+        // It starts at the beginning of the line (no indent)
+        if (!line.startsWith(' ') && !line.startsWith('\t') && line.includes(':')) {
+          isCapturingTraceback = false;
+
+          // Try to classify the final error
+          const classified = this.classifyError(line);
           if (classified.type !== 'unknown') {
             this.processes.addLog(projectId, {
               type: 'error',
-              msg: `${classified.icon} ${classified.title}`,
+              msg: `${classified.icon} ${classified.title}: ${classified.rawError}`,
               errorType: classified.type,
               time: Date.now()
             });
-
             if (classified.suggestions && classified.suggestions.length > 0) {
               this.processes.addLog(projectId, {
                 type: 'suggestion',
@@ -743,29 +775,64 @@ class TrainingService {
                 time: Date.now()
               });
             }
-
-            if (classified.docLink) {
-              this.processes.addLog(projectId, {
-                type: 'info',
-                msg: `� 文档: ${classified.docLink}`,
-                time: Date.now()
-              });
-            }
           }
+        }
+        return;
+      }
 
-          if (classified.type === 'oom') {
-            this.handleOOMError(projectId, config, retryCount);
-          }
+      // 2. Normal Stderr Processing
+      logger.error(`[Train ${projectId}] ${cleanedLine}`);
 
-          this.processes.addErrorLog(projectId, cleanedLine);
+      // Try to classify standalone errors that aren't part of a traceback
+      const classified = this.classifyError(cleanedLine);
 
+      if (classified.type !== 'unknown') {
+        this.processes.addLog(projectId, {
+          type: 'error',
+          msg: `${classified.icon} ${classified.title}`,
+          errorType: classified.type,
+          time: Date.now()
+        });
+
+        if (classified.suggestions && classified.suggestions.length > 0) {
           this.processes.addLog(projectId, {
-            type: 'stderr',
-            msg: cleanedLine,
+            type: 'suggestion',
+            msg: `💡 解决建议:\n${classified.suggestions.map((s, i) => `   ${i + 1}. ${s}`).join('\n')}`,
             time: Date.now()
           });
         }
+      }
+
+      // Always add to raw error logs for report
+      this.processes.addErrorLog(projectId, cleanedLine);
+
+      this.processes.addLog(projectId, {
+        type: 'stderr',
+        msg: cleanedLine,
+        time: Date.now()
       });
+    };
+
+    child.stderr.on('data', (data) => {
+      stderrBuffer += data.toString();
+
+      // Split by newline but handle potential partial lines at the end
+      let lines = stderrBuffer.split('\n');
+
+      // If the buffer doesn't end with a newline, the last element is incomplete.
+      // We keep it in the buffer for the next chunk.
+      // But if the process ends, we might lose it? 
+      // 'close' event handler usually doesn't flush stderr buffer?
+      // Actually child_process usually emits all data.
+      // A common pattern is:
+
+      if (stderrBuffer.endsWith('\n')) {
+        stderrBuffer = '';
+      } else {
+        stderrBuffer = lines.pop();
+      }
+
+      lines.forEach(line => processStderrLine(line));
     });
 
     child.on('close', (code) => {
@@ -796,16 +863,16 @@ class TrainingService {
       else {
         const status = 'failed';
         this.processes.setStatus(projectId, status);
-        
+
         const errorLogs = this.processes.getErrorLogs(projectId) || [];
         const recentErrors = errorLogs.slice(-10);
-        
+
         this.processes.addLog(projectId, {
           type: 'system',
           msg: `❌ 训练失败！进程退出码: ${code}`,
           time: Date.now()
         });
-        
+
         if (recentErrors.length > 0) {
           this.processes.addLog(projectId, {
             type: 'error',
@@ -819,7 +886,7 @@ class TrainingService {
             time: Date.now()
           });
         }
-        
+
         logger.info(`Training for project ${projectId} ${status}`);
       }
 
