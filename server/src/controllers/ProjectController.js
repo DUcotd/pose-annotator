@@ -9,10 +9,13 @@ const { imageSize } = require('image-size');
 const logger = require('../utils/logger');
 const SafeFileOp = require('../services/FileService');
 const settings = require('../config/settings');
+const projectRegistry = require('../services/ProjectRegistryService');
 const { extractZipAsync } = require('../utils/zipUtils');
 
 function createProjectRouter(projectsDir) {
   const router = express.Router();
+
+  projectRegistry.init(projectsDir);
 
   const getAllProjectPaths = () => {
     const config = settings.load();
@@ -88,7 +91,6 @@ function createProjectRouter(projectsDir) {
     destination: (req, file, cb) => {
       const projectId = req.params.projectId;
       if (!projectId) {
-        // For routes without projectId (like collaboration import), use a temp directory
         const tempDir = path.join(projectsDir, '.temp_uploads');
         SafeFileOp.ensureDir(tempDir);
         return cb(null, tempDir);
@@ -153,7 +155,13 @@ function createProjectRouter(projectsDir) {
             });
           }
         } catch (e) { }
-        return { id: p, name: p, imageCount, annotatedCount };
+        
+        const registryProject = projectRegistry.getProject(p);
+        if (!registryProject) {
+          projectRegistry.registerProject(p, root);
+        }
+        
+        return { id: p, name: p, imageCount, annotatedCount, path: root };
       });
 
       res.json(projectList);
@@ -199,6 +207,8 @@ function createProjectRouter(projectsDir) {
     SafeFileOp.ensureDir(paths.annotations);
     SafeFileOp.ensureDir(paths.thumbnails);
 
+    projectRegistry.registerProject(safeName, projectRoot, { name });
+
     if (customPath && customPath !== projectsDir) {
       const config = settings.load();
       const additionalPaths = config.additionalProjectPaths || [];
@@ -243,24 +253,44 @@ function createProjectRouter(projectsDir) {
     }
   });
 
-  router.delete('/:projectId', (req, res) => {
+  router.delete('/:projectId', async (req, res) => {
     const { projectId } = req.params;
     const paths = getProjectPaths(projectId);
 
-    if (fs.existsSync(paths.root)) {
-      try {
-        SafeFileOp.removeDirRename(paths.root).then(() => {
+    if (!fs.existsSync(paths.root)) {
+      projectRegistry.unregisterProject(projectId);
+      return res.json({ message: 'Project not found, removed from registry' });
+    }
+
+    try {
+      projectRegistry.markProjectDeleted(projectId);
+      
+      const result = await SafeFileOp.removeDirRename(paths.root);
+      
+      if (result.success) {
+        if (result.pendingCleanup) {
+          logger.info(`Project deletion pending cleanup: ${projectId}`);
+          res.json({ 
+            message: '项目删除中（部分文件被占用，将在重启后清理）',
+            pendingCleanup: true 
+          });
+        } else {
+          projectRegistry.unregisterProject(projectId);
           logger.info(`Project deleted: ${projectId}`);
-          res.json({ message: 'Project deleted' });
-        }).catch(err => {
-          logger.error(`Failed to delete project ${projectId}:`, err);
-          res.status(500).json({ error: 'Failed to delete project', details: err.message });
-        });
-      } catch (err) {
-        res.status(500).json({ error: 'Failed to delete project', details: err.message });
+          res.json({ message: '项目已成功删除' });
+        }
+      } else {
+        throw new Error('删除操作未完成');
       }
-    } else {
-      res.status(404).json({ error: 'Project not found' });
+    } catch (err) {
+      logger.error(`Failed to delete project ${projectId}:`, err);
+      
+      const registryProject = projectRegistry.getProject(projectId);
+      if (registryProject && registryProject.status === 'deleted') {
+        projectRegistry.updateProject(projectId, { status: 'active' });
+      }
+      
+      res.status(500).json({ error: '删除项目失败', details: err.message });
     }
   });
 
@@ -312,7 +342,6 @@ function createProjectRouter(projectsDir) {
       const newFilename = String(nextIdx).padStart(6, '0') + ext;
       const targetPath = path.join(paths.uploads, newFilename);
 
-      // Rename the file saved by multer
       await fs.promises.rename(req.file.path, targetPath);
 
       res.json({ message: 'File uploaded and encoded successfully', filename: newFilename });
@@ -531,7 +560,6 @@ function createProjectRouter(projectsDir) {
     }
   });
 
-  // Helper to create collaboration archive
   const createCollaborationArchive = (projectId, outputStream) => {
     return new Promise((resolve, reject) => {
       const paths = getProjectPaths(projectId);
@@ -540,7 +568,7 @@ function createProjectRouter(projectsDir) {
       }
 
       const archive = archiver('zip', {
-        zlib: { level: 0 } // Level 0 (Store) for maximum speed
+        zlib: { level: 0 }
       });
 
       outputStream.on('close', () => resolve(archive.pointer()));
@@ -564,7 +592,6 @@ function createProjectRouter(projectsDir) {
     });
   };
 
-  // Export project as ZIP for collaboration (browser download)
   router.get('/:projectId/collaboration/export', async (req, res) => {
     const { projectId } = req.params;
     try {
@@ -582,7 +609,6 @@ function createProjectRouter(projectsDir) {
     }
   });
 
-  // Export project ZIP directly to local path (Electron Save As)
   router.post('/:projectId/collaboration/export-to-path', async (req, res) => {
     const { projectId } = req.params;
     const { savePath } = req.body;
@@ -602,11 +628,11 @@ function createProjectRouter(projectsDir) {
     }
   });
 
-  // Import project from ZIP for collaboration
   router.post('/collaboration/import', upload.single('file'), async (req, res) => {
     const filePath = req.body.path || (req.file ? req.file.path : null);
+    const customPath = req.body.customPath || null;
 
-    logger.info(`Collaboration import request received. FilePath: ${filePath}`);
+    logger.info(`Collaboration import request received. FilePath: ${filePath}, CustomPath: ${customPath}`);
 
     if (!filePath) {
       return res.status(400).json({ error: 'No file provided for import' });
@@ -617,11 +643,22 @@ function createProjectRouter(projectsDir) {
       return res.status(400).json({ error: `Selected file does not exist: ${filePath}` });
     }
 
+    let targetDir = projectsDir;
+    if (customPath) {
+      try {
+        if (!fs.existsSync(customPath)) {
+          fs.mkdirSync(customPath, { recursive: true });
+        }
+        targetDir = customPath;
+      } catch (e) {
+        return res.status(400).json({ error: `无法创建目录: ${e.message}` });
+      }
+    }
+
     try {
       const zip = new AdmZip(filePath);
       let projectName = req.body.name || path.basename(filePath, path.extname(filePath)).replace('_collaboration', '');
 
-      // Ensure project name is viable
       projectName = projectName.trim().replace(/[<>:"/\\|?*\x00-\x1F]/g, '_');
 
       let finalProjectName = projectName;
@@ -639,11 +676,33 @@ function createProjectRouter(projectsDir) {
         finalProjectName = `${projectName}_${counter++}`;
       }
 
-      logger.info(`Extracting project to: ${finalProjectName}`);
-      const paths = ensureProjectDirs(finalProjectName);
+      logger.info(`Extracting project to: ${finalProjectName} at ${targetDir}`);
+      
+      const projectRoot = path.join(targetDir, finalProjectName);
+      const paths = {
+        root: projectRoot,
+        uploads: path.join(projectRoot, 'uploads'),
+        annotations: path.join(projectRoot, 'annotations'),
+        thumbnails: path.join(projectRoot, 'thumbnails')
+      };
+      
+      SafeFileOp.ensureDir(paths.root);
+      SafeFileOp.ensureDir(paths.uploads);
+      SafeFileOp.ensureDir(paths.annotations);
+      SafeFileOp.ensureDir(paths.thumbnails);
 
-      // Use async extraction to prevent blocking the main thread
       await extractZipAsync(filePath, paths.root, true);
+
+      projectRegistry.registerProject(finalProjectName, projectRoot);
+
+      if (customPath && customPath !== projectsDir) {
+        const config = settings.load();
+        const additionalPaths = config.additionalProjectPaths || [];
+        if (!additionalPaths.includes(customPath)) {
+          additionalPaths.push(customPath);
+          settings.save({ additionalProjectPaths: additionalPaths });
+        }
+      }
 
       if (req.file && fs.existsSync(req.file.path)) {
         try {

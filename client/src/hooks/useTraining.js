@@ -194,8 +194,79 @@ export const useTraining = (projectId) => {
     const updateConfig = (updates) => {
         const newConfig = { ...config, ...updates };
         setConfig(newConfig);
-        // Persist to project config
         updateProjectConfig(projectId, { trainingSettings: newConfig });
+    };
+
+    const exportLogs = async (options = {}) => {
+        if (!projectId) {
+            throw new Error('项目ID不存在');
+        }
+
+        const params = new URLSearchParams();
+        if (options.includeMetrics === false) params.append('includeMetrics', 'false');
+        if (options.includeConfig === false) params.append('includeConfig', 'false');
+        if (options.includeTimestamps === false) params.append('includeTimestamps', 'false');
+
+        const queryString = params.toString();
+        const url = `http://localhost:5000/api/projects/${projectId}/train/logs/export${queryString ? '?' + queryString : ''}`;
+
+        try {
+            const response = await fetch(url);
+            
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({ error: '导出失败' }));
+                throw new Error(errorData.error || '导出日志失败');
+            }
+
+            const contentDisposition = response.headers.get('Content-Disposition');
+            let filename = `training_log_${projectId}_${new Date().toISOString().slice(0, 10)}.txt`;
+            if (contentDisposition) {
+                const filenameMatch = contentDisposition.match(/filename\*?=['"]?(?:UTF-\d['"]*)?([^'";\s]+)/i);
+                if (filenameMatch) {
+                    filename = decodeURIComponent(filenameMatch[1]);
+                }
+            }
+
+            const blob = await response.blob();
+            const downloadUrl = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = downloadUrl;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(downloadUrl);
+
+            return { success: true, filename };
+        } catch (err) {
+            console.error('Failed to export logs:', err);
+            throw err;
+        }
+    };
+
+    const exportLogsToFile = async (options = {}) => {
+        if (!projectId) {
+            throw new Error('项目ID不存在');
+        }
+
+        try {
+            const response = await fetch(`http://localhost:5000/api/projects/${projectId}/train/logs/export-to-file`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ options })
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error || '导出失败');
+            }
+
+            return data;
+        } catch (err) {
+            console.error('Failed to export logs to file:', err);
+            throw err;
+        }
     };
 
     return {
@@ -215,6 +286,8 @@ export const useTraining = (projectId) => {
         updateConfig,
         refreshStats: fetchStats,
         refreshEnv: fetchEnvInfo,
-        refreshDatasetInfo: fetchDatasetInfo
+        refreshDatasetInfo: fetchDatasetInfo,
+        exportLogs,
+        exportLogsToFile
     };
 };

@@ -289,6 +289,102 @@ ${'='.repeat(60)}\n`;
       logFilePath: logPath
     };
   }
+
+  exportLogsAsText(projectId, options = {}) {
+    const process = this.get(projectId);
+    const { includeMetrics = true, includeConfig = true, includeTimestamps = true } = options;
+    
+    const lines = [];
+    
+    lines.push('='.repeat(80));
+    lines.push('训练日志导出报告');
+    lines.push('='.repeat(80));
+    lines.push('');
+    
+    lines.push('基本信息');
+    lines.push('-'.repeat(40));
+    lines.push(`项目ID: ${projectId}`);
+    lines.push(`导出时间: ${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}`);
+    lines.push(`训练状态: ${process.status}`);
+    
+    if (process.startTime) {
+      lines.push(`开始时间: ${new Date(process.startTime).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}`);
+    }
+    if (process.endTime) {
+      lines.push(`结束时间: ${new Date(process.endTime).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}`);
+      const duration = Math.round((process.endTime - process.startTime) / 1000);
+      const hours = Math.floor(duration / 3600);
+      const minutes = Math.floor((duration % 3600) / 60);
+      const seconds = duration % 60;
+      lines.push(`训练时长: ${hours}小时 ${minutes}分钟 ${seconds}秒`);
+    }
+    lines.push('');
+    
+    if (includeMetrics && process.metrics.length > 0) {
+      lines.push('训练指标');
+      lines.push('-'.repeat(40));
+      
+      const header = 'Epoch'.padEnd(8) + 'Train Loss'.padEnd(14) + 'Val Loss'.padEnd(14) + 
+                     'mAP50'.padEnd(12) + 'mAP50-95'.padEnd(12) + 'LR'.padEnd(14);
+      lines.push(header);
+      lines.push('-'.repeat(header.length));
+      
+      process.metrics.forEach(m => {
+        const epoch = String(m.epoch || '-').padEnd(8);
+        const trainLoss = (m.train_loss !== undefined ? m.train_loss.toFixed(4) : '-').padEnd(14);
+        const valLoss = (m.val_loss !== undefined ? m.val_loss.toFixed(4) : '-').padEnd(14);
+        const map50 = (m.map50 !== undefined ? (m.map50 * 100).toFixed(2) + '%' : '-').padEnd(12);
+        const map5095 = (m.map5095 !== undefined ? (m.map5095 * 100).toFixed(2) + '%' : '-').padEnd(12);
+        const lr = (m.lr !== undefined ? m.lr.toExponential(4) : '-').padEnd(14);
+        lines.push(`${epoch}${trainLoss}${valLoss}${map50}${map5095}${lr}`);
+      });
+      lines.push('');
+    }
+    
+    lines.push('训练日志');
+    lines.push('-'.repeat(40));
+    
+    const logs = this.readLogsFromFile(projectId, 10000);
+    const allLogs = [...logs, ...process.logs];
+    const uniqueLogs = allLogs.filter((log, index, self) => 
+      index === self.findIndex(l => l.time === log.time && l.msg === log.msg)
+    ).sort((a, b) => (a.time || 0) - (b.time || 0));
+    
+    uniqueLogs.forEach(log => {
+      const time = includeTimestamps 
+        ? `[${new Date(log.time || Date.now()).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}] `
+        : '';
+      const type = log.type ? `[${log.type.toUpperCase()}] ` : '';
+      const msg = typeof log.msg === 'object' ? JSON.stringify(log.msg) : (log.msg || String(log));
+      lines.push(`${time}${type}${msg}`);
+    });
+    
+    lines.push('');
+    lines.push('='.repeat(80));
+    lines.push('报告结束');
+    lines.push('='.repeat(80));
+    
+    return lines.join('\n');
+  }
+
+  saveLogsToFile(projectId, outputPath, options = {}) {
+    const content = this.exportLogsAsText(projectId, options);
+    
+    try {
+      const dir = path.dirname(outputPath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      
+      fs.writeFileSync(outputPath, content, 'utf-8');
+      
+      logger.info(`Logs exported to: ${outputPath}`);
+      return { success: true, path: outputPath, size: content.length };
+    } catch (err) {
+      logger.error(`Failed to export logs: ${err.message}`);
+      return { success: false, error: err.message };
+    }
+  }
 }
 
 module.exports = new ProcessManager();

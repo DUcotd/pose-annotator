@@ -1,7 +1,7 @@
 import React, { useRef, useEffect } from 'react';
 import {
     Play, Square, RefreshCw, Database, CheckCircle, Layers, ArrowLeft, ChevronDown, ChevronRight,
-    FolderOpen, FileText, AlertCircle
+    FolderOpen, FileText, AlertCircle, Download
 } from 'lucide-react';
 import { useProject } from '../context/ProjectContext';
 import { useTraining } from '../hooks/useTraining';
@@ -25,14 +25,11 @@ export const TrainingConfig = () => {
         handleStart: startTraining,
         handleStop: stopTraining,
         handleBrowseData,
-        updateConfig
+        updateConfig,
+        exportLogs
     } = useTraining(currentProject);
 
     const logEndRef = useRef(null);
-
-    useEffect(() => {
-        logEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    }, [logs]);
 
     const onStart = async () => {
         try {
@@ -143,8 +140,10 @@ export const TrainingConfig = () => {
                     display: 'flex',
                     flexDirection: 'column',
                     gap: '1.5rem',
-                    overflow: 'hidden'
-                }}>
+                    overflowY: 'auto',
+                    minHeight: 0,
+                    paddingRight: '4px'
+                }} className="custom-scrollbar">
                     {/* Stats Summary */}
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', flexShrink: 0 }}>
                         <StatBadge
@@ -240,7 +239,7 @@ export const TrainingConfig = () => {
                     <TrainingDashboard metrics={metrics} status={status} />
 
                     {/* Log Viewer */}
-                    <LogViewer logs={logs} logEndRef={logEndRef} />
+                    <LogViewer logs={logs} />
                 </div>
 
                 {/* Right: Controls & Config */}
@@ -299,6 +298,42 @@ export const TrainingConfig = () => {
                             </button>
                         )}
                     </div>
+
+                    {/* Export Logs Button */}
+                    <button
+                        onClick={async () => {
+                            try {
+                                await exportLogs();
+                            } catch (err) {
+                                alert(`导出失败: ${err.message}`);
+                            }
+                        }}
+                        disabled={logs.length === 0 && metrics.length === 0}
+                        style={{
+                            width: '100%',
+                            background: logs.length === 0 && metrics.length === 0 
+                                ? 'rgba(255,255,255,0.03)' 
+                                : 'rgba(99, 102, 241, 0.1)',
+                            border: logs.length === 0 && metrics.length === 0 
+                                ? '1px solid rgba(255,255,255,0.06)' 
+                                : '1px solid rgba(99, 102, 241, 0.2)',
+                            borderRadius: '16px',
+                            padding: '0.875rem',
+                            color: logs.length === 0 && metrics.length === 0 
+                                ? 'var(--text-tertiary)' 
+                                : '#818cf8',
+                            fontWeight: 600,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '10px',
+                            cursor: logs.length === 0 && metrics.length === 0 ? 'not-allowed' : 'pointer',
+                            transition: 'all 0.2s',
+                            flexShrink: 0
+                        }}
+                    >
+                        <Download size={18} /> 导出训练日志
+                    </button>
 
                     {/* Forms */}
                     <TrainingForm

@@ -109,6 +109,7 @@ const AppContent = () => {
     return (
       <div style={{ height: '100%', overflow: 'hidden' }}>
         <AnnotationEditor
+          key={selectedImage}
           image={selectedImage}
           projectId={currentProject}
           onBack={goBack}

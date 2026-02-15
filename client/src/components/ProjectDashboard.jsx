@@ -11,10 +11,12 @@ import {
     QuickGuideModal,
     Toast
 } from './dashboard';
+import { ImportCollaborationModal } from './dashboard/ImportCollaborationModal';
 
 export const ProjectDashboard = ({ projects = [], onCreateProject, onSelectProject, onDeleteProject }) => {
-    const { importCollaboration, renumberProject } = useProject();
+    const { importCollaboration, renumberProject, isProjectDeleting } = useProject();
     const [isCreating, setIsCreating] = useState(false);
+    const [isImporting, setIsImporting] = useState(false);
     const [isGuideOpen, setIsGuideOpen] = useState(false);
     const [isConfirming, setIsConfirming] = useState(false);
     const [projectToDelete, setProjectToDelete] = useState(null);
@@ -26,6 +28,10 @@ export const ProjectDashboard = ({ projects = [], onCreateProject, onSelectProje
     };
 
     const handleDeleteProject = (projectId) => {
+        if (isProjectDeleting(projectId)) {
+            setNotification({ type: 'info', message: '项目正在删除中，请稍候...' });
+            return;
+        }
         setProjectToDelete(projectId);
         setIsConfirming(true);
     };
@@ -37,16 +43,23 @@ export const ProjectDashboard = ({ projects = [], onCreateProject, onSelectProje
             type: result.success ? 'success' : 'error',
             message: result.message
         });
+        if (result.pendingCleanup) {
+            setNotification({
+                type: 'warning',
+                message: result.message
+            });
+        }
         setProjectToDelete(null);
     };
 
-    const handleImportProject = async () => {
-        const result = await importCollaboration();
+    const handleImportProject = async (zipPath, customPath) => {
+        const result = await importCollaboration(zipPath, customPath);
         if (result.success) {
             setNotification({ type: 'success', message: result.message });
         } else if (result.message !== '取消导入') {
             setNotification({ type: 'error', message: result.message });
         }
+        return result;
     };
 
     const handleCreateProject = (name) => {
@@ -64,17 +77,14 @@ export const ProjectDashboard = ({ projects = [], onCreateProject, onSelectProje
             display: 'flex',
             flexDirection: 'column'
         }}>
-            {/* Hero Section */}
             <HeroSection
                 onCreate={() => setIsCreating(true)}
-                onImport={handleImportProject}
+                onImport={() => setIsImporting(true)}
                 onGuide={() => setIsGuideOpen(true)}
             />
 
-            {/* Dashboard Stats */}
             <DashboardStats projects={projects} />
 
-            {/* Projects Grid */}
             <div style={{ flex: 1, overflowY: 'auto', paddingBottom: '3rem', paddingRight: '12px' }} className="custom-scrollbar">
                 <div className="project-grid-modern" style={{ marginTop: '1rem' }}>
                     {projects.length === 0 ? (
@@ -90,6 +100,7 @@ export const ProjectDashboard = ({ projects = [], onCreateProject, onSelectProje
                                     onClick={() => onSelectProject(project.id)}
                                     onDelete={handleDeleteProject}
                                     onRenumber={handleRenumber}
+                                    isDeleting={isProjectDeleting(project.id)}
                                 />
                             ))}
                         </>
@@ -97,7 +108,6 @@ export const ProjectDashboard = ({ projects = [], onCreateProject, onSelectProje
                 </div>
             </div>
 
-            {/* Footer Divider */}
             <div style={{
                 height: '1px',
                 background: 'linear-gradient(to right, transparent, var(--border-subtle), transparent)',
@@ -106,7 +116,6 @@ export const ProjectDashboard = ({ projects = [], onCreateProject, onSelectProje
                 marginTop: 'auto'
             }} />
 
-            {/* Modals */}
             <CreateProjectModal
                 isOpen={isCreating}
                 onClose={() => setIsCreating(false)}
@@ -128,6 +137,12 @@ export const ProjectDashboard = ({ projects = [], onCreateProject, onSelectProje
                 type="danger"
             />
 
+            <ImportCollaborationModal
+                isOpen={isImporting}
+                onClose={() => setIsImporting(false)}
+                onImport={handleImportProject}
+            />
+
             <Toast
                 notification={notification}
                 onClose={closeNotification}
@@ -137,6 +152,13 @@ export const ProjectDashboard = ({ projects = [], onCreateProject, onSelectProje
                 @keyframes slideUp {
                     from { transform: translateY(100px); opacity: 0; }
                     to { transform: translateY(0); opacity: 1; }
+                }
+                @keyframes spin {
+                    from { transform: rotate(0deg); }
+                    to { transform: rotate(360deg); }
+                }
+                .spin-animation {
+                    animation: spin 1s linear infinite;
                 }
             `}</style>
         </div>

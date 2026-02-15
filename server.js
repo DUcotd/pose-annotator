@@ -106,7 +106,7 @@ function initProjectsDir() {
     } else {
         PROJECTS_DIR = path.join(__dirname, 'projects');
     }
-    
+
     if (!fs.existsSync(PROJECTS_DIR)) {
         try {
             fs.mkdirSync(PROJECTS_DIR, { recursive: true });
@@ -285,7 +285,7 @@ app.get('/api/projects', async (req, res) => {
                     }
                 }
             } catch (e) { /* ignore */ }
-            projectList.push({ id: p, name: p, imageCount, annotatedCount });
+            projectList.push({ id: p, name: p, imageCount, annotatedCount, path: projectPath });
         }
 
         res.json(projectList);
@@ -418,7 +418,8 @@ app.delete('/api/projects/:projectId', (req, res) => {
 // Serve Uploaded Images
 app.get('/api/projects/:projectId/uploads/:filename', (req, res) => {
     const { projectId, filename } = req.params;
-    const projectPath = path.join(PROJECTS_DIR, projectId, 'uploads', filename);
+    const paths = getProjectPaths(projectId);
+    const projectPath = path.join(paths.uploads, filename);
     if (fs.existsSync(projectPath)) {
         res.sendFile(projectPath);
     } else {
@@ -706,7 +707,7 @@ app.post('/api/utils/select-folder', async (req, res) => {
     if (electron && electron.dialog) {
         try {
             const { dialog, BrowserWindow } = electron;
-            const win = BrowserWindow.getFocusedWindow();
+            const win = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
             const result = await dialog.showOpenDialog(win, {
                 properties: ['openDirectory']
             });
@@ -742,7 +743,7 @@ app.post('/api/utils/select-file', async (req, res) => {
             console.log('[API] Opening file dialog...');
 
             // Try to get main window to make dialog modal/on-top
-            const win = BrowserWindow.getFocusedWindow();
+            const win = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
 
             const { filters } = req.body;
             const defaultFilters = [
@@ -792,7 +793,7 @@ app.post('/api/utils/select-python', async (req, res) => {
     if (electron && electron.dialog) {
         try {
             const { dialog, BrowserWindow } = electron;
-            const win = BrowserWindow.getFocusedWindow();
+            const win = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
 
             const result = await dialog.showOpenDialog(win, {
                 properties: ['openFile'],
@@ -816,6 +817,34 @@ app.post('/api/utils/select-python', async (req, res) => {
         res.status(400).json({ error: '此功能仅在桌面版应用中可用' });
     }
 });
+
+app.post('/api/utils/save-file-dialog', async (req, res) => {
+    let electron;
+    try {
+        electron = require('electron');
+    } catch (e) { }
+
+    if (electron && electron.dialog) {
+        try {
+            const { dialog, BrowserWindow } = electron;
+            const win = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
+            const { title, defaultPath, filters } = req.body;
+
+            const result = await dialog.showSaveDialog(win, {
+                title: title || '保存文件',
+                defaultPath: defaultPath || '',
+                filters: filters || [{ name: 'ZIP Archive', extensions: ['zip'] }, { name: 'All Files', extensions: ['*'] }]
+            });
+
+            res.json({ path: result.canceled ? null : result.filePath });
+        } catch (err) {
+            res.status(500).json({ error: 'Failed to open save dialog' });
+        }
+    } else {
+        res.status(400).json({ error: 'Save dialog is only available in Desktop version' });
+    }
+});
+
 
 const SUPPORTED_IMAGE_EXTENSIONS = /\.(jpg|jpeg|png|gif|bmp|webp)$/i;
 
@@ -1120,7 +1149,7 @@ app.get('/api/projects/:projectId/dataset/stats', (req, res) => {
     const paths = getProjectPaths(projectId);
 
     if (!fs.existsSync(paths.uploads)) {
-        return res.json({ total: 0, annotated: 0, unannotated: 0, samples: [] });
+        return res.json({ total: 0, annotated: 0, unannotated: 0, totalSize: 0, samples: [] });
     }
 
     fs.readdir(paths.uploads, (err, files) => {
@@ -1128,11 +1157,18 @@ app.get('/api/projects/:projectId/dataset/stats', (req, res) => {
 
         const images = files.filter(file => /\.(jpg|jpeg|png|gif|webp)$/i.test(file));
         let annotatedCount = 0;
+        let totalSize = 0;
         let samples = [];
 
         images.forEach(imageFile => {
+            const imagePath = path.join(paths.uploads, imageFile);
             const annotationFile = path.join(paths.annotations, `${imageFile}.json`);
             let isAnnotated = false;
+
+            try {
+                const stats = fs.statSync(imagePath);
+                totalSize += stats.size;
+            } catch (e) { }
 
             if (fs.existsSync(annotationFile)) {
                 try {
@@ -1155,7 +1191,9 @@ app.get('/api/projects/:projectId/dataset/stats', (req, res) => {
             total: images.length,
             annotated: annotatedCount,
             unannotated: images.length - annotatedCount,
-            samples: samples
+            totalSize: totalSize,
+            samples: samples,
+            projectPath: paths.root
         });
     });
 });
@@ -1165,7 +1203,7 @@ app.get('/api/projects/:projectId/dataset/info', (req, res) => {
     const paths = getProjectPaths(projectId);
     const datasetPath = paths.dataset;
     const yamlPath = path.join(datasetPath, 'data.yaml');
-    
+
     const result = {
         datasetPath,
         yamlPath,
@@ -1181,7 +1219,7 @@ app.get('/api/projects/:projectId/dataset/info', (req, res) => {
             test: path.join(datasetPath, 'labels', 'test')
         }
     };
-    
+
     if (result.exists) {
         try {
             const yamlContent = fs.readFileSync(yamlPath, 'utf8');
@@ -1193,7 +1231,7 @@ app.get('/api/projects/:projectId/dataset/info', (req, res) => {
             result.parseError = e.message;
         }
     }
-    
+
     res.json(result);
 });
 
@@ -1807,6 +1845,84 @@ app.post('/api/projects/:projectId/train/stop', (req, res) => {
     }
 });
 
+app.get('/api/projects/:projectId/train/logs/export', (req, res) => {
+    const { projectId } = req.params;
+    const processState = trainingProcesses[projectId];
+
+    if (!processState || (!processState.logs.length && !processState.metrics.length)) {
+        return res.status(404).json({ error: 'No logs found for this project' });
+    }
+
+    try {
+        let content = '';
+        content += `Training Log for Project: ${projectId}\n`;
+        content += `Status: ${processState.status}\n`;
+        content += `Exported at: ${new Date().toISOString()}\n\n`;
+
+        content += `--- LOGS ---\n`;
+        processState.logs.forEach(l => {
+            const time = new Date(l.time).toISOString();
+            content += `[${time}] [${l.type}] ${l.msg}\n`;
+        });
+
+        if (processState.metrics && processState.metrics.length) {
+            content += `\n--- METRICS ---\n`;
+            content += JSON.stringify(processState.metrics, null, 2);
+        }
+
+        const filename = `training_log_${projectId}_${new Date().toISOString().replace(/[:.]/g, '-')}.txt`;
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+        res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(filename)}"`);
+        res.send(content);
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to export logs', details: err.message });
+    }
+});
+
+app.post('/api/projects/:projectId/train/logs/export-to-file', async (req, res) => {
+    const { projectId } = req.params;
+    const { outputPath } = req.body;
+    const processState = trainingProcesses[projectId];
+
+    if (!processState) {
+        return res.status(404).json({ error: 'No training data found' });
+    }
+
+    let finalPath = outputPath;
+    if (!finalPath) {
+        let electron;
+        try {
+            electron = require('electron');
+        } catch (e) { }
+
+        if (electron && electron.dialog) {
+            const { dialog, BrowserWindow } = electron;
+            const win = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
+            const result = await dialog.showSaveDialog(win, {
+                title: '保存训练日志',
+                defaultPath: `training_log_${projectId}_${new Date().toISOString().slice(0, 10)}.txt`,
+                filters: [{ name: 'Text Files', extensions: ['txt'] }]
+            });
+            if (result.canceled || !result.filePath) return res.json({ success: false });
+            finalPath = result.filePath;
+        } else {
+            return res.status(400).json({ error: 'Output path required' });
+        }
+    }
+
+    try {
+        let content = `Training Log for ${projectId}\n\n`;
+        processState.logs.forEach(l => {
+            content += `[${new Date(l.time || Date.now()).toISOString()}] [${l.type}] ${l.msg}\n`;
+        });
+        fs.writeFileSync(finalPath, content);
+        res.json({ success: true, path: finalPath });
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to save logs', details: err.message });
+    }
+});
+
+
 function str(v) { return String(v); }
 
 // --- COLLABORATION: ZIP EXPORT/IMPORT ---
@@ -1890,13 +2006,66 @@ app.get('/api/projects/:projectId/collaboration/export', (req, res) => {
     }
 });
 
+app.post('/api/projects/:projectId/collaboration/export-to-path', async (req, res) => {
+    const { projectId } = req.params;
+    const { savePath } = req.body;
+    const paths = getProjectPaths(projectId);
+
+    if (!savePath) return res.status(400).json({ error: 'Save path required' });
+    if (!fs.existsSync(paths.root)) return res.status(404).json({ error: 'Project not found' });
+
+    try {
+        const output = fs.createWriteStream(savePath);
+        const archive = archiver('zip', { zlib: { level: 0 } });
+
+        output.on('close', () => {
+            res.json({ success: true, path: savePath, bytes: archive.pointer() });
+        });
+
+        archive.on('error', (err) => { throw err; });
+        archive.pipe(output);
+
+        const safeDirs = ['uploads', 'annotations'];
+        const safeFiles = ['config.json', 'import-history.json', 'project.json'];
+
+        safeDirs.forEach(dir => {
+            const dirPath = path.join(paths.root, dir);
+            if (fs.existsSync(dirPath)) archive.directory(dirPath, dir);
+        });
+
+        safeFiles.forEach(file => {
+            const filePath = path.join(paths.root, file);
+            if (fs.existsSync(filePath)) archive.file(filePath, { name: file });
+        });
+
+        archive.finalize();
+    } catch (err) {
+        console.error('Export to path failed:', err);
+        res.status(500).json({ error: 'Export failed', details: err.message });
+    }
+});
+
+
 // Import project from ZIP for collaboration
 app.post('/api/projects/collaboration/import', upload.single('file'), async (req, res) => {
     // Check for file path (from Electron) or uploaded file (Multer)
     const filePath = req.body.path || (req.file ? req.file.path : null);
+    const customPath = req.body.customPath || null;
 
     if (!filePath) {
         return res.status(400).json({ error: 'No file provided for import' });
+    }
+
+    let targetDir = PROJECTS_DIR;
+    if (customPath) {
+        try {
+            if (!fs.existsSync(customPath)) {
+                fs.mkdirSync(customPath, { recursive: true });
+            }
+            targetDir = customPath;
+        } catch (e) {
+            return res.status(400).json({ error: `无法创建目录: ${e.message}` });
+        }
     }
 
     try {
@@ -1922,17 +2091,38 @@ app.post('/api/projects/collaboration/import', upload.single('file'), async (req
             finalProjectName = `${projectName}_${counter++}`;
         }
 
-        const paths = ensureProjectDirs(finalProjectName);
+        const projectRoot = path.join(targetDir, finalProjectName);
+        const paths = {
+            root: projectRoot,
+            uploads: path.join(projectRoot, 'uploads'),
+            annotations: path.join(projectRoot, 'annotations'),
+            thumbnails: path.join(projectRoot, 'thumbnails')
+        };
+
+        if (!fs.existsSync(paths.root)) fs.mkdirSync(paths.root);
+        if (!fs.existsSync(paths.uploads)) fs.mkdirSync(paths.uploads);
+        if (!fs.existsSync(paths.annotations)) fs.mkdirSync(paths.annotations);
+        if (!fs.existsSync(paths.thumbnails)) fs.mkdirSync(paths.thumbnails);
 
         // Extract contents asynchronously
         await extractZipAsyncLegacy(filePath, paths.root, true);
+
+        // Save custom path to additional paths if it's new
+        if (customPath && customPath !== PROJECTS_DIR) {
+            const config = loadGlobalConfig();
+            const additionalPaths = config.additionalProjectPaths || [];
+            if (!additionalPaths.includes(customPath)) {
+                additionalPaths.push(customPath);
+                saveGlobalConfig({ ...config, additionalProjectPaths: additionalPaths });
+            }
+        }
 
         // Clean up uploaded file if it was a temp upload
         if (req.file) {
             fs.unlinkSync(req.file.path);
         }
 
-        res.json({ message: 'Project imported successfully', id: finalProjectName });
+        res.json({ message: 'Project imported successfully', id: finalProjectName, path: projectRoot });
     } catch (err) {
         console.error('Failed to import collaboration ZIP:', err);
         res.status(500).json({ error: 'Failed to import collaboration package', details: err.message });

@@ -3,7 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const logger = require('../utils/logger');
 const ProcessManager = require('../managers/ProcessManager');
-const JobQueue = require('../managers/JobQueue');
+const { JobQueue } = require('../managers/JobQueue');
 const PythonEnvService = require('./PythonEnvService');
 const settings = require('../config/settings');
 
@@ -20,7 +20,7 @@ class TrainingService {
     this.jobQueue = new JobQueue();
     this.csvWatchers = new Map();
     this.jsonBuffer = new Map();
-    
+
     this.setupProcessCleanup();
     this.setupQueueListeners();
   }
@@ -33,24 +33,24 @@ class TrainingService {
         time: Date.now()
       });
     });
-    
+
     this.jobQueue.on('jobCompleted', (job) => {
       this.processes.addLog(job.config.project || 'unknown', {
         type: 'system',
         msg: `✅ 队列任务完成: ${job.id}`,
         time: Date.now()
       });
-      
+
       this.processNextJob();
     });
-    
+
     this.jobQueue.on('jobFailed', (job) => {
       this.processes.addLog(job.config.project || 'unknown', {
         type: 'system',
         msg: `❌ 队列任务失败: ${job.id} - ${job.error}`,
         time: Date.now()
       });
-      
+
       this.processNextJob();
     });
   }
@@ -67,7 +67,7 @@ class TrainingService {
 
   async executeJob(job) {
     this.jobQueue.startJob(job.id);
-    
+
     try {
       await this.startTraining(job.config.project, job.config, 0);
     } catch (err) {
@@ -78,13 +78,13 @@ class TrainingService {
 
   async addToQueue(config, priority = 0) {
     const job = this.jobQueue.addJob(config, priority);
-    
+
     const currentRunning = this.processes.getRunning();
     // 当前策略为全局单任务串行，防止用户多GPU同时训练导致资源耗尽
     if (currentRunning.length === 0) {
       this.processNextJob();
     }
-    
+
     return {
       success: true,
       jobId: job.id,
@@ -121,9 +121,9 @@ class TrainingService {
 
   killProcess(pid, force = false) {
     if (!pid) return false;
-    
+
     const isWindows = process.platform === 'win32';
-    
+
     try {
       if (isWindows) {
         const { execSync } = require('child_process');
@@ -146,9 +146,9 @@ class TrainingService {
 
   async isProcessRunning(pid) {
     if (!pid) return false;
-    
+
     const isWindows = process.platform === 'win32';
-    
+
     try {
       if (isWindows) {
         const { execSync } = require('child_process');
@@ -166,7 +166,7 @@ class TrainingService {
   killAllProcesses() {
     const runningProcesses = this.processes.getRunning();
     logger.info(`Cleaning up ${runningProcesses.length} running processes`);
-    
+
     runningProcesses.forEach(proc => {
       if (proc.pid) {
         this.killProcess(proc.pid, true);
@@ -178,42 +178,42 @@ class TrainingService {
   async gracefulShutdown(signal) {
     this.isShuttingDown = true;
     const runningProcesses = this.processes.getRunning();
-    
+
     logger.info(`Graceful shutdown: ${runningProcesses.length} processes to terminate`);
-    
+
     for (const proc of runningProcesses) {
       if (proc.pid) {
         try {
           logger.info(`Sending SIGTERM to process ${proc.pid} (project: ${proc.projectId})`);
           this.killProcess(proc.pid, false);
-          
+
           const exited = await this.waitForProcessExit(proc.pid, 5000);
-          
+
           if (!exited) {
             logger.warn(`Process ${proc.pid} did not exit gracefully, sending SIGKILL`);
             this.killProcess(proc.pid, true);
           }
-          
+
           this.processes.addLog(proc.projectId, {
             type: 'system',
             msg: `进程被 ${signal} 信号终止`,
             time: Date.now()
           });
-          
+
           logger.info(`Terminated process ${proc.pid} for project ${proc.projectId}`);
         } catch (e) {
           logger.debug(`Error terminating process ${proc.pid}: ${e.message}`);
         }
       }
     }
-    
+
     logger.info('Graceful shutdown completed');
     process.exit(0);
   }
 
   async waitForProcessExit(pid, timeoutMs) {
     const startTime = Date.now();
-    
+
     while (Date.now() - startTime < timeoutMs) {
       const running = await this.isProcessRunning(pid);
       if (!running) {
@@ -221,7 +221,7 @@ class TrainingService {
       }
       await new Promise(resolve => setTimeout(resolve, 100));
     }
-    
+
     return false;
   }
 
@@ -292,10 +292,32 @@ class TrainingService {
 
   isOOMError(line) {
     const lower = line.toLowerCase();
-    return lower.includes('out of memory') || 
-           lower.includes('cuda out of memory') || 
-           lower.includes('oom') ||
-           lower.includes('cudamalloc');
+    return lower.includes('out of memory') ||
+      lower.includes('cuda out of memory') ||
+      lower.includes('oom') ||
+      lower.includes('cudamalloc');
+  }
+
+  shouldSkipLog(line) {
+    if (!line || line.length === 0) return true;
+
+    const skipPatterns = [
+      /^\s*$/,
+      /^\s*Class\s+Images\s+Instances\s+Box/,
+      /^\s*Epoch\s+GPU_mem\s+box_loss/,
+      /^[\d.]+it\/s/,
+      /^\d+%\s*[━─╸]+/,
+    ];
+
+    for (const pattern of skipPatterns) {
+      if (pattern.test(line)) return true;
+    }
+
+    if (line.includes('━━━━') || line.includes('────') || line.includes('╸')) {
+      return true;
+    }
+
+    return false;
   }
 
   async start(projectId, config) {
@@ -303,7 +325,7 @@ class TrainingService {
     if (existing && existing.status === 'running') {
       return this.addToQueue({ ...config, project: projectId }, config.priority || 0);
     }
-    
+
     return this.startTraining(projectId, config, 0);
   }
 
@@ -362,10 +384,10 @@ class TrainingService {
       const chunk = data.toString();
       let buffer = this.jsonBuffer.get(projectId) || '';
       buffer += chunk;
-      
+
       const lines = buffer.split('\n');
       buffer = lines.pop();
-      
+
       lines.forEach(line => {
         if (!line.trim()) return;
 
@@ -377,19 +399,27 @@ class TrainingService {
               ...jsonData,
               time: Date.now()
             });
-            
+
             if (jsonData.event === 'epoch_end') {
+              const parts = [];
+              parts.push(`Epoch ${jsonData.epoch}/${jsonData.epochs}`);
+              if (jsonData.box_loss !== undefined) parts.push(`box_loss=${jsonData.box_loss.toFixed(4)}`);
+              if (jsonData.pose_loss !== undefined) parts.push(`pose_loss=${jsonData.pose_loss.toFixed(4)}`);
+              if (jsonData.mAP50 !== undefined) parts.push(`mAP50=${(jsonData.mAP50 * 100).toFixed(1)}%`);
+              if (jsonData.pose_mAP50 !== undefined) parts.push(`pose_mAP50=${(jsonData.pose_mAP50 * 100).toFixed(1)}%`);
+
               this.processes.addLog(projectId, {
                 type: 'metric',
-                msg: `Epoch ${jsonData.epoch}/${jsonData.epochs}: box_loss=${jsonData.box_loss?.toFixed(4)}, mAP50=${jsonData.mAP50?.toFixed(4)}`,
+                msg: parts.join(' | '),
                 time: Date.now()
               });
             }
-            
+
             if (jsonData.event === 'validation_complete') {
+              const m = jsonData.metrics || {};
               this.processes.addLog(projectId, {
                 type: 'metric',
-                msg: `✅ 验证完成 - mAP50: ${jsonData.metrics?.mAP50?.toFixed(4) || '--'}, Precision: ${jsonData.metrics?.precision?.toFixed(4) || '--'}`,
+                msg: `✅ 验证完成 - Box mAP@50: ${(m.mAP50 * 100 || 0).toFixed(1)}%, Pose mAP@50: ${(m.pose_mAP50 * 100 || 0).toFixed(1)}%`,
                 time: Date.now()
               });
             }
@@ -398,36 +428,68 @@ class TrainingService {
           }
         } else {
           const trimmed = line.trim();
-          this.processes.addLog(projectId, {
-            type: 'stdout',
-            msg: trimmed,
-            time: Date.now()
-          });
 
-          const metricMatch = trimmed.match(/^(\d+)\/(\d+)\s+([\d.]+G)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)/);
-          if (metricMatch) {
-            const [full, epoch, totalEpochs, gpuMem, boxLoss, clsLoss, dflLoss] = metricMatch;
+          if (this.shouldSkipLog(trimmed)) {
+            return;
+          }
+
+          const progressMatch = trimmed.match(/(\d+)\/(\d+)\s+([\d.]+G)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)/);
+          if (progressMatch) {
+            const [full, epoch, totalEpochs, gpuMem, boxLoss, poseLoss, kobjLoss, clsLoss, dflLoss] = progressMatch;
             this.processes.addMetric(projectId, {
               epoch: parseInt(epoch),
               totalEpochs: parseInt(totalEpochs),
               gpu_mem: gpuMem,
               box_loss: parseFloat(boxLoss),
+              pose_loss: parseFloat(poseLoss),
+              kobj_loss: parseFloat(kobjLoss),
               cls_loss: parseFloat(clsLoss),
               dfl_loss: parseFloat(dflLoss),
               time: Date.now()
             });
+            return;
           }
 
-          const mapMatch = trimmed.match(/^all\s+\d+\s+\d+\s+[\d.]+\s+[\d.]+\s+([\d.]+)\s+([\d.]+)/);
+          const mapMatch = trimmed.match(/all\s+(\d+)\s+(\d+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)/);
           if (mapMatch) {
-            const map50 = parseFloat(mapMatch[1]);
-            const map50_95 = parseFloat(mapMatch[2]);
+            const [full, images, instances, boxP, boxR, boxMAP50, boxMAP5095, poseP, poseR, poseMAP50, poseMAP5095] = mapMatch;
             this.processes.addMetric(projectId, {
-              mAP50: map50,
-              mAP50_95: map50_95,
+              box_precision: parseFloat(boxP),
+              box_recall: parseFloat(boxR),
+              mAP50: parseFloat(boxMAP50),
+              mAP50_95: parseFloat(boxMAP5095),
+              pose_precision: parseFloat(poseP),
+              pose_recall: parseFloat(poseR),
+              pose_mAP50: parseFloat(poseMAP50),
+              pose_mAP50_95: parseFloat(poseMAP5095),
               time: Date.now()
             });
+
+            this.processes.addLog(projectId, {
+              type: 'metric',
+              msg: `📊 验证指标 - Box: P=${boxP} R=${boxR} mAP@50=${(parseFloat(boxMAP50) * 100).toFixed(1)}% | Pose: P=${poseP} R=${poseR} mAP@50=${(parseFloat(poseMAP50) * 100).toFixed(1)}%`,
+              time: Date.now()
+            });
+            return;
           }
+
+          if (trimmed.includes('Class') && trimmed.includes('Images') && trimmed.includes('Box(P')) {
+            return;
+          }
+
+          if (trimmed.startsWith('Epoch') && trimmed.includes('GPU_mem')) {
+            return;
+          }
+
+          if (trimmed.includes('━━━━') || trimmed.includes('────') || trimmed.includes('╸')) {
+            return;
+          }
+
+          this.processes.addLog(projectId, {
+            type: 'stdout',
+            msg: trimmed,
+            time: Date.now()
+          });
         }
       });
     });
@@ -438,11 +500,11 @@ class TrainingService {
         if (line.trim()) {
           const trimmed = line.trim();
           logger.error(`[Train ${projectId}] ${trimmed}`);
-          
+
           let errorType = null;
           let errorSuggestions = [];
           const lowerLine = trimmed.toLowerCase();
-          
+
           if (this.isOOMError(trimmed)) {
             errorType = '显存不足 (OOM)';
             errorSuggestions = [
@@ -450,13 +512,13 @@ class TrainingService {
               '减小 imgsz 图片尺寸',
               '尝试使用更小的模型'
             ];
-            
+
             this.processes.addLog(projectId, {
               type: 'error',
               msg: `⚠️ 检测到显存不足 (OOM) 错误！`,
               time: Date.now()
             });
-            
+
             this.handleOOMError(projectId, config, retryCount);
           }
           else if (lowerLine.includes('no cuda gpu') || lowerLine.includes('no gpu') || lowerLine.includes('cuda is not available')) {
@@ -473,7 +535,7 @@ class TrainingService {
               '尝试更新 NVIDIA 驱动到最新版本'
             ];
           }
-          
+
           let displayMsg = trimmed;
           if (errorType) {
             displayMsg = `[${errorType}] ${trimmed}`;
@@ -485,7 +547,7 @@ class TrainingService {
               });
             }
           }
-          
+
           this.processes.addLog(projectId, {
             type: 'stderr',
             msg: displayMsg,
@@ -497,16 +559,16 @@ class TrainingService {
 
     child.on('close', (code) => {
       const retryState = this.retryState[projectId];
-      
+
       const watcher = this.csvWatchers.get(projectId);
       if (watcher) {
         watcher.close();
         this.csvWatchers.delete(projectId);
         logger.debug(`Closed CSV watcher for project ${projectId}`);
       }
-      
+
       this.jsonBuffer.delete(projectId);
-      
+
       if (code === 0) {
         const status = 'completed';
         this.processes.setStatus(projectId, status);
@@ -516,7 +578,7 @@ class TrainingService {
           time: Date.now()
         });
         logger.info(`Training for project ${projectId} ${status}`);
-      } 
+      }
       else if (retryState && retryState.isRetrying && retryState.retryCount <= MAX_OOM_RETRIES) {
         logger.info(`Waiting for OOM retry for project ${projectId}`);
       }
@@ -530,7 +592,7 @@ class TrainingService {
         });
         logger.info(`Training for project ${projectId} ${status}`);
       }
-      
+
       delete this.retryState[projectId];
     });
 
@@ -549,7 +611,7 @@ class TrainingService {
 
   async handleOOMError(projectId, config, retryCount) {
     const retryState = this.retryState[projectId];
-    
+
     if (!retryState) {
       logger.error(`No retry state found for project ${projectId}`);
       return;
@@ -561,42 +623,42 @@ class TrainingService {
         msg: `❌ 已达到最大重试次数 (${MAX_OOM_RETRIES})，训练终止`,
         time: Date.now()
       });
-      
+
       this.processes.addLog(projectId, {
         type: 'suggestion',
         msg: `💡 建议解决方案:\n1. 使用更小的模型 (yolov8n 或 yolov8s)\n2. 减小 imgsz 图片尺寸\n3. 使用 CPU 模式训练 (device: cpu)\n4. 检查显卡驱动是否需要更新`,
         time: Date.now()
       });
-      
+
       retryState.isRetrying = false;
       return;
     }
 
     retryState.isRetrying = true;
     retryState.retryCount = retryCount + 1;
-    
+
     const newBatch = Math.max(1, Math.floor(config.batch / OOM_BATCH_DIVISOR));
-    
+
     if (config.batch === 1 || newBatch === config.batch) {
       this.processes.addLog(projectId, {
         type: 'error',
         msg: `❌ Batch Size 已降至 1 仍然显存不足，无法继续自动修复。请尝试减小 imgsz 或更换更小的模型。`,
         time: Date.now()
       });
-      
+
       this.processes.addLog(projectId, {
         type: 'suggestion',
         msg: `💡 建议解决方案:\n1. 使用更小的模型 (yolov8n 或 yolov8s)\n2. 减小 imgsz 图片尺寸\n3. 使用 CPU 模式训练 (device: cpu)\n4. 检查显卡驱动是否需要更新`,
         time: Date.now()
       });
-      
+
       retryState.isRetrying = false;
       this.processes.setStatus(projectId, 'failed');
       return;
     }
-    
+
     retryState.batchHistory.push(newBatch);
-    
+
     this.processes.addLog(projectId, {
       type: 'system',
       msg: `🔄 显存不足！将在 3 秒后自动重试，Batch Size: ${config.batch} → ${newBatch}`,
@@ -665,11 +727,11 @@ class TrainingService {
   getStatus(projectId) {
     const processState = this.processes.get(projectId);
     const retryState = this.retryState[projectId];
-    
+
     if (!processState) {
       return { status: 'idle', logs: [], metrics: [] };
     }
-    
+
     const response = {
       status: processState.status,
       logs: processState.logs.slice(-100),
@@ -678,7 +740,7 @@ class TrainingService {
       startTime: processState.startTime,
       endTime: processState.endTime
     };
-    
+
     if (retryState) {
       response.retryInfo = {
         retryCount: retryState.retryCount,
@@ -687,7 +749,7 @@ class TrainingService {
         isRetrying: retryState.isRetrying
       };
     }
-    
+
     return response;
   }
 
@@ -747,91 +809,91 @@ class TrainingService {
       setTimeout(() => {
         try {
           const stats = fs.statSync(csvPath);
-        const newSize = stats.size;
+          const newSize = stats.size;
 
-        if (newSize > lastSize) {
-          const stream = fs.createReadStream(csvPath, {
-            start: lastSize,
-            end: newSize - 1,
-            encoding: 'utf-8'
-          });
+          if (newSize > lastSize) {
+            const stream = fs.createReadStream(csvPath, {
+              start: lastSize,
+              end: newSize - 1,
+              encoding: 'utf-8'
+            });
 
-          let newData = '';
-          stream.on('data', (chunk) => {
-            newData += chunk;
-          });
+            let newData = '';
+            stream.on('data', (chunk) => {
+              newData += chunk;
+            });
 
-          stream.on('end', () => {
-            if (newData.trim()) {
-              const lines = newData.trim().split('\n');
-              
-              for (const line of lines) {
-                if (line.includes('epoch')) continue;
-                
-                const parts = line.split(',');
-                if (parts.length < 3) continue;
+            stream.on('end', () => {
+              if (newData.trim()) {
+                const lines = newData.trim().split('\n');
 
-                const epochMatch = parts[0].trim();
-                const epoch = parseInt(epochMatch);
+                for (const line of lines) {
+                  if (line.includes('epoch')) continue;
 
-                if (isNaN(epoch)) continue;
+                  const parts = line.split(',');
+                  if (parts.length < 3) continue;
 
-                const now = Date.now();
-                if (epochTimestamps.length > 0) {
-                  const lastEpochTime = epochTimestamps[epochTimestamps.length - 1];
-                  const epochDuration = now - lastEpochTime;
-                  
-                  epochTimestamps.push(now);
+                  const epochMatch = parts[0].trim();
+                  const epoch = parseInt(epochMatch);
 
-                  if (epochTimestamps.length > WINDOW_SIZE + 10) {
-                    epochTimestamps = epochTimestamps.slice(-WINDOW_SIZE);
-                  }
+                  if (isNaN(epoch)) continue;
 
-                  const recentDurations = epochTimestamps.slice(-WINDOW_SIZE);
-                  const avgDuration = recentDurations.reduce((a, b) => a + b, 0) / recentDurations.length;
-                  const remainingEpochs = 150 - epoch;
-                  const etaSeconds = Math.round(remainingEpochs * avgDuration / 1000);
+                  const now = Date.now();
+                  if (epochTimestamps.length > 0) {
+                    const lastEpochTime = epochTimestamps[epochTimestamps.length - 1];
+                    const epochDuration = now - lastEpochTime;
 
-                  this.processes.addMetric(projectId, {
-                    epoch,
-                    eta_seconds: etaSeconds,
-                    avg_epoch_time: Math.round(avgDuration),
-                    time: now
-                  });
-                } else {
-                  epochTimestamps.push(now);
-                }
+                    epochTimestamps.push(now);
 
-                const metrics = {
-                  epoch,
-                  time: now
-                };
-
-                const metricNames = [
-                  'train/box_loss', 'train/cls_loss', 'train/dfl_loss',
-                  'metrics/precision', 'metrics/recall', 'metrics/map50', 'metrics/map50-95',
-                  'val/box_loss', 'val/cls_loss', 'val/dfl_loss'
-                ];
-
-                metricNames.forEach((name, idx) => {
-                  const colIdx = idx + 1;
-                  if (parts[colIdx]) {
-                    const val = parseFloat(parts[colIdx].trim());
-                    if (!isNaN(val)) {
-                      metrics[name] = val;
+                    if (epochTimestamps.length > WINDOW_SIZE + 10) {
+                      epochTimestamps = epochTimestamps.slice(-WINDOW_SIZE);
                     }
-                  }
-                });
 
-                this.processes.addMetric(projectId, metrics);
+                    const recentDurations = epochTimestamps.slice(-WINDOW_SIZE);
+                    const avgDuration = recentDurations.reduce((a, b) => a + b, 0) / recentDurations.length;
+                    const remainingEpochs = 150 - epoch;
+                    const etaSeconds = Math.round(remainingEpochs * avgDuration / 1000);
+
+                    this.processes.addMetric(projectId, {
+                      epoch,
+                      eta_seconds: etaSeconds,
+                      avg_epoch_time: Math.round(avgDuration),
+                      time: now
+                    });
+                  } else {
+                    epochTimestamps.push(now);
+                  }
+
+                  const metrics = {
+                    epoch,
+                    time: now
+                  };
+
+                  const metricNames = [
+                    'train/box_loss', 'train/cls_loss', 'train/dfl_loss',
+                    'metrics/precision', 'metrics/recall', 'metrics/map50', 'metrics/map50-95',
+                    'val/box_loss', 'val/cls_loss', 'val/dfl_loss'
+                  ];
+
+                  metricNames.forEach((name, idx) => {
+                    const colIdx = idx + 1;
+                    if (parts[colIdx]) {
+                      const val = parseFloat(parts[colIdx].trim());
+                      if (!isNaN(val)) {
+                        metrics[name] = val;
+                      }
+                    }
+                  });
+
+                  this.processes.addMetric(projectId, metrics);
+                }
               }
-            }
-            lastSize = newSize;
-          });
+              lastSize = newSize;
+            });
+          }
+        } catch (e) {
+          logger.debug(`Error reading CSV: ${e.message}`);
         }
-      } catch (e) {
-        logger.debug(`Error reading CSV: ${e.message}`);
-      }
       }, 100);
     });
 
@@ -860,7 +922,7 @@ class TrainingService {
     };
 
     logger.info(`Starting dry run for project ${projectId}`);
-    
+
     this.processes.addLog(projectId, {
       type: 'system',
       msg: '🔬 开始测试运行 (Dry Run)...',

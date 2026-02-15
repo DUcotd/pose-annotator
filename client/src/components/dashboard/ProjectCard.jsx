@@ -1,7 +1,7 @@
 import React from 'react';
-import { Folder, Trash2, Zap, ChevronRight, Image as ImageIcon, CheckCircle } from 'lucide-react';
+import { Folder, Trash2, Zap, ChevronRight, Image as ImageIcon, CheckCircle, MapPin, Loader2 } from 'lucide-react';
 
-export const ProjectCard = ({ project, onClick, onDelete, onRenumber, index }) => {
+export const ProjectCard = ({ project, onClick, onDelete, onRenumber, index, isDeleting }) => {
     const hasImages = (project.imageCount || 0) > 0;
     const hasAnnotated = (project.annotatedCount || 0) > 0;
 
@@ -9,16 +9,43 @@ export const ProjectCard = ({ project, onClick, onDelete, onRenumber, index }) =
         <div
             className="glass-card glass-card-hover project-card"
             style={{
-                height: '260px',
+                height: '280px',
                 padding: '32px',
                 display: 'flex',
                 flexDirection: 'column',
                 position: 'relative',
-                animationDelay: `${(index % 4) * 0.1 + 0.2}s`
+                animationDelay: `${(index % 4) * 0.1 + 0.2}s`,
+                opacity: isDeleting ? 0.6 : 1,
+                pointerEvents: isDeleting ? 'none' : 'auto'
             }}
             onClick={onClick}
         >
-            {/* Header */}
+            {isDeleting && (
+                <div style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    background: 'rgba(0, 0, 0, 0.3)',
+                    borderRadius: 'inherit',
+                    zIndex: 10
+                }}>
+                    <div style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        gap: '12px'
+                    }}>
+                        <Loader2 size={32} className="spin-animation" style={{ color: '#4da1ff' }} />
+                        <span style={{ color: '#fff', fontWeight: 600 }}>删除中...</span>
+                    </div>
+                </div>
+            )}
+            
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem' }}>
                 <div style={{
                     width: '48px',
@@ -65,10 +92,9 @@ export const ProjectCard = ({ project, onClick, onDelete, onRenumber, index }) =
                 </div>
             </div>
 
-            {/* Content */}
             <div style={{ flex: 1 }}>
                 <h3 style={{
-                    margin: '0 0 1rem 0',
+                    margin: '0 0 0.75rem 0',
                     fontSize: '1.4rem',
                     fontWeight: 800,
                     letterSpacing: '-0.5px',
@@ -77,6 +103,28 @@ export const ProjectCard = ({ project, onClick, onDelete, onRenumber, index }) =
                 }}>
                     {project.name}
                 </h3>
+                
+                {project.path && (
+                    <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        marginBottom: '0.75rem',
+                        color: 'var(--text-tertiary)',
+                        fontSize: '0.75rem',
+                        overflow: 'hidden'
+                    }}>
+                        <MapPin size={12} style={{ flexShrink: 0 }} />
+                        <span style={{
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap'
+                        }} title={project.path}>
+                            {project.path}
+                        </span>
+                    </div>
+                )}
+                
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                     <div style={{
                         background: 'rgba(255, 255, 255, 0.04)',
@@ -114,7 +162,6 @@ export const ProjectCard = ({ project, onClick, onDelete, onRenumber, index }) =
                 </div>
             </div>
 
-            {/* Footer */}
             <div style={{ marginTop: 'auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <div style={{
@@ -148,7 +195,7 @@ export const CreateProjectCard = ({ onClick }) => (
             borderStyle: 'dashed',
             borderWidth: '2px',
             borderColor: 'rgba(255,255,255,0.1)',
-            height: '260px',
+            height: '280px',
             padding: '32px',
             background: 'rgba(255, 255, 255, 0.01)',
             animationDelay: '0.1s',
@@ -183,8 +230,8 @@ export const EmptyState = ({ onCreate }) => (
     <div 
         className="empty-state-container" 
         style={{ 
-            padding: '60px 40px', 
-            minHeight: '400px', 
+            padding: '80px 40px', 
+            minHeight: '500px', 
             justifyContent: 'center',
             touchAction: 'pan-x pan-y',
             userSelect: 'none',
@@ -192,16 +239,16 @@ export const EmptyState = ({ onCreate }) => (
             zIndex: 1
         }}
     >
-        <div className="empty-state-icon" style={{ width: '80px', height: '80px', marginBottom: '24px' }}>
-            <Folder size={40} />
+        <div className="empty-state-icon" style={{ width: '100px', height: '100px', marginBottom: '32px' }}>
+            <Folder size={50} />
         </div>
-        <h2 style={{ fontSize: '1.8rem', fontWeight: 700, marginBottom: '1rem' }}>准备好开始了吗？</h2>
-        <p style={{ color: 'var(--text-secondary)', maxWidth: '500px', margin: '0 auto 2.5rem auto', fontSize: '1.1rem', lineHeight: 1.6 }}>
+        <h2 style={{ fontSize: '2rem', fontWeight: 700, marginBottom: '1rem' }}>准备好开始了吗？</h2>
+        <p style={{ color: 'var(--text-secondary)', maxWidth: '550px', margin: '0 auto 3rem auto', fontSize: '1.15rem', lineHeight: 1.7 }}>
             目前还没有任何项目。创建一个新项目来开始您的标注之旅。
             <br />
             您可以轻松地组织图片、标注目标并导出为标准的 YOLO 格式。
         </p>
-        <button className="btn-modern-primary" onClick={onCreate} style={{ padding: '14px 28px', fontSize: '1.1rem' }}>
+        <button className="btn-modern-primary" onClick={onCreate} style={{ padding: '16px 32px', fontSize: '1.1rem' }}>
             <Folder size={22} />
             创建第一个项目
         </button>

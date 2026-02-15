@@ -600,6 +600,13 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
                                     <div style={{ color: 'var(--text-primary)', fontWeight: 700, fontSize: '1.1rem' }}>{projectId}</div>
                                 </div>
 
+                                {stats?.projectPath && (
+                                    <div className="glass-card" style={{ padding: '16px', background: 'rgba(255,255,255,0.02)' }}>
+                                        <div style={{ color: 'var(--text-tertiary)', fontSize: '0.8rem', marginBottom: '4px', fontWeight: 600 }}>项目路径</div>
+                                        <div style={{ color: 'var(--text-primary)', fontWeight: 500, fontSize: '0.9rem', wordBreak: 'break-all' }}>{stats.projectPath}</div>
+                                    </div>
+                                )}
+
                                 {loadingStats ? (
                                     <div style={{ padding: '40px', textAlign: 'center' }}>
                                         <RefreshCw className="animate-spin" size={24} style={{ color: 'var(--accent-primary)', opacity: 0.5 }} />

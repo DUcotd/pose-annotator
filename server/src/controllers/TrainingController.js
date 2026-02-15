@@ -348,6 +348,82 @@ function createTrainingRouter(projectsDir) {
     }
   });
 
+  router.get('/:projectId/train/logs/export', (req, res) => {
+    const { projectId } = req.params;
+    const { includeMetrics, includeConfig, includeTimestamps } = req.query;
+    
+    const options = {
+      includeMetrics: includeMetrics !== 'false',
+      includeConfig: includeConfig !== 'false',
+      includeTimestamps: includeTimestamps !== 'false'
+    };
+    
+    try {
+      const content = ProcessManager.exportLogsAsText(projectId, options);
+      const filename = `training_log_${projectId}_${new Date().toISOString().replace(/[:.]/g, '-')}.txt`;
+      
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(filename)}"`);
+      res.setHeader('Content-Length', Buffer.byteLength(content, 'utf-8'));
+      
+      res.send(content);
+    } catch (err) {
+      logger.error(`Failed to export logs for ${projectId}:`, err);
+      res.status(500).json({ error: '导出日志失败', details: err.message });
+    }
+  });
+
+  router.post('/:projectId/train/logs/export-to-file', async (req, res) => {
+    const { projectId } = req.params;
+    const { outputPath, options } = req.body;
+    
+    if (!outputPath) {
+      let electron;
+      try {
+        electron = require('electron');
+      } catch (e) {}
+      
+      if (electron && electron.dialog) {
+        try {
+          const { dialog, BrowserWindow } = electron;
+          const win = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
+          const defaultName = `training_log_${projectId}_${new Date().toISOString().slice(0, 10)}.txt`;
+          
+          const dialogOptions = {
+            title: '保存训练日志',
+            defaultPath: defaultName,
+            filters: [
+              { name: '文本文件', extensions: ['txt'] },
+              { name: '所有文件', extensions: ['*'] }
+            ]
+          };
+          
+          let result;
+          if (win) {
+            result = await dialog.showSaveDialog(win, dialogOptions);
+          } else {
+            result = await dialog.showSaveDialog(dialogOptions);
+          }
+          
+          if (result.canceled || !result.filePath) {
+            return res.json({ success: false, message: '用户取消保存' });
+          }
+          
+          const saveResult = ProcessManager.saveLogsToFile(projectId, result.filePath, options || {});
+          res.json(saveResult);
+        } catch (err) {
+          logger.error(`Failed to save log file: ${err.message}`);
+          res.status(500).json({ error: '保存文件失败', details: err.message });
+        }
+      } else {
+        res.status(400).json({ error: '请提供输出文件路径' });
+      }
+    } else {
+      const saveResult = ProcessManager.saveLogsToFile(projectId, outputPath, options || {});
+      res.json(saveResult);
+    }
+  });
+
   return router;
 }
 
@@ -447,7 +523,7 @@ function createUtilsRouter(projectsDir) {
     if (electron && electron.dialog) {
       try {
         const { dialog, BrowserWindow } = electron;
-        const win = BrowserWindow.getFocusedWindow();
+        const win = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
         const result = await dialog.showOpenDialog(win, { properties: ['openDirectory'] });
         if (!result.canceled && result.filePaths.length > 0) {
           res.json({ path: result.filePaths[0] });
@@ -471,7 +547,7 @@ function createUtilsRouter(projectsDir) {
     if (electron && electron.dialog) {
       try {
         const { dialog, BrowserWindow } = electron;
-        const win = BrowserWindow.getFocusedWindow();
+        const win = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
         const { title, defaultPath, filters } = req.body;
 
         const result = await dialog.showSaveDialog(win, {
@@ -498,7 +574,7 @@ function createUtilsRouter(projectsDir) {
     if (electron && electron.dialog) {
       try {
         const { dialog, BrowserWindow } = electron;
-        const win = BrowserWindow.getFocusedWindow();
+        const win = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
         const { filters } = req.body;
         const defaultFilters = [
           { name: 'ZIP Archive', extensions: ['zip'] },
@@ -533,7 +609,7 @@ function createUtilsRouter(projectsDir) {
     if (electron && electron.dialog) {
       try {
         const { dialog, BrowserWindow } = electron;
-        const win = BrowserWindow.getFocusedWindow();
+        const win = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
 
         const result = await dialog.showOpenDialog(win, {
           properties: ['openFile'],

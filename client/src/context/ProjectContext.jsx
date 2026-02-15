@@ -6,17 +6,16 @@ export const useProject = () => useContext(ProjectContext);
 
 export const ProjectProvider = ({ children }) => {
     const [projects, setProjects] = useState([]);
-    const [currentProject, setCurrentProject] = useState(null); // String ID
+    const [currentProject, setCurrentProject] = useState(null);
     const [images, setImages] = useState([]);
-    const [view, setView] = useState('dashboard'); // 'dashboard', 'gallery', 'editor', 'export', 'training'
+    const [view, setView] = useState('dashboard');
     const [previousView, setPreviousView] = useState('dashboard');
     const [selectedImage, setSelectedImage] = useState(null);
     const [loading, setLoading] = useState(false);
     const [configLoading, setConfigLoading] = useState(false);
     const [projectConfig, setProjectConfig] = useState({ classMapping: {}, exportSettings: {}, trainingSettings: {} });
+    const [deletingProjects, setDeletingProjects] = useState(new Set());
     const updateTimeoutRef = useRef(null);
-
-    // --- Actions ---
 
     const fetchProjects = useCallback(async () => {
         setLoading(true);
@@ -62,11 +61,9 @@ export const ProjectProvider = ({ children }) => {
     const updateProjectConfig = (projectId, updates) => {
         if (!projectId) return;
 
-        // Update local state immediately for UI responsiveness
         setProjectConfig(prev => {
             const next = { ...prev, ...updates };
 
-            // Debounce the backend update
             if (updateTimeoutRef.current) clearTimeout(updateTimeoutRef.current);
             updateTimeoutRef.current = setTimeout(async () => {
                 try {
@@ -105,23 +102,50 @@ export const ProjectProvider = ({ children }) => {
     };
 
     const deleteProject = async (projectId) => {
+        if (deletingProjects.has(projectId)) {
+            return { success: false, message: '项目正在删除中...' };
+        }
+
+        setDeletingProjects(prev => new Set([...prev, projectId]));
+
         try {
-            const res = await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}`, { method: 'DELETE' });
+            const res = await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}`, { 
+                method: 'DELETE' 
+            });
+            const data = await res.json();
+            
             if (res.ok) {
                 await fetchProjects();
                 if (currentProject === projectId) {
                     setCurrentProject(null);
                     setView('dashboard');
                 }
-                return { success: true, message: '项目已删除' };
+                
+                if (data.pendingCleanup) {
+                    return { 
+                        success: true, 
+                        message: '项目已删除（部分文件被占用，将在重启后完全清理）',
+                        pendingCleanup: true 
+                    };
+                }
+                return { success: true, message: data.message || '项目已删除' };
             } else {
-                const data = await res.json();
-                return { success: false, message: data.error || '删除失败' };
+                return { success: false, message: data.error || '删除失败', details: data.details };
             }
         } catch (err) {
             console.error("Failed to delete project", err);
             return { success: false, message: '删除失败：网络错误' };
+        } finally {
+            setDeletingProjects(prev => {
+                const next = new Set(prev);
+                next.delete(projectId);
+                return next;
+            });
         }
+    };
+
+    const isProjectDeleting = (projectId) => {
+        return deletingProjects.has(projectId);
     };
 
     const selectProject = (projectId) => {
@@ -151,7 +175,7 @@ export const ProjectProvider = ({ children }) => {
             setView('dashboard');
             setCurrentProject(null);
             setImages([]);
-            fetchProjects(); // Refresh counts
+            fetchProjects();
         }
     };
 
@@ -189,9 +213,7 @@ export const ProjectProvider = ({ children }) => {
 
     const exportCollaboration = async (projectId) => {
         try {
-            // If in Electron, use the native save dialog
             if (window.electronAPI) {
-                // 1. Show save dialog
                 const saveDialogRes = await fetch('http://localhost:5000/api/utils/save-file-dialog', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -204,7 +226,6 @@ export const ProjectProvider = ({ children }) => {
                 const dialogData = await saveDialogRes.json();
 
                 if (dialogData.path) {
-                    // 2. Perform export to path
                     const exportRes = await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/collaboration/export-to-path`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -222,10 +243,9 @@ export const ProjectProvider = ({ children }) => {
                         return { success: false, message: result.error || '导出失败' };
                     }
                 }
-                return { success: false, message: '已取消导出' }; // User canceled
+                return { success: false, message: '已取消导出' };
             }
 
-            // Fallback for non-electron: use direct download link
             const url = `http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/collaboration/export`;
             const link = document.createElement('a');
             link.href = url;
@@ -243,23 +263,25 @@ export const ProjectProvider = ({ children }) => {
 
 
 
-    const importCollaboration = async () => {
+    const importCollaboration = async (zipPath, customPath = null) => {
         try {
-            // First select a file via Electron if possible
-            const resDir = await fetch('http://localhost:5000/api/utils/select-file', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    filters: [{ name: '项目协作包 (ZIP)', extensions: ['zip'] }]
-                })
-            });
-            const dirData = await resDir.json();
+            if (!zipPath) {
+                const resDir = await fetch('http://localhost:5000/api/utils/select-file', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        filters: [{ name: '项目协作包 (ZIP)', extensions: ['zip'] }]
+                    })
+                });
+                const dirData = await resDir.json();
+                zipPath = dirData.path;
+            }
 
-            if (dirData.path) {
+            if (zipPath) {
                 const res = await fetch('http://localhost:5000/api/projects/collaboration/import', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ path: dirData.path })
+                    body: JSON.stringify({ path: zipPath, customPath })
                 });
                 const data = await res.json();
                 if (res.ok) {
@@ -295,23 +317,50 @@ export const ProjectProvider = ({ children }) => {
     };
 
     const deleteImage = async (projectId, imageId, navigateToNext = false, currentIndex = 0) => {
+        console.log('deleteImage called:', { projectId, imageId, navigateToNext, currentIndex });
         try {
             const res = await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/images/${encodeURIComponent(imageId)}`, {
                 method: 'DELETE'
             });
             const data = await res.json();
+            console.log('Delete API response:', data);
             if (res.ok) {
-                if (navigateToNext && data.remainingCount > 0) {
-                    const targetIndex = Math.max(0, Math.min(currentIndex, data.remainingCount - 1));
-                    const ext = imageId.substring(imageId.lastIndexOf('.'));
-                    const newImageName = String(targetIndex + 1).padStart(6, '0') + ext;
-                    setSelectedImage(newImageName);
-                } else if (navigateToNext && data.remainingCount === 0) {
-                    setView('gallery');
-                    setSelectedImage(null);
+                if (navigateToNext) {
+                    if (data.remainingCount > 0) {
+                        const targetIndex = Math.max(0, Math.min(currentIndex, data.remainingCount - 1));
+                        console.log('Target index for navigation:', targetIndex);
+                        
+                        const imagesRes = await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/images`);
+                        const newImages = await imagesRes.json();
+                        console.log('New images list:', newImages);
+                        
+                        if (newImages.length > targetIndex) {
+                            const newImageName = typeof newImages[targetIndex] === 'string' 
+                                ? newImages[targetIndex] 
+                                : newImages[targetIndex].name;
+                            console.log('Setting selectedImage to:', newImageName);
+                            
+                            setSelectedImage(null);
+                            
+                            setTimeout(() => {
+                                setImages(newImages);
+                                setSelectedImage(newImageName);
+                            }, 0);
+                        } else {
+                            setImages(newImages);
+                            setView('gallery');
+                            setSelectedImage(null);
+                        }
+                    } else {
+                        console.log('No remaining images, going to gallery');
+                        setImages([]);
+                        setView('gallery');
+                        setSelectedImage(null);
+                    }
+                } else {
+                    await fetchImages(projectId);
                 }
                 
-                await fetchImages(projectId);
                 await fetchProjects();
                 
                 return { success: true, message: data.message, remainingCount: data.remainingCount };
@@ -387,7 +436,6 @@ export const ProjectProvider = ({ children }) => {
         }
     };
 
-    // Initial Load
     useEffect(() => {
         fetchProjects();
     }, [fetchProjects]);
@@ -402,6 +450,7 @@ export const ProjectProvider = ({ children }) => {
         setView,
         createProject,
         deleteProject,
+        isProjectDeleting,
         selectProject,
         openEditor,
         goBack,

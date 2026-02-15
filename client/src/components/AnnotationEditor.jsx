@@ -688,7 +688,9 @@ export function AnnotationEditor({ image, projectId, onBack }) {
 
     const handleDeleteCurrentImage = async () => {
         setIsDeletingImage(true);
+        console.log('Deleting image:', image, 'at index:', currentIndex);
         const result = await deleteImage(projectId, image, true, currentIndex);
+        console.log('Delete result:', result);
         setIsDeletingImage(false);
         
         if (result.success) {
