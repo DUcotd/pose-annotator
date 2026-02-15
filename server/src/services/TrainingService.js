@@ -567,7 +567,7 @@ class TrainingService {
       });
     }
 
-    const processState = this.processes.create(projectId, config.project || null);
+    const processState = this.processes.create(projectId, config.projectRoot || config.project || null);
     this.processes.setStatus(projectId, 'starting');
     this.processes.setErrorLogs(projectId, []);
 

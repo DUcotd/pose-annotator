@@ -89,7 +89,8 @@ function createTrainingRouter(projectsDir) {
       const result = await TrainingService.start(projectId, {
         ...config,
         data: yoloDataPath,
-        project: yoloProjectPath
+        project: yoloProjectPath,
+        projectRoot: paths.root
       });
       res.json({ message: 'Training started', ...result });
     } catch (err) {
