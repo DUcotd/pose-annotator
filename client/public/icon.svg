@@ -1,0 +1,37 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+    <rect width="512" height="512" fill="#E0E5EC" />
+    <defs>
+        <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+            <feGaussianBlur in="SourceAlpha" stdDeviation="10" />
+            <feOffset dx="8" dy="8" result="offsetblur" />
+            <feComponentTransfer>
+                <feFuncA type="linear" slope="0.3" />
+            </feComponentTransfer>
+            <feMerge>
+                <feMergeNode />
+                <feMergeNode in="SourceGraphic" />
+            </feMerge>
+        </filter>
+        <filter id="highlight" x="-20%" y="-20%" width="140%" height="140%">
+            <feGaussianBlur in="SourceAlpha" stdDeviation="10" />
+            <feOffset dx="-8" dy="-8" result="offsetblur" />
+            <feComponentTransfer>
+                <feFuncA type="linear" slope="0.8" />
+            </feComponentTransfer>
+            <feMerge>
+                <feMergeNode />
+                <feMergeNode in="SourceGraphic" />
+            </feMerge>
+        </filter>
+    </defs>
+    <rect x="64" y="64" width="384" height="384" rx="80" fill="#E0E5EC" filter="url(#shadow)" />
+    <rect x="64" y="64" width="384" height="384" rx="80" fill="#E0E5EC" filter="url(#highlight)" />
+    
+    <g fill="none" stroke="#9cadba" stroke-width="20" stroke-linecap="round">
+        <circle cx="256" cy="160" r="40" stroke-width="4" fill="#a3b1c6" fill-opacity="0.2" />
+        <path d="M256 200 V320" />
+        <path d="M180 230 L256 210 L332 230" />
+        <path d="M180 230 L160 300" />
+        <path d="M332 230 L352 300" />
+    </g>
+</svg>
