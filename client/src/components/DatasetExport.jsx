@@ -794,8 +794,8 @@ export const DatasetExport = () => {
                     left: 0,
                     right: 0,
                     bottom: 0,
-                    background: 'rgba(0, 0, 0, 0.7)',
-                    backdropFilter: 'blur(8px)',
+                    background: 'rgba(0, 0, 0, 0.8)',
+                    backdropFilter: 'blur(12px)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
@@ -806,37 +806,38 @@ export const DatasetExport = () => {
                 >
                     <div style={{
                         background: 'linear-gradient(135deg, rgba(22, 27, 34, 0.98), rgba(13, 17, 23, 0.98))',
-                        borderRadius: '24px',
-                        padding: '2rem',
-                        maxWidth: '560px',
+                        borderRadius: '28px',
+                        padding: '2.5rem',
+                        maxWidth: '600px',
                         width: '90%',
-                        border: '1px solid rgba(34, 197, 94, 0.3)',
-                        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
-                        animation: 'scaleIn 0.3s ease'
+                        border: '2px solid rgba(34, 197, 94, 0.4)',
+                        boxShadow: '0 0 60px rgba(34, 197, 94, 0.3), 0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+                        animation: 'scaleInBounce 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)'
                     }}
                     onClick={e => e.stopPropagation()}
                     >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '1.5rem' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '2rem' }}>
                             <div style={{
-                                width: '56px',
-                                height: '56px',
-                                borderRadius: '16px',
-                                background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.2), rgba(74, 222, 128, 0.1))',
+                                width: '80px',
+                                height: '80px',
+                                borderRadius: '50%',
+                                background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.3), rgba(74, 222, 128, 0.2))',
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
-                                color: '#4ade80'
+                                color: '#4ade80',
+                                marginBottom: '1.5rem',
+                                animation: 'pulseSuccess 2s ease-in-out infinite',
+                                border: '3px solid rgba(34, 197, 94, 0.5)'
                             }}>
-                                <CheckCircle size={28} />
+                                <CheckCircle size={40} strokeWidth={2.5} />
                             </div>
-                            <div>
-                                <h3 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                                    导出完成
-                                </h3>
-                                <p style={{ margin: '4px 0 0 0', color: 'var(--text-secondary)', fontSize: '14px' }}>
-                                    YOLO Pose 数据集已成功生成
-                                </p>
-                            </div>
+                            <h3 style={{ margin: 0, fontSize: '2rem', fontWeight: 800, color: '#4ade80', textAlign: 'center', textShadow: '0 0 20px rgba(34, 197, 94, 0.5)' }}>
+                                导出成功！
+                            </h3>
+                            <p style={{ margin: '8px 0 0 0', color: 'var(--text-secondary)', fontSize: '15px', textAlign: 'center' }}>
+                                YOLO Pose 数据集已成功生成
+                            </p>
                         </div>
 
                         {exportResult.stats && (
@@ -907,18 +908,19 @@ export const DatasetExport = () => {
                             onClick={() => setShowExportModal(false)}
                             style={{
                                 width: '100%',
-                                padding: '14px',
-                                borderRadius: '12px',
+                                padding: '16px',
+                                borderRadius: '14px',
                                 background: 'linear-gradient(135deg, #22c55e, #4ade80)',
                                 border: 'none',
                                 color: 'white',
-                                fontSize: '15px',
+                                fontSize: '16px',
                                 fontWeight: 700,
                                 cursor: 'pointer',
-                                transition: 'all 0.2s ease'
+                                transition: 'all 0.2s ease',
+                                boxShadow: '0 4px 20px rgba(34, 197, 94, 0.4)'
                             }}
                         >
-                            确定
+                            完成
                         </button>
                     </div>
                 </div>,
@@ -934,6 +936,21 @@ export const DatasetExport = () => {
                 @keyframes scaleIn {
                     from { transform: scale(0.95); opacity: 0; }
                     to { transform: scale(1); opacity: 1; }
+                }
+                @keyframes scaleInBounce {
+                    0% { transform: scale(0.8); opacity: 0; }
+                    50% { transform: scale(1.05); }
+                    100% { transform: scale(1); opacity: 1; }
+                }
+                @keyframes pulseSuccess {
+                    0%, 100% { 
+                        transform: scale(1); 
+                        box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.4);
+                    }
+                    50% { 
+                        transform: scale(1.05); 
+                        box-shadow: 0 0 30px 10px rgba(34, 197, 94, 0.2);
+                    }
                 }
                 @keyframes slideUp {
                     from { transform: translateY(100px); opacity: 0; }

@@ -1,7 +1,7 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import {
     Play, Square, RefreshCw, Database, CheckCircle, Layers, ArrowLeft, ChevronDown, ChevronRight,
-    FolderOpen, FileText, AlertCircle, Download
+    FolderOpen, FileText, AlertCircle, Download, ExternalLink
 } from 'lucide-react';
 import { useProject } from '../context/ProjectContext';
 import { useTraining } from '../hooks/useTraining';
@@ -26,10 +26,14 @@ export const TrainingConfig = () => {
         handleStop: stopTraining,
         handleBrowseData,
         updateConfig,
-        exportLogs
+        exportLogsToFile,
+        openLogFile,
+        openLogsFolder
     } = useTraining(currentProject);
 
     const logEndRef = useRef(null);
+    const [exportResult, setExportResult] = useState(null);
+    const [showExportSuccess, setShowExportSuccess] = useState(false);
 
     const onStart = async () => {
         try {
@@ -303,7 +307,9 @@ export const TrainingConfig = () => {
                     <button
                         onClick={async () => {
                             try {
-                                await exportLogs();
+                                const result = await exportLogsToFile();
+                                setExportResult(result);
+                                setShowExportSuccess(true);
                             } catch (err) {
                                 alert(`导出失败: ${err.message}`);
                             }
@@ -334,6 +340,156 @@ export const TrainingConfig = () => {
                     >
                         <Download size={18} /> 导出训练日志
                     </button>
+
+                    {/* Export Success Modal */}
+                    {showExportSuccess && exportResult && (
+                        <div style={{
+                            position: 'fixed',
+                            top: 0,
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            background: 'rgba(0, 0, 0, 0.75)',
+                            backdropFilter: 'blur(8px)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            zIndex: 10000,
+                            animation: 'fadeIn 0.3s ease'
+                        }}
+                        onClick={() => setShowExportSuccess(false)}
+                        >
+                            <div style={{
+                                background: 'linear-gradient(135deg, rgba(22, 27, 34, 0.98), rgba(13, 17, 23, 0.98))',
+                                borderRadius: '24px',
+                                padding: '2rem',
+                                maxWidth: '500px',
+                                width: '90%',
+                                border: '2px solid rgba(99, 102, 241, 0.4)',
+                                boxShadow: '0 0 40px rgba(99, 102, 241, 0.2), 0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+                                animation: 'scaleInBounce 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)'
+                            }}
+                            onClick={e => e.stopPropagation()}
+                            >
+                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '1.5rem' }}>
+                                    <div style={{
+                                        width: '64px',
+                                        height: '64px',
+                                        borderRadius: '50%',
+                                        background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.3), rgba(129, 140, 248, 0.2))',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        color: '#818cf8',
+                                        marginBottom: '1rem',
+                                        animation: 'pulseSuccess 2s ease-in-out infinite',
+                                        border: '2px solid rgba(99, 102, 241, 0.5)'
+                                    }}>
+                                        <CheckCircle size={32} strokeWidth={2.5} />
+                                    </div>
+                                    <h3 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 800, color: '#818cf8', textAlign: 'center' }}>
+                                        日志导出成功
+                                    </h3>
+                                </div>
+                                
+                                <div style={{
+                                    background: 'rgba(0, 0, 0, 0.25)',
+                                    borderRadius: '12px',
+                                    padding: '1rem',
+                                    marginBottom: '1.5rem'
+                                }}>
+                                    <div style={{ fontSize: '13px', color: 'var(--text-tertiary)', marginBottom: '8px' }}>
+                                        保存位置
+                                    </div>
+                                    <div style={{
+                                        fontFamily: 'monospace',
+                                        fontSize: '13px',
+                                        color: '#60a5fa',
+                                        wordBreak: 'break-all',
+                                        lineHeight: 1.5
+                                    }}>
+                                        {exportResult.filePath}
+                                    </div>
+                                </div>
+
+                                <div style={{ display: 'flex', gap: '12px' }}>
+                                    <button
+                                        onClick={async () => {
+                                            try {
+                                                await openLogFile(exportResult.filePath);
+                                            } catch (err) {
+                                                alert(`打开文件失败: ${err.message}`);
+                                            }
+                                        }}
+                                        style={{
+                                            flex: 1,
+                                            padding: '14px',
+                                            borderRadius: '12px',
+                                            background: 'linear-gradient(135deg, #6366f1, #818cf8)',
+                                            border: 'none',
+                                            color: 'white',
+                                            fontSize: '15px',
+                                            fontWeight: 700,
+                                            cursor: 'pointer',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            gap: '8px',
+                                            transition: 'all 0.2s'
+                                        }}
+                                    >
+                                        <ExternalLink size={18} /> 打开日志
+                                    </button>
+                                    <button
+                                        onClick={async () => {
+                                            try {
+                                                await openLogsFolder();
+                                            } catch (err) {
+                                                alert(`打开文件夹失败: ${err.message}`);
+                                            }
+                                        }}
+                                        style={{
+                                            flex: 1,
+                                            padding: '14px',
+                                            borderRadius: '12px',
+                                            background: 'rgba(99, 102, 241, 0.15)',
+                                            border: '1px solid rgba(99, 102, 241, 0.3)',
+                                            color: '#818cf8',
+                                            fontSize: '15px',
+                                            fontWeight: 700,
+                                            cursor: 'pointer',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            gap: '8px',
+                                            transition: 'all 0.2s'
+                                        }}
+                                    >
+                                        <FolderOpen size={18} /> 打开文件夹
+                                    </button>
+                                </div>
+
+                                <button
+                                    onClick={() => setShowExportSuccess(false)}
+                                    style={{
+                                        width: '100%',
+                                        marginTop: '12px',
+                                        padding: '12px',
+                                        borderRadius: '10px',
+                                        background: 'rgba(255, 255, 255, 0.05)',
+                                        border: '1px solid rgba(255, 255, 255, 0.1)',
+                                        color: 'var(--text-secondary)',
+                                        fontSize: '14px',
+                                        fontWeight: 600,
+                                        cursor: 'pointer',
+                                        transition: 'all 0.2s'
+                                    }}
+                                >
+                                    关闭
+                                </button>
+                            </div>
+                        </div>
+                    )}
 
                     {/* Forms */}
                     <TrainingForm
@@ -401,6 +557,27 @@ export const TrainingConfig = () => {
                     />
                 </div>
             </div>
+            <style>{`
+                @keyframes fadeIn {
+                    from { opacity: 0; }
+                    to { opacity: 1; }
+                }
+                @keyframes scaleInBounce {
+                    0% { transform: scale(0.8); opacity: 0; }
+                    50% { transform: scale(1.05); }
+                    100% { transform: scale(1); opacity: 1; }
+                }
+                @keyframes pulseSuccess {
+                    0%, 100% { 
+                        transform: scale(1); 
+                        box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.4);
+                    }
+                    50% { 
+                        transform: scale(1.05); 
+                        box-shadow: 0 0 20px 5px rgba(99, 102, 241, 0.2);
+                    }
+                }
+            `}</style>
         </div>
     );
 };

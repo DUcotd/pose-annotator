@@ -269,6 +269,54 @@ export const useTraining = (projectId) => {
         }
     };
 
+    const openLogFile = async (filePath = null) => {
+        if (!projectId) {
+            throw new Error('项目ID不存在');
+        }
+
+        try {
+            const response = await fetch(`http://localhost:5000/api/projects/${projectId}/train/logs/open`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filePath })
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error || '打开文件失败');
+            }
+
+            return data;
+        } catch (err) {
+            console.error('Failed to open log file:', err);
+            throw err;
+        }
+    };
+
+    const openLogsFolder = async () => {
+        if (!projectId) {
+            throw new Error('项目ID不存在');
+        }
+
+        try {
+            const response = await fetch(`http://localhost:5000/api/projects/${projectId}/train/logs/open-folder`, {
+                method: 'POST'
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error || '打开文件夹失败');
+            }
+
+            return data;
+        } catch (err) {
+            console.error('Failed to open logs folder:', err);
+            throw err;
+        }
+    };
+
     return {
         config,
         status,
@@ -288,6 +336,8 @@ export const useTraining = (projectId) => {
         refreshEnv: fetchEnvInfo,
         refreshDatasetInfo: fetchDatasetInfo,
         exportLogs,
-        exportLogsToFile
+        exportLogsToFile,
+        openLogFile,
+        openLogsFolder
     };
 };

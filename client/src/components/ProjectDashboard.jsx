@@ -69,8 +69,8 @@ export const ProjectDashboard = ({ projects = [], onCreateProject, onSelectProje
         return result;
     };
 
-    const handleCreateProject = (name) => {
-        onCreateProject(name);
+    const handleCreateProject = (name, customPath) => {
+        onCreateProject(name, customPath);
     };
 
     const closeNotification = () => setNotification(null);

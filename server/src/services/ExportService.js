@@ -43,6 +43,7 @@ class ExportService {
       uploads: path.join(root, 'uploads'),
       annotations: path.join(root, 'annotations'),
       dataset: path.join(root, 'dataset'),
+      runs: path.join(root, 'runs'),
       imagesDir: path.join(root, 'dataset', 'images'),
       labelsDir: path.join(root, 'dataset', 'labels')
     };

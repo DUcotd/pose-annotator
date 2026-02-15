@@ -3,7 +3,7 @@ import { Folder, Upload, Zap } from 'lucide-react';
 
 export const HeroSection = ({ onCreate, onImport, onGuide }) => {
     return (
-        <div className="hero-section" style={{ padding: '64px 0 40px 0', flexShrink: 0 }}>
+        <div className="hero-section" style={{ padding: '32px 0 24px 0', flexShrink: 0 }}>
             <h1 className="hero-title" style={{ fontSize: '3rem', marginBottom: '16px', lineHeight: 1.2 }}>
                 <span className="text-gradient" style={{ letterSpacing: '-0.02em' }}>探索您的</span>
                 <br />

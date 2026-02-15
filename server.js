@@ -297,14 +297,51 @@ app.get('/api/projects', async (req, res) => {
 
 // Create Project
 app.post('/api/projects', (req, res) => {
-    const { name } = req.body;
+    const { name, customPath } = req.body;
     if (!name) return res.status(400).json({ error: 'Project name required' });
 
-    // Allow all characters except reserved filesystem characters
     const safeName = name.trim().replace(/[<>:"/\\|?*\x00-\x1F]/g, '_');
-    const paths = ensureProjectDirs(safeName);
+    
+    let targetDir = PROJECTS_DIR;
+    if (customPath) {
+        try {
+            if (!fs.existsSync(customPath)) {
+                fs.mkdirSync(customPath, { recursive: true });
+            }
+            targetDir = customPath;
+        } catch (e) {
+            return res.status(400).json({ error: `无法创建目录: ${e.message}` });
+        }
+    }
 
-    res.json({ message: 'Project created', id: safeName });
+    const projectRoot = path.join(targetDir, safeName);
+    if (fs.existsSync(projectRoot)) {
+        return res.status(400).json({ error: '该项目名称已存在' });
+    }
+
+    const paths = {
+        root: projectRoot,
+        uploads: path.join(projectRoot, 'uploads'),
+        annotations: path.join(projectRoot, 'annotations'),
+        thumbnails: path.join(projectRoot, 'thumbnails')
+    };
+
+    if (!fs.existsSync(paths.root)) fs.mkdirSync(paths.root, { recursive: true });
+    if (!fs.existsSync(paths.uploads)) fs.mkdirSync(paths.uploads, { recursive: true });
+    if (!fs.existsSync(paths.annotations)) fs.mkdirSync(paths.annotations, { recursive: true });
+    if (!fs.existsSync(paths.thumbnails)) fs.mkdirSync(paths.thumbnails, { recursive: true });
+
+    if (customPath && customPath !== PROJECTS_DIR) {
+        const config = loadGlobalConfig();
+        const additionalPaths = config.additionalProjectPaths || [];
+        if (!additionalPaths.includes(customPath)) {
+            additionalPaths.push(customPath);
+            saveGlobalConfig({ ...config, additionalProjectPaths: additionalPaths });
+        }
+    }
+
+    console.log(`[Project] Created: ${safeName} at ${targetDir}`);
+    res.json({ message: 'Project created', id: safeName, path: projectRoot });
 });
 
 // Get Project Config
@@ -848,55 +885,58 @@ app.post('/api/utils/save-file-dialog', async (req, res) => {
 
 const SUPPORTED_IMAGE_EXTENSIONS = /\.(jpg|jpeg|png|gif|bmp|webp)$/i;
 
-const scanDirectoryRecursive = (dirPath, baseDir, results = [], errors = []) => {
-    try {
-        const items = fs.readdirSync(dirPath);
+const scanDirectoryRecursiveAsync = async (dirPath, baseDir, maxResults = 5000) => {
+    const results = [];
+    const errors = [];
+    let shouldStop = false;
 
-        for (const item of items) {
-            if (item.startsWith('.') || item.startsWith('_to_delete_')) continue;
+    const scanDir = async (currentDir) => {
+        if (shouldStop) return;
 
-            const itemPath = path.join(dirPath, item);
+        try {
+            const items = await fs.promises.readdir(currentDir);
 
-            try {
-                const stat = fs.statSync(itemPath);
+            for (const item of items) {
+                if (shouldStop) break;
+                if (item.startsWith('.') || item.startsWith('_to_delete_')) continue;
 
-                if (stat.isDirectory()) {
-                    scanDirectoryRecursive(itemPath, baseDir, results, errors);
-                } else if (stat.isFile() && SUPPORTED_IMAGE_EXTENSIONS.test(item)) {
-                    let dimensions = null;
-                    try {
-                        dimensions = sizeOf(itemPath);
-                    } catch (e) {
-                        // Could not get dimensions, will be null
+                const itemPath = path.join(currentDir, item);
+
+                try {
+                    const stat = await fs.promises.stat(itemPath);
+
+                    if (stat.isDirectory()) {
+                        await scanDir(itemPath);
+                    } else if (stat.isFile() && SUPPORTED_IMAGE_EXTENSIONS.test(item)) {
+                        results.push({
+                            name: item,
+                            path: itemPath,
+                            relativePath: path.relative(baseDir, itemPath),
+                            size: stat.size,
+                            createdTime: stat.birthtime,
+                            modifiedTime: stat.mtime
+                        });
+
+                        if (results.length >= maxResults) {
+                            shouldStop = true;
+                            break;
+                        }
                     }
-
-                    results.push({
-                        name: item,
-                        path: itemPath,
-                        relativePath: path.relative(baseDir, itemPath),
-                        size: stat.size,
-                        width: dimensions ? dimensions.width : null,
-                        height: dimensions ? dimensions.height : null,
-                        createdTime: stat.birthtime,
-                        modifiedTime: stat.mtime,
-                        error: null
-                    });
+                } catch (e) {
+                    if (errors.length < 50) {
+                        errors.push({ path: itemPath, error: e.message || 'Access denied' });
+                    }
                 }
-            } catch (e) {
-                errors.push({
-                    path: itemPath,
-                    error: e.message || 'Access denied'
-                });
+            }
+        } catch (e) {
+            if (errors.length < 50) {
+                errors.push({ path: currentDir, error: e.message || 'Failed to read directory' });
             }
         }
-    } catch (e) {
-        errors.push({
-            path: dirPath,
-            error: e.message || 'Failed to read directory'
-        });
-    }
+    };
 
-    return { results, errors };
+    await scanDir(dirPath);
+    return { results, errors, wasLimited: shouldStop };
 };
 
 app.post('/api/utils/scan-images', async (req, res) => {
@@ -906,32 +946,25 @@ app.post('/api/utils/scan-images', async (req, res) => {
         return res.status(400).json({ error: '文件夹路径不能为空' });
     }
 
-    if (!fs.existsSync(folderPath)) {
-        return res.status(400).json({ error: '指定的文件夹不存在' });
-    }
-
     try {
-        const stat = fs.statSync(folderPath);
+        const stat = await fs.promises.stat(folderPath);
         if (!stat.isDirectory()) {
             return res.status(400).json({ error: '指定的路径不是文件夹' });
         }
 
-        console.log(`[Scan] Starting scan of: ${folderPath}`);
+        console.log(`[Scan] Starting async scan of: ${folderPath}`);
         const startTime = Date.now();
 
-        const { results, errors } = scanDirectoryRecursive(folderPath, folderPath);
+        const { results, errors, wasLimited } = await scanDirectoryRecursiveAsync(folderPath, folderPath, maxResults);
 
         const scanTime = Date.now() - startTime;
         console.log(`[Scan] Found ${results.length} images in ${scanTime}ms`);
 
-        const limitedResults = results.slice(0, maxResults);
-        const wasLimited = results.length > maxResults;
-
         res.json({
             success: true,
-            images: limitedResults,
+            images: results,
             totalFound: results.length,
-            returnedCount: limitedResults.length,
+            returnedCount: results.length,
             wasLimited,
             errors: errors.slice(0, 50),
             errorCount: errors.length,
@@ -939,8 +972,45 @@ app.post('/api/utils/scan-images', async (req, res) => {
         });
     } catch (err) {
         console.error('[Scan] Failed to scan directory:', err);
-        res.status(500).json({ error: '扫描文件夹失败: ' + err.message });
+        if (err.code === 'ENOENT') {
+            res.status(400).json({ error: '指定的文件夹不存在' });
+        } else {
+            res.status(500).json({ error: '扫描文件夹失败: ' + err.message });
+        }
     }
+});
+
+app.post('/api/utils/get-image-dimensions', async (req, res) => {
+    const { paths } = req.body;
+
+    if (!paths || !Array.isArray(paths) || paths.length === 0) {
+        return res.status(400).json({ error: '请提供图片路径列表' });
+    }
+
+    const results = [];
+    const batchSize = 20;
+
+    for (let i = 0; i < paths.length; i += batchSize) {
+        const batch = paths.slice(i, i + batchSize);
+        const batchResults = await Promise.all(batch.map(async (imgPath) => {
+            try {
+                if (!fs.existsSync(imgPath)) {
+                    return { path: imgPath, error: '文件不存在' };
+                }
+                const dimensions = sizeOf(imgPath);
+                return {
+                    path: imgPath,
+                    width: dimensions.width,
+                    height: dimensions.height
+                };
+            } catch (e) {
+                return { path: imgPath, error: e.message };
+            }
+        }));
+        results.push(...batchResults);
+    }
+
+    res.json({ success: true, dimensions: results });
 });
 
 app.post('/api/projects/:projectId/import-images', async (req, res) => {
@@ -1138,6 +1208,155 @@ app.post('/api/settings/validate-python', async (req, res) => {
     } catch (e) {
         return res.json({ valid: false, error: '无法执行 Python，请检查路径是否正确' });
     }
+});
+
+// 获取项目目录配置
+app.get('/api/settings/projects-dir', (req, res) => {
+    const config = loadGlobalConfig();
+    res.json({
+        projectsDir: config.projectsDir || null,
+        hasCustomDir: !!config.projectsDir
+    });
+});
+
+// 设置项目目录
+app.post('/api/settings/projects-dir', (req, res) => {
+    const { projectsDir } = req.body;
+
+    if (projectsDir && !fs.existsSync(projectsDir)) {
+        return res.status(400).json({
+            success: false,
+            error: '指定的目录不存在'
+        });
+    }
+
+    const config = loadGlobalConfig();
+    config.projectsDir = projectsDir || null;
+
+    if (saveGlobalConfig(config)) {
+        if (projectsDir) {
+            PROJECTS_DIR = projectsDir;
+            if (!fs.existsSync(PROJECTS_DIR)) {
+                fs.mkdirSync(PROJECTS_DIR, { recursive: true });
+            }
+        } else {
+            initProjectsDir();
+        }
+        res.json({
+            success: true,
+            message: projectsDir ? '项目目录已设置' : '已恢复默认项目目录',
+            projectsDir: config.projectsDir
+        });
+    } else {
+        res.status(500).json({ success: false, error: '保存设置失败' });
+    }
+});
+
+// 扫描 Python 环境
+app.get('/api/settings/scan-envs', async (req, res) => {
+    const { execSync } = require('child_process');
+    const envs = [];
+    const seen = new Set();
+
+    const checkPython = (pythonPath, name, source) => {
+        if (seen.has(pythonPath) || !fs.existsSync(pythonPath)) return;
+        seen.add(pythonPath);
+
+        try {
+            const version = execSync(`"${pythonPath}" --version`, {
+                encoding: 'utf8',
+                timeout: 5000,
+                windowsHide: true
+            }).trim();
+
+            let hasUltralytics = false;
+            let hasTorch = false;
+            let torchVersion = null;
+            let cudaAvailable = false;
+
+            try {
+                execSync(`"${pythonPath}" -c "import ultralytics"`, {
+                    timeout: 5000,
+                    windowsHide: true
+                });
+                hasUltralytics = true;
+            } catch (e) {}
+
+            try {
+                const torchInfo = execSync(`"${pythonPath}" -c "import torch; print(torch.__version__); print(torch.cuda.is_available())"`, {
+                    encoding: 'utf8',
+                    timeout: 5000,
+                    windowsHide: true
+                }).trim().split('\n');
+                hasTorch = true;
+                torchVersion = torchInfo[0];
+                cudaAvailable = torchInfo[1] === 'True';
+            } catch (e) {}
+
+            envs.push({
+                name,
+                path: pythonPath,
+                version: version.replace('Python ', ''),
+                source,
+                hasUltralytics,
+                hasTorch,
+                torchVersion,
+                cudaAvailable,
+                valid: true
+            });
+        } catch (e) {}
+    };
+
+    // Check common paths
+    const commonPaths = [
+        { path: 'C:\\Python311\\python.exe', name: 'Python 3.11' },
+        { path: 'C:\\Python310\\python.exe', name: 'Python 3.10' },
+        { path: 'C:\\Python39\\python.exe', name: 'Python 3.9' },
+        { path: 'C:\\Python38\\python.exe', name: 'Python 3.8' },
+    ];
+
+    commonPaths.forEach(p => checkPython(p.path, p.name, 'system'));
+
+    // Check Anaconda/Miniconda
+    const condaPaths = [
+        { base: 'C:\\Anaconda3', name: 'Anaconda3' },
+        { base: 'C:\\ProgramData\\Anaconda3', name: 'Anaconda3' },
+        { base: 'C:\\Users\\' + process.env.USERNAME + '\\Anaconda3', name: 'Anaconda3' },
+        { base: 'C:\\Users\\' + process.env.USERNAME + '\\miniconda3', name: 'Miniconda3' },
+        { base: 'D:\\Anaconda3', name: 'Anaconda3' },
+        { base: 'D:\\miniconda3', name: 'Miniconda3' },
+    ];
+
+    condaPaths.forEach(c => {
+        const pythonPath = path.join(c.base, 'python.exe');
+        checkPython(pythonPath, c.name, 'conda');
+
+        // Check conda envs
+        const envsDir = path.join(c.base, 'envs');
+        if (fs.existsSync(envsDir)) {
+            try {
+                const envFolders = fs.readdirSync(envsDir);
+                envFolders.forEach(envName => {
+                    const envPython = path.join(envsDir, envName, 'python.exe');
+                    checkPython(envPython, `${c.name} (${envName})`, 'conda');
+                });
+            } catch (e) {}
+        }
+    });
+
+    // Check PATH
+    try {
+        const whereResult = execSync('where python', {
+            encoding: 'utf8',
+            timeout: 5000,
+            windowsHide: true
+        }).trim().split('\n')[0];
+        if (whereResult) {
+            checkPython(whereResult.trim(), 'System PATH', 'path');
+        }
+    } catch (e) {}
+
+    res.json(envs);
 });
 
 

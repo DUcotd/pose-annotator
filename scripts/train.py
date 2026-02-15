@@ -300,18 +300,41 @@ def validate_model(model, args, model_path):
         # 提取主要评估指标
         if hasattr(val_results, 'box'):
             box_metrics = val_results.box
-            validation_data["metrics"] = {
-                "mAP50": float(getattr(box_metrics, 'map50', 0)),
-                "mAP50-95": float(getattr(box_metrics, 'map', 0)),
-                "precision": float(getattr(box_metrics, 'mp', 0)),
-                "recall": float(getattr(box_metrics, 'mr', 0)),
-                "f1": float(getattr(box_metrics, 'mf', 0)) if hasattr(box_metrics, 'mf') else 0.0
-            }
+            try:
+                map50_val = getattr(box_metrics, 'map50', 0)
+                map_val = getattr(box_metrics, 'map', 0)
+                mp_val = getattr(box_metrics, 'mp', 0)
+                mr_val = getattr(box_metrics, 'mr', 0)
+                mf_val = getattr(box_metrics, 'mf', 0) if hasattr(box_metrics, 'mf') else 0
+                
+                validation_data["metrics"] = {
+                    "mAP50": float(map50_val.item()) if hasattr(map50_val, 'item') else float(map50_val),
+                    "mAP50-95": float(map_val.item()) if hasattr(map_val, 'item') else float(map_val),
+                    "precision": float(mp_val.item()) if hasattr(mp_val, 'item') else float(mp_val),
+                    "recall": float(mr_val.item()) if hasattr(mr_val, 'item') else float(mr_val),
+                    "f1": float(mf_val.item()) if hasattr(mf_val, 'item') else float(mf_val)
+                }
+            except Exception as e:
+                print(f"⚠️ 解析 box metrics 时出错: {e}", flush=True)
+                validation_data["metrics"] = {
+                    "mAP50": 0.0,
+                    "mAP50-95": 0.0,
+                    "precision": 0.0,
+                    "recall": 0.0,
+                    "f1": 0.0
+                }
         
         if hasattr(val_results, 'pose'):
             pose_metrics = val_results.pose
-            validation_data["metrics"]["pose_mAP50"] = float(getattr(pose_metrics, 'map50', 0)) if hasattr(pose_metrics, 'map50') else 0.0
-            validation_data["metrics"]["pose_mAP50-95"] = float(getattr(pose_metrics, 'map', 0)) if hasattr(pose_metrics, 'map') else 0.0
+            try:
+                map50_val = getattr(pose_metrics, 'map50', 0) if hasattr(pose_metrics, 'map50') else 0
+                map_val = getattr(pose_metrics, 'map', 0) if hasattr(pose_metrics, 'map') else 0
+                validation_data["metrics"]["pose_mAP50"] = float(map50_val.item()) if hasattr(map50_val, 'item') else float(map50_val)
+                validation_data["metrics"]["pose_mAP50-95"] = float(map_val.item()) if hasattr(map_val, 'item') else float(map_val)
+            except Exception as e:
+                print(f"⚠️ 解析 pose metrics 时出错: {e}", flush=True)
+                validation_data["metrics"]["pose_mAP50"] = 0.0
+                validation_data["metrics"]["pose_mAP50-95"] = 0.0
         
         # 生成混淆矩阵和 PR 曲线的路径
         results_dir = os.path.join(args.project, args.name)
@@ -808,9 +831,13 @@ def get_per_keypoint_metrics(model, data_yaml, device='0'):
             if hasattr(pose_metrics, 'ap_per_class'):
                 ap_per_class = pose_metrics.ap_per_class
                 for i, ap in enumerate(ap_per_class):
+                    try:
+                        ap_value = float(ap.item()) if hasattr(ap, 'item') else float(ap) if ap is not None else 0.0
+                    except:
+                        ap_value = 0.0
                     keypoint_metrics["keypoints"].append({
                         "keypoint_id": i,
-                        "ap": float(ap) if ap is not None else 0.0
+                        "ap": ap_value
                     })
         
         if hasattr(val_results, 'keypoints') and val_results.keypoints is not None:
@@ -818,7 +845,15 @@ def get_per_keypoint_metrics(model, data_yaml, device='0'):
             if hasattr(kpts, 'data'):
                 for i, kpt_data in enumerate(kpts.data):
                     if len(keypoint_metrics["keypoints"]) > i:
-                        keypoint_metrics["keypoints"][i]["visibility"] = float(kpt_data.mean()) if hasattr(kpt_data, 'mean') else 0.0
+                        try:
+                            if hasattr(kpt_data, 'mean'):
+                                mean_val = kpt_data.mean()
+                                vis_value = float(mean_val.item()) if hasattr(mean_val, 'item') else float(mean_val)
+                            else:
+                                vis_value = 0.0
+                        except:
+                            vis_value = 0.0
+                        keypoint_metrics["keypoints"][i]["visibility"] = vis_value
         
         try:
             results_dir = os.path.dirname(data_yaml)
@@ -850,31 +885,68 @@ def on_train_epoch_end(trainer):
 
     if hasattr(trainer, 'loss_items') and trainer.loss_items is not None:
         loss_items = trainer.loss_items
-        if len(loss_items) > 0:
-            log_data["box_loss"] = float(loss_items[0])
-        if len(loss_items) > 1:
-            log_data["cls_loss"] = float(loss_items[1])
-        if len(loss_items) > 2:
-            log_data["dfl_loss"] = float(loss_items[2])
-        if len(loss_items) > 3:
-            log_data["pose_loss"] = float(loss_items[3])
-        if len(loss_items) > 4:
-            log_data["kobj_loss"] = float(loss_items[4])
+        try:
+            if hasattr(loss_items, '__len__') and len(loss_items) > 0:
+                loss0 = loss_items[0]
+                if hasattr(loss0, 'item'):
+                    log_data["box_loss"] = float(loss0.item())
+                else:
+                    log_data["box_loss"] = float(loss0)
+            if hasattr(loss_items, '__len__') and len(loss_items) > 1:
+                loss1 = loss_items[1]
+                if hasattr(loss1, 'item'):
+                    log_data["cls_loss"] = float(loss1.item())
+                else:
+                    log_data["cls_loss"] = float(loss1)
+            if hasattr(loss_items, '__len__') and len(loss_items) > 2:
+                loss2 = loss_items[2]
+                if hasattr(loss2, 'item'):
+                    log_data["dfl_loss"] = float(loss2.item())
+                else:
+                    log_data["dfl_loss"] = float(loss2)
+            if hasattr(loss_items, '__len__') and len(loss_items) > 3:
+                loss3 = loss_items[3]
+                if hasattr(loss3, 'item'):
+                    log_data["pose_loss"] = float(loss3.item())
+                else:
+                    log_data["pose_loss"] = float(loss3)
+            if hasattr(loss_items, '__len__') and len(loss_items) > 4:
+                loss4 = loss_items[4]
+                if hasattr(loss4, 'item'):
+                    log_data["kobj_loss"] = float(loss4.item())
+                else:
+                    log_data["kobj_loss"] = float(loss4)
+        except Exception as e:
+            print(f"⚠️ 解析 loss_items 时出错: {e}", flush=True)
 
     if hasattr(trainer, 'metrics') and trainer.metrics:
         if hasattr(trainer.metrics, 'box'):
             box = trainer.metrics.box
-            log_data["box_precision"] = float(getattr(box, 'mp', 0))
-            log_data["box_recall"] = float(getattr(box, 'mr', 0))
-            log_data["mAP50"] = float(getattr(box, 'map50', 0))
-            log_data["mAP50_95"] = float(getattr(box, 'map', 0))
+            try:
+                mp_val = getattr(box, 'mp', 0)
+                mr_val = getattr(box, 'mr', 0)
+                map50_val = getattr(box, 'map50', 0)
+                map_val = getattr(box, 'map', 0)
+                log_data["box_precision"] = float(mp_val.item()) if hasattr(mp_val, 'item') else float(mp_val)
+                log_data["box_recall"] = float(mr_val.item()) if hasattr(mr_val, 'item') else float(mr_val)
+                log_data["mAP50"] = float(map50_val.item()) if hasattr(map50_val, 'item') else float(map50_val)
+                log_data["mAP50_95"] = float(map_val.item()) if hasattr(map_val, 'item') else float(map_val)
+            except Exception as e:
+                print(f"⚠️ 解析 box metrics 时出错: {e}", flush=True)
         
         if hasattr(trainer.metrics, 'pose'):
             pose = trainer.metrics.pose
-            log_data["pose_precision"] = float(getattr(pose, 'mp', 0))
-            log_data["pose_recall"] = float(getattr(pose, 'mr', 0))
-            log_data["pose_mAP50"] = float(getattr(pose, 'map50', 0))
-            log_data["pose_mAP50_95"] = float(getattr(pose, 'map', 0))
+            try:
+                mp_val = getattr(pose, 'mp', 0)
+                mr_val = getattr(pose, 'mr', 0)
+                map50_val = getattr(pose, 'map50', 0)
+                map_val = getattr(pose, 'map', 0)
+                log_data["pose_precision"] = float(mp_val.item()) if hasattr(mp_val, 'item') else float(mp_val)
+                log_data["pose_recall"] = float(mr_val.item()) if hasattr(mr_val, 'item') else float(mr_val)
+                log_data["pose_mAP50"] = float(map50_val.item()) if hasattr(map50_val, 'item') else float(map50_val)
+                log_data["pose_mAP50_95"] = float(map_val.item()) if hasattr(map_val, 'item') else float(map_val)
+            except Exception as e:
+                print(f"⚠️ 解析 pose metrics 时出错: {e}", flush=True)
 
     if hasattr(trainer, 'device') and trainer.device:
         log_data["gpu_mem"] = str(trainer.device)
@@ -882,7 +954,16 @@ def on_train_epoch_end(trainer):
         log_data["gpu_mem"] = "cpu"
 
     if hasattr(trainer, 'tloss') and trainer.tloss is not None:
-        log_data["train_loss"] = float(trainer.tloss)
+        tloss = trainer.tloss
+        try:
+            if hasattr(tloss, 'item'):
+                log_data["train_loss"] = float(tloss.item())
+            elif hasattr(tloss, '__len__'):
+                log_data["train_loss"] = float(tloss.mean().item() if hasattr(tloss.mean(), 'item') else float(tloss.mean()))
+            else:
+                log_data["train_loss"] = float(tloss)
+        except Exception as e:
+            print(f"⚠️ 解析 tloss 时出错: {e}", flush=True)
     
     if hasattr(trainer, 'optimizer') and trainer.optimizer:
         current_lr = None
@@ -1282,10 +1363,25 @@ def train_model(args):
         if not os.path.exists(abs_data_path):
             raise FileNotFoundError(f"找不到配置文件: {abs_data_path}")
 
-        print(f"🚀 开始加载模型: {args.model}")
+        models_dir = args.models_dir if args.models_dir else os.path.join(args.project, 'models')
+        os.makedirs(models_dir, exist_ok=True)
+        
+        model_name = args.model
+        model_path = model_name
+        
+        if not os.path.isabs(model_name):
+            potential_path = os.path.join(models_dir, model_name)
+            if os.path.exists(potential_path):
+                model_path = potential_path
+                print(f"✅ 使用本地模型: {model_path}", flush=True)
+            else:
+                os.environ['YOLO_CONFIG_DIR'] = models_dir
+                print(f"📥 模型将下载/存储到: {models_dir}", flush=True)
+        
+        print(f"🚀 开始加载模型: {model_path}")
         print(f"📂 数据集路径: {abs_data_path}")
 
-        model = YOLO(args.model)
+        model = YOLO(model_path)
         
         device_id = 0
         if args.device != 'cpu':
@@ -1448,6 +1544,7 @@ if __name__ == "__main__":
 
     parser.add_argument('--project', type=str, default='fish_run', help='Project directory')
     parser.add_argument('--name', type=str, default='exp_3', help='Experiment name')
+    parser.add_argument('--models_dir', type=str, default='', help='Directory to store model weights')
 
     parser.add_argument('--device', type=str, default='0', help='Device (0, 1, 2 or cpu)')
     parser.add_argument('--workers', type=int, default=0, help='Dataloader workers')

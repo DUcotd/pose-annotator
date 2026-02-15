@@ -350,7 +350,7 @@ class TrainingService {
       });
     }
 
-    const processState = this.processes.create(projectId);
+    const processState = this.processes.create(projectId, config.project || null);
     this.processes.setStatus(projectId, 'starting');
 
     const projectPath = config.project || '';

@@ -42,7 +42,13 @@ export const CreateProjectModal = ({ isOpen, onClose, onSubmit }) => {
     const handleSubmit = (e) => {
         e.preventDefault();
         if (name.trim()) {
-            onSubmit(name, useCustomPath ? customPath : null);
+            if (useCustomPath) {
+                onSubmit(name, customPath);
+            } else if (defaultPath && defaultPath !== '使用默认位置') {
+                onSubmit(name, defaultPath);
+            } else {
+                onSubmit(name, null);
+            }
             setName('');
             setCustomPath('');
             setUseCustomPath(false);

@@ -74,7 +74,8 @@ function createTrainingRouter(projectsDir) {
 
     try {
       const yoloDataPath = PathUtils.toYoloFormat(dataYamlPath);
-      const yoloProjectPath = config.project ? PathUtils.toYoloFormat(PathUtils.resolve(config.project)) : PathUtils.toYoloFormat(paths.root);
+      const runsPath = path.join(paths.root, 'runs');
+      const yoloProjectPath = config.project ? PathUtils.toYoloFormat(PathUtils.resolve(config.project)) : PathUtils.toYoloFormat(runsPath);
       
       const pathCheck = PathUtils.normalizeYamlPaths(dataYamlPath);
       if (!pathCheck.valid && pathCheck.issues) {
@@ -375,52 +376,82 @@ function createTrainingRouter(projectsDir) {
 
   router.post('/:projectId/train/logs/export-to-file', async (req, res) => {
     const { projectId } = req.params;
-    const { outputPath, options } = req.body;
+    const { options } = req.body;
     
-    if (!outputPath) {
-      let electron;
-      try {
-        electron = require('electron');
-      } catch (e) {}
+    try {
+      const paths = ExportService.getProjectPaths(projectId, projectsDir);
+      const logsDir = path.join(paths.root, 'runs', 'logs');
       
-      if (electron && electron.dialog) {
-        try {
-          const { dialog, BrowserWindow } = electron;
-          const win = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
-          const defaultName = `training_log_${projectId}_${new Date().toISOString().slice(0, 10)}.txt`;
-          
-          const dialogOptions = {
-            title: '保存训练日志',
-            defaultPath: defaultName,
-            filters: [
-              { name: '文本文件', extensions: ['txt'] },
-              { name: '所有文件', extensions: ['*'] }
-            ]
-          };
-          
-          let result;
-          if (win) {
-            result = await dialog.showSaveDialog(win, dialogOptions);
-          } else {
-            result = await dialog.showSaveDialog(dialogOptions);
-          }
-          
-          if (result.canceled || !result.filePath) {
-            return res.json({ success: false, message: '用户取消保存' });
-          }
-          
-          const saveResult = ProcessManager.saveLogsToFile(projectId, result.filePath, options || {});
-          res.json(saveResult);
-        } catch (err) {
-          logger.error(`Failed to save log file: ${err.message}`);
-          res.status(500).json({ error: '保存文件失败', details: err.message });
-        }
-      } else {
-        res.status(400).json({ error: '请提供输出文件路径' });
+      if (!fs.existsSync(logsDir)) {
+        fs.mkdirSync(logsDir, { recursive: true });
       }
-    } else {
+      
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      const filename = `training_log_${timestamp}.txt`;
+      const outputPath = path.join(logsDir, filename);
+      
       const saveResult = ProcessManager.saveLogsToFile(projectId, outputPath, options || {});
-      res.json(saveResult);
+      
+      res.json({
+        ...saveResult,
+        filePath: outputPath,
+        filename: filename,
+        logsDir: logsDir
+      });
+    } catch (err) {
+      logger.error(`Failed to save log file: ${err.message}`);
+      res.status(500).json({ error: '保存文件失败', details: err.message });
+    }
+  });
+
+  router.post('/:projectId/train/logs/open', async (req, res) => {
+    const { projectId } = req.params;
+    const { filePath } = req.body;
+    
+    try {
+      const paths = ExportService.getProjectPaths(projectId, projectsDir);
+      const logsDir = path.join(paths.root, 'runs', 'logs');
+      
+      let targetPath = filePath;
+      if (!targetPath) {
+        const files = fs.readdirSync(logsDir).filter(f => f.endsWith('.txt')).sort().reverse();
+        if (files.length > 0) {
+          targetPath = path.join(logsDir, files[0]);
+        }
+      }
+      
+      if (!targetPath || !fs.existsSync(targetPath)) {
+        return res.status(404).json({ error: '日志文件不存在' });
+      }
+      
+      const { shell } = require('electron');
+      await shell.openPath(targetPath);
+      
+      res.json({ success: true, filePath: targetPath });
+    } catch (err) {
+      logger.error(`Failed to open log file: ${err.message}`);
+      res.status(500).json({ error: '打开文件失败', details: err.message });
+    }
+  });
+
+  router.post('/:projectId/train/logs/open-folder', async (req, res) => {
+    const { projectId } = req.params;
+    
+    try {
+      const paths = ExportService.getProjectPaths(projectId, projectsDir);
+      const logsDir = path.join(paths.root, 'runs', 'logs');
+      
+      if (!fs.existsSync(logsDir)) {
+        fs.mkdirSync(logsDir, { recursive: true });
+      }
+      
+      const { shell } = require('electron');
+      await shell.openPath(logsDir);
+      
+      res.json({ success: true, folderPath: logsDir });
+    } catch (err) {
+      logger.error(`Failed to open logs folder: ${err.message}`);
+      res.status(500).json({ error: '打开文件夹失败', details: err.message });
     }
   });
 

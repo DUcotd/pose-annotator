@@ -230,8 +230,8 @@ export const EmptyState = ({ onCreate }) => (
     <div 
         className="empty-state-container" 
         style={{ 
-            padding: '80px 40px', 
-            minHeight: '500px', 
+            padding: '40px 40px', 
+            minHeight: '320px', 
             justifyContent: 'center',
             touchAction: 'pan-x pan-y',
             userSelect: 'none',
@@ -239,17 +239,17 @@ export const EmptyState = ({ onCreate }) => (
             zIndex: 1
         }}
     >
-        <div className="empty-state-icon" style={{ width: '100px', height: '100px', marginBottom: '32px' }}>
-            <Folder size={50} />
+        <div className="empty-state-icon" style={{ width: '80px', height: '80px', marginBottom: '24px' }}>
+            <Folder size={40} />
         </div>
-        <h2 style={{ fontSize: '2rem', fontWeight: 700, marginBottom: '1rem' }}>准备好开始了吗？</h2>
-        <p style={{ color: 'var(--text-secondary)', maxWidth: '550px', margin: '0 auto 3rem auto', fontSize: '1.15rem', lineHeight: 1.7 }}>
+        <h2 style={{ fontSize: '1.6rem', fontWeight: 700, marginBottom: '0.75rem' }}>准备好开始了吗？</h2>
+        <p style={{ color: 'var(--text-secondary)', maxWidth: '500px', margin: '0 auto 2rem auto', fontSize: '1rem', lineHeight: 1.6 }}>
             目前还没有任何项目。创建一个新项目来开始您的标注之旅。
             <br />
             您可以轻松地组织图片、标注目标并导出为标准的 YOLO 格式。
         </p>
-        <button className="btn-modern-primary" onClick={onCreate} style={{ padding: '16px 32px', fontSize: '1.1rem' }}>
-            <Folder size={22} />
+        <button className="btn-modern-primary" onClick={onCreate} style={{ padding: '14px 28px', fontSize: '1rem' }}>
+            <Folder size={20} />
             创建第一个项目
         </button>
     </div>

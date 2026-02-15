@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const logger = require('../utils/logger');
 
-const LOG_DIR = path.join(__dirname, '..', '..', 'data', 'training_logs');
+const DEFAULT_LOG_DIR = path.join(__dirname, '..', '..', 'data', 'training_logs');
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 const MAX_MEMORY_LOGS = 500;
 
@@ -12,24 +12,42 @@ class ProcessManager extends EventEmitter {
     super();
     this.processes = new Map();
     this.fileHandles = new Map();
-    this.ensureLogDir();
+    this.projectPaths = new Map();
   }
 
-  ensureLogDir() {
+  ensureLogDir(logDir) {
     try {
-      if (!fs.existsSync(LOG_DIR)) {
-        fs.mkdirSync(LOG_DIR, { recursive: true });
+      if (!fs.existsSync(logDir)) {
+        fs.mkdirSync(logDir, { recursive: true });
       }
     } catch (err) {
       logger.error('Failed to create log directory:', err);
     }
   }
 
-  getLogFilePath(projectId, name = 'exp') {
-    return path.join(LOG_DIR, `${projectId}_${name}_train.log`);
+  setProjectPath(projectId, projectPath) {
+    this.projectPaths.set(projectId, projectPath);
   }
 
-  create(projectId) {
+  getLogFilePath(projectId, name = 'exp') {
+    const projectPath = this.projectPaths.get(projectId);
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    
+    if (projectPath) {
+      const logDir = path.join(projectPath, 'runs', 'logs');
+      this.ensureLogDir(logDir);
+      return path.join(logDir, `train_${timestamp}.log`);
+    }
+    
+    this.ensureLogDir(DEFAULT_LOG_DIR);
+    return path.join(DEFAULT_LOG_DIR, `${projectId}_${name}_train_${timestamp}.log`);
+  }
+
+  create(projectId, projectPath = null) {
+    if (projectPath) {
+      this.setProjectPath(projectId, projectPath);
+    }
+    
     const logPath = this.getLogFilePath(projectId);
     
     this.processes.set(projectId, {
@@ -83,18 +101,20 @@ ${'='.repeat(60)}\n`;
 
   rotateLogFile(projectId) {
     const handle = this.fileHandles.get(projectId);
-    if (!handle) return;
+    const process = this.processes.get(projectId);
+    if (!handle || !process) return;
     
     try {
       fs.closeSync(handle);
       
-      const logPath = this.getLogFilePath(projectId);
+      const logPath = process.logFile;
       const rotatedPath = logPath.replace('.log', `_${Date.now()}.log`);
       
       fs.renameSync(logPath, rotatedPath);
       
       const newHandle = fs.openSync(logPath, 'a');
       this.fileHandles.set(projectId, newHandle);
+      process.logFile = logPath;
       
       logger.info(`Rotated log file for ${projectId}`);
     } catch (err) {
@@ -197,7 +217,8 @@ ${'='.repeat(60)}\n`;
   }
 
   readLogsFromFile(projectId, limit = 100) {
-    const logPath = this.getLogFilePath(projectId);
+    const process = this.get(projectId);
+    const logPath = process.logFile || this.getLogFilePath(projectId);
     
     try {
       if (!fs.existsSync(logPath)) {
@@ -249,6 +270,7 @@ ${'='.repeat(60)}\n`;
 
   clear(projectId) {
     this.closeLogFile(projectId);
+    this.projectPaths.delete(projectId);
     
     if (this.processes.has(projectId)) {
       this.processes.delete(projectId);
@@ -265,7 +287,7 @@ ${'='.repeat(60)}\n`;
 
   getLogStats(projectId) {
     const process = this.get(projectId);
-    const logPath = this.getLogFilePath(projectId);
+    const logPath = process.logFile || this.getLogFilePath(projectId);
     
     let fileSize = 0;
     let fileLineCount = 0;
