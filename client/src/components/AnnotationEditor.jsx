@@ -54,26 +54,40 @@ export function AnnotationEditor({ image, projectId, onBack }) {
 
     // Derived State: Group Keypoints by BBox
     const { groups, unassignedKeypoints } = useMemo(() => {
+        // Only compute if annotations have changed
+        if (!annotations.length) {
+            return { groups: [], unassignedKeypoints: [] };
+        }
+
         const bboxes = annotations.filter(a => a.type === 'bbox');
         const keypoints = annotations.filter(a => a.type === 'keypoint');
         const usedKeypoints = new Set();
 
         const groups = bboxes.map(bbox => {
-            const children = keypoints.filter(kp => {
+            const children = [];
+            for (const kp of keypoints) {
                 if (kp.parentId === bbox.id) {
                     usedKeypoints.add(kp.id);
-                    return true;
+                    children.push(kp);
+                } else if (!kp.parentId) {
+                    const inside = kp.x >= bbox.x && kp.x <= bbox.x + bbox.width &&
+                        kp.y >= bbox.y && kp.y <= bbox.y + bbox.height;
+                    if (inside) {
+                        usedKeypoints.add(kp.id);
+                        children.push(kp);
+                    }
                 }
-                if (kp.parentId) return false;
-                const inside = kp.x >= bbox.x && kp.x <= bbox.x + bbox.width &&
-                    kp.y >= bbox.y && kp.y <= bbox.y + bbox.height;
-                if (inside) usedKeypoints.add(kp.id);
-                return inside;
-            });
+            }
             return { ...bbox, children };
         });
 
-        const unassigned = keypoints.filter(kp => !usedKeypoints.has(kp.id));
+        const unassigned = [];
+        for (const kp of keypoints) {
+            if (!usedKeypoints.has(kp.id)) {
+                unassigned.push(kp);
+            }
+        }
+
         return { groups, unassignedKeypoints: unassigned };
     }, [annotations]);
 
@@ -194,10 +208,13 @@ export function AnnotationEditor({ image, projectId, onBack }) {
         }
     }, [image, projectId]);
 
-    // Auto-save logic
+    // Auto-save logic with debounce and change detection
     useEffect(() => {
         if (!isLoaded) return;
-        const timer = setTimeout(() => saveAnnotations(annotations), 1000);
+        // Only save if there are actual annotations to save
+        if (annotations.length === 0) return;
+        // Debounce to 3 seconds to reduce frequent file operations
+        const timer = setTimeout(() => saveAnnotations(annotations), 3000);
         return () => clearTimeout(timer);
     }, [annotations, isLoaded, saveAnnotations]);
 
@@ -393,13 +410,15 @@ export function AnnotationEditor({ image, projectId, onBack }) {
     };
 
     // Scale factor: multiply natural coords by this to get display coords
-    const getDisplayScale = useCallback(() => {
+    const displayScale = useMemo(() => {
         if (!isImageLoaded || !imageDims.naturalWidth) return { sx: 1, sy: 1 };
         return {
             sx: imageDims.width / imageDims.naturalWidth,
             sy: imageDims.height / imageDims.naturalHeight
         };
     }, [isImageLoaded, imageDims]);
+
+    const getDisplayScale = useCallback(() => displayScale, [displayScale]);
 
 
     const clamp = (val, min, max) => Math.min(Math.max(val, min), max);
@@ -481,6 +500,19 @@ export function AnnotationEditor({ image, projectId, onBack }) {
     };
 
     const [cursorPos, setCursorPos] = useState({ x: 0, y: 0 });
+    
+    // Use ref for RAF-based updates - smoother than throttle
+    const rafRef = useRef(null);
+    const pendingUpdateRef = useRef(null);
+
+    // Cleanup RAF on unmount
+    useEffect(() => {
+        return () => {
+            if (rafRef.current) {
+                cancelAnimationFrame(rafRef.current);
+            }
+        };
+    }, []);
 
     const handlePointerMove = (e) => {
         if (!imageRef.current) return;
@@ -492,14 +524,32 @@ export function AnnotationEditor({ image, projectId, onBack }) {
 
         // Crosshair guides need display coordinates for CSS positioning
         const displayPos = getDisplayPos(e);
-        setCursorPos({
-            x: clamp(displayPos.x, 0, imageRef.current.width),
-            y: clamp(displayPos.y, 0, imageRef.current.height)
-        });
+        
+        // Store pending update and use RAF for smooth rendering
+        pendingUpdateRef.current = {
+            cursorX: clamp(displayPos.x, 0, imageRef.current.width),
+            cursorY: clamp(displayPos.y, 0, imageRef.current.height),
+            pos,
+            imageWidth,
+            imageHeight
+        };
+        
+        if (!rafRef.current) {
+            rafRef.current = requestAnimationFrame(() => {
+                rafRef.current = null;
+                if (pendingUpdateRef.current) {
+                    const { cursorX, cursorY } = pendingUpdateRef.current;
+                    setCursorPos({ x: cursorX, y: cursorY });
+                }
+            });
+        }
 
         if (dragState && selectedId) {
             const dx = pos.x - dragState.startX;
             const dy = pos.y - dragState.startY;
+
+            // Only update if there's actual movement to reduce re-renders
+            if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return;
 
             setAnnotations(annotations.map(ann => {
                 if (ann.id !== selectedId) return ann;
@@ -852,30 +902,32 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                     <div className="editor-image-wrapper">
                         <img
                             ref={imageRef}
-                            src={`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/uploads/${encodeURIComponent(image)}?t=${Date.now()}`}
+                            src={`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/uploads/${encodeURIComponent(image)}`}
                             alt="Target"
                             key={image}
                             onLoad={handleImageLoad}
                             onError={() => {
                                 console.error('Image failed to load');
-                                setIsImageLoaded(true); // Allow UI to show (and fail gracefully)
+                                setIsImageLoaded(true);
                             }}
                         />
 
                         {/* Crosshair Guides */}
                         {showGuides && (mode === 'bbox' || mode === 'keypoint') && (
                             <>
-                                {/* Vertical Guide with contrast shadow */}
+                                {/* Vertical Guide */}
                                 <div style={{
-                                    position: 'absolute', top: 0, bottom: 0, left: cursorPos.x,
-                                    width: '1px', pointerEvents: 'none', zIndex: 50,
+                                    position: 'absolute', top: 0, bottom: 0,
+                                    left: cursorPos.x, width: '1px',
+                                    pointerEvents: 'none', zIndex: 50,
                                     borderLeft: '1px dashed rgba(255, 255, 255, 1)',
                                     boxShadow: '0 0 0 1px rgba(0, 0, 0, 0.7), 0 0 4px rgba(0,0,0,0.5)'
                                 }} />
-                                {/* Horizontal Guide with contrast shadow */}
+                                {/* Horizontal Guide */}
                                 <div style={{
-                                    position: 'absolute', left: 0, right: 0, top: cursorPos.y,
-                                    height: '1px', pointerEvents: 'none', zIndex: 50,
+                                    position: 'absolute', left: 0, right: 0,
+                                    top: cursorPos.y, height: '1px',
+                                    pointerEvents: 'none', zIndex: 50,
                                     borderTop: '1px dashed rgba(255, 255, 255, 1)',
                                     boxShadow: '0 0 0 1px rgba(0, 0, 0, 0.7), 0 0 4px rgba(0,0,0,0.5)'
                                 }} />
@@ -884,11 +936,9 @@ export function AnnotationEditor({ image, projectId, onBack }) {
 
                         {/* Annotations */}
                         <div style={{ pointerEvents: 'none', visibility: (isImageLoaded && isLoaded) ? 'visible' : 'hidden' }}>
-                            {annotations.map(ann => {
+                            {isImageLoaded && isLoaded && annotations.map(ann => {
                                 const isSelected = selectedId === ann.id;
-                                const parentBBox = groups.find(g => g.id === selectedId);
-                                const isChildOfSelected = parentBBox && parentBBox.children.find(c => c.id === ann.id);
-                                const ds = getDisplayScale();
+                                const ds = displayScale;
 
                                 if (ann.type === 'bbox') {
                                     const bboxColor = isSelected ? '#58a6ff' : '#00FF00';
@@ -939,6 +989,8 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                                         </div>
                                     );
                                 } else {
+                                    // Pre-calculate if this keypoint is a child of the selected bbox
+                                    const isChildOfSelected = ann.parentId === selectedId;
                                     const kpColor = isChildOfSelected || isSelected ? '#ffbd2e' : '#00FF00';
                                     return (
                                         <div key={ann.id} style={{
@@ -979,10 +1031,10 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                         {currentBox && (
                             <div style={{
                                 position: 'absolute',
-                                left: currentBox.x * getDisplayScale().sx,
-                                top: currentBox.y * getDisplayScale().sy,
-                                width: currentBox.width * getDisplayScale().sx,
-                                height: currentBox.height * getDisplayScale().sy,
+                                left: currentBox.x * displayScale.sx,
+                                top: currentBox.y * displayScale.sy,
+                                width: currentBox.width * displayScale.sx,
+                                height: currentBox.height * displayScale.sy,
                                 border: '2.5px dashed #58a6ff',
                                 background: 'rgba(88, 166, 255, 0.2)',
                                 boxShadow: '0 0 0 1px black',

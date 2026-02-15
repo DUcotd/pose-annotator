@@ -196,41 +196,50 @@ const upload = multer({ storage });
 // --- API: PROJECTS ---
 
 // List Projects
-app.get('/api/projects', (req, res) => {
+app.get('/api/projects', async (req, res) => {
     try {
-        const projects = fs.readdirSync(PROJECTS_DIR).filter(file => {
-            try {
-                // Filter out hidden folders and our Windows-specific temp deletion folders
-                if (file.startsWith('.') || file.startsWith('_to_delete_')) return false;
-                return fs.statSync(path.join(PROJECTS_DIR, file)).isDirectory();
-            } catch (e) { return false; }
-        });
+        const projects = await fs.promises.readdir(PROJECTS_DIR).then(files => files.filter(file => {
+            // Filter out hidden folders and our Windows-specific temp deletion folders
+            return !file.startsWith('.') && !file.startsWith('_to_delete_');
+        }));
 
-        const projectList = projects.map(p => {
-            const paths = getProjectPaths(p);
-            let imageCount = 0;
-            let annotatedCount = 0;
+        const projectList = [];
+        for (const p of projects) {
             try {
-                if (fs.existsSync(paths.uploads)) {
-                    const files = fs.readdirSync(paths.uploads).filter(f => /\.(jpg|jpeg|png|gif|webp)$/i.test(f));
-                    imageCount = files.length;
+                const projectPath = path.join(PROJECTS_DIR, p);
+                const stat = await fs.promises.stat(projectPath);
+                if (!stat.isDirectory()) continue;
 
-                    // Count annotated images
-                    files.forEach(file => {
-                        const annotationPath = path.join(paths.annotations, `${file}.json`);
-                        if (fs.existsSync(annotationPath)) {
-                            try {
-                                const data = JSON.parse(fs.readFileSync(annotationPath));
-                                if (data.some(a => a.type === 'bbox' || a.type === 'keypoint')) {
-                                    annotatedCount++;
-                                }
-                            } catch (e) { }
+                const paths = getProjectPaths(p);
+                let imageCount = 0;
+                let annotatedCount = 0;
+                try {
+                    if (fs.existsSync(paths.uploads)) {
+                        const files = await fs.promises.readdir(paths.uploads).then(files => files.filter(f => /\.(jpg|jpeg|png|gif|webp)$/i.test(f)));
+                        imageCount = files.length;
+
+                        // Count annotated images (limit to first 100 files to avoid performance issues)
+                        const filesToCheck = files.slice(0, 100);
+                        for (const file of filesToCheck) {
+                            const annotationPath = path.join(paths.annotations, `${file}.json`);
+                            if (fs.existsSync(annotationPath)) {
+                                try {
+                                    const data = JSON.parse(fs.readFileSync(annotationPath));
+                                    if (data.some(a => a.type === 'bbox' || a.type === 'keypoint')) {
+                                        annotatedCount++;
+                                    }
+                                } catch (e) { }
+                            }
                         }
-                    });
-                }
+                        // Estimate total annotated count if there are more than 100 files
+                        if (files.length > 100) {
+                            annotatedCount = Math.round((annotatedCount / 100) * files.length);
+                        }
+                    }
+                } catch (e) { /* ignore */ }
+                projectList.push({ id: p, name: p, imageCount, annotatedCount });
             } catch (e) { /* ignore */ }
-            return { id: p, name: p, imageCount, annotatedCount };
-        });
+        }
 
         res.json(projectList);
     } catch (err) {
@@ -421,17 +430,17 @@ app.post('/api/projects/:projectId/upload', upload.single('image'), (req, res) =
 });
 
 // List Images
-app.get('/api/projects/:projectId/images', (req, res) => {
+app.get('/api/projects/:projectId/images', async (req, res) => {
     const { projectId } = req.params;
     const paths = ensureProjectDirs(projectId);
 
-    fs.readdir(paths.uploads, (err, files) => {
-        if (err) return res.status(500).json({ error: 'Unable to scan directory' });
-
+    try {
+        const files = await fs.promises.readdir(paths.uploads);
         const imageFiles = files.filter(file => /\.(jpg|jpeg|png|gif|webp)$/i.test(file));
 
         // Map each image to an object containing its name, annotation status, and size
-        const imageList = imageFiles.map(file => {
+        const imageList = [];
+        for (const file of imageFiles) {
             const annotationPath = path.join(paths.annotations, `${file}.json`);
             let hasAnnotation = false;
             if (fs.existsSync(annotationPath)) {
@@ -440,28 +449,31 @@ app.get('/api/projects/:projectId/images', (req, res) => {
                     // Check if it contains actual bounding boxes or keypoints
                     hasAnnotation = data.some(a => a.type === 'bbox' || a.type === 'keypoint');
                 } catch (e) {
-                    console.error(`Error parsing annotation for ${file}:`, e.message);
+                    // Ignore parsing errors
                 }
             }
 
             // Get file size
             let size = 0;
             try {
-                const stats = fs.statSync(path.join(paths.uploads, file));
+                const stats = await fs.promises.stat(path.join(paths.uploads, file));
                 size = stats.size;
             } catch (e) {
                 // Ignore size errors
             }
 
-            return {
+            imageList.push({
                 name: file,
                 hasAnnotation: hasAnnotation,
                 size: size
-            };
-        });
+            });
+        }
 
         res.json(imageList);
-    });
+    } catch (err) {
+        console.error('Unable to scan directory:', err.message);
+        res.status(500).json({ error: 'Unable to scan directory' });
+    }
 });
 
 // Get Annotations

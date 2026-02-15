@@ -35,11 +35,7 @@
       "createStartMenuShortcut": true,
       "shortcutName": "Pose Annotator"
     },
-    "asar": true,
-    "asarUnpack": [
-      "**/node_modules/sharp/**/*",
-      "**/node_modules/@img/**/*"
-    ]
+    "asar": false
   },
   "keywords": [],
   "author": "",
