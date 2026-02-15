@@ -34,13 +34,13 @@ class ProcessManager extends EventEmitter {
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
     
     if (projectPath) {
-      const logDir = path.join(projectPath, 'runs', 'logs');
+      const logDir = path.join(projectPath, 'logs', 'raw');
       this.ensureLogDir(logDir);
-      return path.join(logDir, `train_${timestamp}.log`);
+      return path.join(logDir, `training_${timestamp}.log`);
     }
     
     this.ensureLogDir(DEFAULT_LOG_DIR);
-    return path.join(DEFAULT_LOG_DIR, `${projectId}_${name}_train_${timestamp}.log`);
+    return path.join(DEFAULT_LOG_DIR, `training_${projectId}_${timestamp}.log`);
   }
 
   create(projectId, projectPath = null) {
@@ -56,6 +56,7 @@ class ProcessManager extends EventEmitter {
       pid: null,
       logs: [],
       metrics: [],
+      errorLogs: [],
       startTime: null,
       endTime: null,
       logFile: logPath
@@ -205,6 +206,26 @@ ${'='.repeat(60)}\n`;
     return process;
   }
 
+  setErrorLogs(projectId, errorLogs) {
+    const process = this.get(projectId);
+    process.errorLogs = errorLogs;
+    return process;
+  }
+
+  addErrorLog(projectId, errorLog) {
+    const process = this.get(projectId);
+    process.errorLogs.push(errorLog);
+    if (process.errorLogs.length > 50) {
+      process.errorLogs = process.errorLogs.slice(-50);
+    }
+    return process;
+  }
+
+  getErrorLogs(projectId) {
+    const process = this.get(projectId);
+    return process.errorLogs || [];
+  }
+
   getLogs(projectId, limit = 100, useFile = false) {
     const process = this.get(projectId);
     
@@ -312,22 +333,79 @@ ${'='.repeat(60)}\n`;
     };
   }
 
+  cleanString(str) {
+    if (typeof str !== 'string') return str;
+    
+    let cleaned = str.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
+    
+    cleaned = cleaned.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, '');
+    
+    cleaned = cleaned.replace(/[\u200B-\u200D\uFEFF]/g, '');
+    
+    return cleaned.trim();
+  }
+
+  getStatusText(status) {
+    const statusMap = {
+      'idle': '空闲',
+      'starting': '启动中',
+      'running': '运行中',
+      'completed': '已完成',
+      'failed': '失败',
+      'stopped': '已停止'
+    };
+    return statusMap[status] || status;
+  }
+
+  formatDuration(seconds) {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+    if (hours > 0) return `${hours} 小时 ${minutes} 分钟 ${secs} 秒`;
+    if (minutes > 0) return `${minutes} 分钟 ${secs} 秒`;
+    return `${secs} 秒`;
+  }
+
+  padRight(str, length) {
+    const chineseCount = (str.match(/[\u4e00-\u9fa5]/g) || []).length;
+    const actualLength = str.length + chineseCount;
+    return str + ' '.repeat(Math.max(0, length - actualLength));
+  }
+
+  deduplicateLogs(logs) {
+    return logs.filter((log, index, self) => 
+      index === self.findIndex(l => l.time === log.time && l.msg === log.msg)
+    ).sort((a, b) => (a.time || 0) - (b.time || 0));
+  }
+
+  groupLogsByType(logs) {
+    const groups = {};
+    logs.forEach(log => {
+      const type = log.type || 'info';
+      if (!groups[type]) groups[type] = [];
+      groups[type].push(log);
+    });
+    return groups;
+  }
+
   exportLogsAsText(projectId, options = {}) {
     const process = this.get(projectId);
-    const { includeMetrics = true, includeConfig = true, includeTimestamps = true } = options;
+    const { includeMetrics = true, includeConfig = true, includeTimestamps = true, format = 'text' } = options;
     
     const lines = [];
+    const separator = '═'.repeat(80);
+    const subSeparator = '─'.repeat(40);
     
-    lines.push('='.repeat(80));
-    lines.push('训练日志导出报告');
-    lines.push('='.repeat(80));
+    lines.push(separator);
+    lines.push('                    训练日志导出报告');
+    lines.push(separator);
     lines.push('');
     
-    lines.push('基本信息');
-    lines.push('-'.repeat(40));
-    lines.push(`项目ID: ${projectId}`);
+    lines.push('📋 基本信息');
+    lines.push(subSeparator);
+    lines.push(`项目 ID: ${projectId}`);
     lines.push(`导出时间: ${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}`);
-    lines.push(`训练状态: ${process.status}`);
+    lines.push(`训练状态: ${this.getStatusText(process.status)}`);
     
     if (process.startTime) {
       lines.push(`开始时间: ${new Date(process.startTime).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}`);
@@ -335,62 +413,242 @@ ${'='.repeat(60)}\n`;
     if (process.endTime) {
       lines.push(`结束时间: ${new Date(process.endTime).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}`);
       const duration = Math.round((process.endTime - process.startTime) / 1000);
-      const hours = Math.floor(duration / 3600);
-      const minutes = Math.floor((duration % 3600) / 60);
-      const seconds = duration % 60;
-      lines.push(`训练时长: ${hours}小时 ${minutes}分钟 ${seconds}秒`);
+      lines.push(`训练时长: ${this.formatDuration(duration)}`);
     }
     lines.push('');
     
     if (includeMetrics && process.metrics.length > 0) {
-      lines.push('训练指标');
-      lines.push('-'.repeat(40));
+      lines.push('📊 训练指标');
+      lines.push(subSeparator);
       
-      const header = 'Epoch'.padEnd(8) + 'Train Loss'.padEnd(14) + 'Val Loss'.padEnd(14) + 
-                     'mAP50'.padEnd(12) + 'mAP50-95'.padEnd(12) + 'LR'.padEnd(14);
+      const header = this.padRight('Epoch', 8) + 
+                     this.padRight('Box Loss', 12) + 
+                     this.padRight('Pose Loss', 12) + 
+                     this.padRight('mAP@50', 10) + 
+                     this.padRight('mAP@50-95', 10) + 
+                     this.padRight('LR', 14);
       lines.push(header);
-      lines.push('-'.repeat(header.length));
+      lines.push('─'.repeat(header.length));
       
       process.metrics.forEach(m => {
-        const epoch = String(m.epoch || '-').padEnd(8);
-        const trainLoss = (m.train_loss !== undefined ? m.train_loss.toFixed(4) : '-').padEnd(14);
-        const valLoss = (m.val_loss !== undefined ? m.val_loss.toFixed(4) : '-').padEnd(14);
-        const map50 = (m.map50 !== undefined ? (m.map50 * 100).toFixed(2) + '%' : '-').padEnd(12);
-        const map5095 = (m.map5095 !== undefined ? (m.map5095 * 100).toFixed(2) + '%' : '-').padEnd(12);
-        const lr = (m.lr !== undefined ? m.lr.toExponential(4) : '-').padEnd(14);
-        lines.push(`${epoch}${trainLoss}${valLoss}${map50}${map5095}${lr}`);
+        const epoch = this.padRight(String(m.epoch || '-'), 8);
+        const boxLoss = this.padRight(m.box_loss !== undefined ? m.box_loss.toFixed(4) : '-', 12);
+        const poseLoss = this.padRight(m.pose_loss !== undefined ? m.pose_loss.toFixed(4) : '-', 12);
+        const map50 = this.padRight(m.mAP50 !== undefined ? (m.mAP50 * 100).toFixed(2) + '%' : '-', 10);
+        const map5095 = this.padRight(m.mAP50_95 !== undefined ? (m.mAP50_95 * 100).toFixed(2) + '%' : '-', 10);
+        const lr = this.padRight(m.learning_rate !== undefined ? m.learning_rate.toExponential(4) : '-', 14);
+        lines.push(`${epoch}${boxLoss}${poseLoss}${map50}${map5095}${lr}`);
       });
       lines.push('');
+      
+      const latest = process.metrics[process.metrics.length - 1];
+      if (latest) {
+        lines.push('📈 最终指标摘要');
+        lines.push(subSeparator);
+        if (latest.mAP50 !== undefined) lines.push(`  Box mAP@50: ${(latest.mAP50 * 100).toFixed(2)}%`);
+        if (latest.mAP50_95 !== undefined) lines.push(`  Box mAP@50-95: ${(latest.mAP50_95 * 100).toFixed(2)}%`);
+        if (latest.pose_mAP50 !== undefined) lines.push(`  Pose mAP@50: ${(latest.pose_mAP50 * 100).toFixed(2)}%`);
+        if (latest.box_loss !== undefined) lines.push(`  最终 Box Loss: ${latest.box_loss.toFixed(4)}`);
+        if (latest.pose_loss !== undefined) lines.push(`  最终 Pose Loss: ${latest.pose_loss.toFixed(4)}`);
+        lines.push('');
+      }
     }
     
-    lines.push('训练日志');
-    lines.push('-'.repeat(40));
+    lines.push('📝 训练日志');
+    lines.push(subSeparator);
     
     const logs = this.readLogsFromFile(projectId, 10000);
     const allLogs = [...logs, ...process.logs];
-    const uniqueLogs = allLogs.filter((log, index, self) => 
-      index === self.findIndex(l => l.time === log.time && l.msg === log.msg)
-    ).sort((a, b) => (a.time || 0) - (b.time || 0));
+    const uniqueLogs = this.deduplicateLogs(allLogs);
     
-    uniqueLogs.forEach(log => {
-      const time = includeTimestamps 
-        ? `[${new Date(log.time || Date.now()).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}] `
-        : '';
-      const type = log.type ? `[${log.type.toUpperCase()}] ` : '';
-      const msg = typeof log.msg === 'object' ? JSON.stringify(log.msg) : (log.msg || String(log));
-      lines.push(`${time}${type}${msg}`);
-    });
+    const groupedLogs = this.groupLogsByType(uniqueLogs);
+    
+    if (groupedLogs.error && groupedLogs.error.length > 0) {
+      lines.push('');
+      lines.push('❌ 错误日志');
+      groupedLogs.error.forEach(log => {
+        const time = includeTimestamps 
+          ? `[${new Date(log.time || Date.now()).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}] `
+          : '';
+        const msg = this.cleanString(log.msg || String(log));
+        lines.push(`${time}${msg}`);
+      });
+    }
+    
+    if (groupedLogs.warning && groupedLogs.warning.length > 0) {
+      lines.push('');
+      lines.push('⚠️ 警告日志');
+      groupedLogs.warning.forEach(log => {
+        const time = includeTimestamps 
+          ? `[${new Date(log.time || Date.now()).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}] `
+          : '';
+        const msg = this.cleanString(log.msg || String(log));
+        lines.push(`${time}${msg}`);
+      });
+    }
+    
+    if (groupedLogs.system && groupedLogs.system.length > 0) {
+      lines.push('');
+      lines.push('🔧 系统日志');
+      groupedLogs.system.slice(-50).forEach(log => {
+        const time = includeTimestamps 
+          ? `[${new Date(log.time || Date.now()).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}] `
+          : '';
+        const msg = this.cleanString(log.msg || String(log));
+        lines.push(`${time}${msg}`);
+      });
+    }
+    
+    const normalLogs = (groupedLogs.info || []).concat(groupedLogs.stdout || []).slice(-100);
+    if (normalLogs.length > 0) {
+      lines.push('');
+      lines.push('📄 运行日志 (最近 100 条)');
+      normalLogs.forEach(log => {
+        const time = includeTimestamps 
+          ? `[${new Date(log.time || Date.now()).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}] `
+          : '';
+        const msg = this.cleanString(log.msg || String(log));
+        lines.push(`${time}${msg}`);
+      });
+    }
     
     lines.push('');
-    lines.push('='.repeat(80));
-    lines.push('报告结束');
-    lines.push('='.repeat(80));
+    lines.push(separator);
+    lines.push('                       报告结束');
+    lines.push(separator);
     
     return lines.join('\n');
   }
 
+  exportLogsAsJson(projectId, options = {}) {
+    const process = this.get(projectId);
+    const { includeMetrics = true, includeLogs = true } = options;
+    
+    const exportData = {
+      meta: {
+        projectId,
+        exportTime: new Date().toISOString(),
+        status: process.status,
+        startTime: process.startTime ? new Date(process.startTime).toISOString() : null,
+        endTime: process.endTime ? new Date(process.endTime).toISOString() : null,
+        duration: process.startTime && process.endTime 
+          ? Math.round((process.endTime - process.startTime) / 1000) 
+          : null
+      }
+    };
+    
+    if (includeMetrics) {
+      exportData.metrics = process.metrics.map(m => ({
+        epoch: m.epoch,
+        timestamp: m.time ? new Date(m.time).toISOString() : null,
+        losses: {
+          box: m.box_loss,
+          pose: m.pose_loss,
+          cls: m.cls_loss,
+          dfl: m.dfl_loss,
+          kobj: m.kobj_loss
+        },
+        performance: {
+          mAP50: m.mAP50,
+          mAP50_95: m.mAP50_95,
+          pose_mAP50: m.pose_mAP50,
+          pose_mAP50_95: m.pose_mAP50_95,
+          precision: m.box_precision || m.precision,
+          recall: m.box_recall || m.recall
+        },
+        gpu: {
+          memoryUsedGB: m.gpu_memory_used_gb,
+          memoryPercent: m.gpu_memory_percent,
+          utilization: m.gpu_utilization_percent,
+          temperature: m.gpu_temperature
+        },
+        learning: {
+          learningRate: m.learning_rate,
+          etaSeconds: m.eta_seconds
+        }
+      }));
+    }
+    
+    if (includeLogs) {
+      const logs = this.readLogsFromFile(projectId, 10000);
+      const allLogs = [...logs, ...process.logs];
+      const uniqueLogs = this.deduplicateLogs(allLogs);
+      
+      exportData.logs = uniqueLogs.map(log => ({
+        timestamp: log.time ? new Date(log.time).toISOString() : null,
+        type: log.type || 'info',
+        message: this.cleanString(log.msg || String(log))
+      }));
+    }
+    
+    return JSON.stringify(exportData, null, 2);
+  }
+
+  generateTrainingReport(projectId) {
+    const process = this.get(projectId);
+    const latest = process.metrics[process.metrics.length - 1] || {};
+    
+    const report = {
+      title: '训练报告',
+      generatedAt: new Date().toISOString(),
+      projectId,
+      status: process.status,
+      
+      summary: {
+        startTime: process.startTime ? new Date(process.startTime).toISOString() : null,
+        endTime: process.endTime ? new Date(process.endTime).toISOString() : null,
+        duration: process.startTime && process.endTime 
+          ? this.formatDuration(Math.round((process.endTime - process.startTime) / 1000))
+          : null,
+        totalEpochs: latest.totalEpochs || latest.epochs || null,
+        completedEpochs: latest.epoch || null
+      },
+      
+      finalMetrics: {
+        box: {
+          mAP50: latest.mAP50,
+          mAP50_95: latest.mAP50_95,
+          precision: latest.box_precision || latest.precision,
+          recall: latest.box_recall || latest.recall
+        },
+        pose: {
+          mAP50: latest.pose_mAP50,
+          mAP50_95: latest.pose_mAP50_95,
+          precision: latest.pose_precision,
+          recall: latest.pose_recall
+        },
+        losses: {
+          box: latest.box_loss,
+          pose: latest.pose_loss,
+          cls: latest.cls_loss,
+          dfl: latest.dfl_loss
+        }
+      },
+      
+      gpu: {
+        avgMemoryPercent: process.metrics.reduce((sum, m) => sum + (m.gpu_memory_percent || 0), 0) / process.metrics.length,
+        maxMemoryPercent: Math.max(...process.metrics.map(m => m.gpu_memory_percent || 0)),
+        avgUtilization: process.metrics.reduce((sum, m) => sum + (m.gpu_utilization_percent || 0), 0) / process.metrics.length
+      },
+      
+      errors: process.logs.filter(l => l.type === 'error').map(l => l.msg),
+      warnings: process.logs.filter(l => l.type === 'warning' || l.type === 'suggestion').map(l => l.msg)
+    };
+    
+    return report;
+  }
+
   saveLogsToFile(projectId, outputPath, options = {}) {
-    const content = this.exportLogsAsText(projectId, options);
+    const format = options.format || 'text';
+    
+    let content;
+    if (format === 'json') {
+      content = this.exportLogsAsJson(projectId, options);
+    } else if (format === 'report') {
+      content = JSON.stringify(this.generateTrainingReport(projectId), null, 2);
+    } else {
+      content = this.exportLogsAsText(projectId, options);
+    }
     
     try {
       const dir = path.dirname(outputPath);
@@ -401,7 +659,7 @@ ${'='.repeat(60)}\n`;
       fs.writeFileSync(outputPath, content, 'utf-8');
       
       logger.info(`Logs exported to: ${outputPath}`);
-      return { success: true, path: outputPath, size: content.length };
+      return { success: true, path: outputPath, size: content.length, format };
     } catch (err) {
       logger.error(`Failed to export logs: ${err.message}`);
       return { success: false, error: err.message };

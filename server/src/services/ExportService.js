@@ -4,7 +4,7 @@ const { imageSize: sizeOf } = require('image-size');
 const logger = require('../utils/logger');
 const SafeFileOp = require('./FileService');
 const PathUtils = require('../utils/PathUtils');
-const settings = require('../config/settings');
+const PathService = require('./PathService');
 
 class ExportService {
   constructor() {
@@ -12,41 +12,8 @@ class ExportService {
     this.SUPPORTED_EXTENSIONS = /\.(jpg|jpeg|png|gif|webp)$/i;
   }
 
-  getAllProjectPaths(projectsDir) {
-    const config = settings.load();
-    const paths = [projectsDir];
-    if (config.additionalProjectPaths && Array.isArray(config.additionalProjectPaths)) {
-      config.additionalProjectPaths.forEach(p => {
-        if (p && fs.existsSync(p) && !paths.includes(p)) {
-          paths.push(p);
-        }
-      });
-    }
-    return paths;
-  }
-
-  findProjectRoot(projectId, projectsDir) {
-    const allPaths = this.getAllProjectPaths(projectsDir);
-    for (const dir of allPaths) {
-      const root = path.join(dir, projectId);
-      if (fs.existsSync(root)) {
-        return root;
-      }
-    }
-    return path.join(projectsDir, projectId);
-  }
-
   getProjectPaths(projectId, projectsDir) {
-    const root = this.findProjectRoot(projectId, projectsDir);
-    return {
-      root,
-      uploads: path.join(root, 'uploads'),
-      annotations: path.join(root, 'annotations'),
-      dataset: path.join(root, 'dataset'),
-      runs: path.join(root, 'runs'),
-      imagesDir: path.join(root, 'dataset', 'images'),
-      labelsDir: path.join(root, 'dataset', 'labels')
-    };
+    return PathService.getProjectPaths(projectId, projectsDir);
   }
 
   async exportToYolo(projectId, projectsDir, options = {}) {
@@ -71,10 +38,7 @@ class ExportService {
       FLIP_IDX = Array.from({ length: FIXED_NUM_KEYPOINTS }, (_, i) => i);
     }
 
-    let exportDir = paths.dataset;
-    if (customPath && typeof customPath === 'string' && customPath.trim() !== '') {
-      exportDir = path.join(path.resolve(customPath.trim()), 'dataset');
-    }
+    let exportDir = PathService.resolveExportPath(customPath, projectsDir, projectId);
 
     const datasetRootPath = exportDir.replace(/\\/g, '/');
 
@@ -113,7 +77,7 @@ class ExportService {
     });
 
     const classNames = {};
-    const configPath = path.join(paths.root, 'config.json');
+    const configPath = PathService.getConfigPath(projectId, projectsDir);
     let projectConfig = { classMapping: {} };
     if (fs.existsSync(configPath)) {
       try {

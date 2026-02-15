@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState } from 'react';
 import {
-    Play, Square, RefreshCw, Database, CheckCircle, Layers, ArrowLeft, ChevronDown, ChevronRight,
+    Play, Square, RefreshCw, Database, CheckCircle, Layers, ArrowLeft,
     FolderOpen, FileText, AlertCircle, Download, ExternalLink
 } from 'lucide-react';
 import { useProject } from '../context/ProjectContext';
@@ -20,8 +20,6 @@ export const TrainingConfig = () => {
         metrics,
         stats,
         datasetInfo,
-        showAdvanced,
-        setShowAdvanced,
         handleStart: startTraining,
         handleStop: stopTraining,
         handleBrowseData,
@@ -500,55 +498,23 @@ export const TrainingConfig = () => {
                         envInfo={envInfo}
                     />
 
-                    {/* 高级设置折叠区域 */}
-                    <div
-                        onClick={() => setShowAdvanced(!showAdvanced)}
-                        style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px',
-                            padding: '1rem 1.25rem',
-                            background: 'rgba(255,255,255,0.03)',
-                            borderRadius: '14px',
-                            border: '1px solid rgba(255,255,255,0.06)',
-                            cursor: 'pointer',
-                            marginBottom: '0.5rem'
-                        }}
-                    >
-                        {showAdvanced ? (
-                            <ChevronDown size={18} style={{ color: 'var(--accent-primary)' }} />
-                        ) : (
-                            <ChevronRight size={18} style={{ color: 'var(--text-tertiary)' }} />
-                        )}
-                        <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                            高级配置
-                        </span>
-                        <span style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginLeft: 'auto' }}>
-                            {showAdvanced ? '点击收起' : '点击展开'}
-                        </span>
-                    </div>
+                    <HardwareForm
+                        config={config}
+                        updateConfig={updateConfig}
+                        status={status}
+                    />
 
-                    {showAdvanced && (
-                        <>
-                            <HardwareForm
-                                config={config}
-                                updateConfig={updateConfig}
-                                status={status}
-                            />
+                    <StrategyForm
+                        config={config}
+                        updateConfig={updateConfig}
+                        status={status}
+                    />
 
-                            <StrategyForm
-                                config={config}
-                                updateConfig={updateConfig}
-                                status={status}
-                            />
-
-                            <LossForm
-                                config={config}
-                                updateConfig={updateConfig}
-                                status={status}
-                            />
-                        </>
-                    )}
+                    <LossForm
+                        config={config}
+                        updateConfig={updateConfig}
+                        status={status}
+                    />
 
                     <AugmentationForm
                         config={config}

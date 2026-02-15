@@ -14,14 +14,17 @@ export const useTraining = (projectId) => {
         project: '',
         name: 'exp_3',
 
+        hardwareEnabled: false,
         workers: 0,
         cache_images: false,
+        
+        strategyEnabled: false,
         patience: 60,
         cos_lr: true,
         optimizer: 'auto',
         rect: true,
 
-        augmentationEnabled: true,
+        augmentationEnabled: false,
         degrees: 180,
         translate: 0.2,
         scale: 0.6,
@@ -39,6 +42,7 @@ export const useTraining = (projectId) => {
         erasing: 0.4,
         crop_fraction: 1.0,
 
+        lossEnabled: false,
         loss_pose: 25.0,
         loss_box: 7.5,
         loss_cls: 0.5,
@@ -60,7 +64,6 @@ export const useTraining = (projectId) => {
     const [metrics, setMetrics] = useState([]);
     const [stats, setStats] = useState(null);
     const [datasetInfo, setDatasetInfo] = useState(null);
-    const [showAdvanced, setShowAdvanced] = useState(false);
     const pollIntervalRef = useRef(null);
 
     const fetchEnvInfo = useCallback(async () => {
@@ -325,8 +328,6 @@ export const useTraining = (projectId) => {
         metrics,
         stats,
         datasetInfo,
-        showAdvanced,
-        setShowAdvanced,
         handleStart,
         handleStop,
         handleBrowseData,

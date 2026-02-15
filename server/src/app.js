@@ -7,8 +7,9 @@ const fs = require('fs');
 const logger = require('./utils/logger');
 const settings = require('./config/settings');
 const ProcessManager = require('./managers/ProcessManager');
-const { createTrainingRouter, createSettingsRouter, createUtilsRouter } = require('./controllers/TrainingController');
+const { createTrainingRouter, createUtilsRouter } = require('./controllers/TrainingController');
 const createProjectRouter = require('./controllers/ProjectController');
+const { createSettingsRouter, createEnvSettingsRouter } = require('./controllers/SettingsController');
 
 function createApp(PROJECTS_DIR) {
   const app = express();
@@ -48,6 +49,7 @@ function createApp(PROJECTS_DIR) {
   app.use('/api/projects', createProjectRouter(projectsDir));
   app.use('/api/projects', createTrainingRouter(projectsDir));
   app.use('/api/settings', createSettingsRouter());
+  app.use('/api/settings', createEnvSettingsRouter());
   app.use('/api/utils', createUtilsRouter(projectsDir));
 
   app.use((req, res, next) => {

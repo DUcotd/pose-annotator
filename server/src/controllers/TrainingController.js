@@ -380,14 +380,14 @@ function createTrainingRouter(projectsDir) {
     
     try {
       const paths = ExportService.getProjectPaths(projectId, projectsDir);
-      const logsDir = path.join(paths.root, 'runs', 'logs');
+      const logsDir = path.join(paths.root, 'runs', 'logs', 'reports');
       
       if (!fs.existsSync(logsDir)) {
         fs.mkdirSync(logsDir, { recursive: true });
       }
       
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-      const filename = `training_log_${timestamp}.txt`;
+      const filename = `training_report_${timestamp}.txt`;
       const outputPath = path.join(logsDir, filename);
       
       const saveResult = ProcessManager.saveLogsToFile(projectId, outputPath, options || {});
@@ -410,13 +410,15 @@ function createTrainingRouter(projectsDir) {
     
     try {
       const paths = ExportService.getProjectPaths(projectId, projectsDir);
-      const logsDir = path.join(paths.root, 'runs', 'logs');
+      const reportsDir = path.join(paths.root, 'runs', 'logs', 'reports');
       
       let targetPath = filePath;
       if (!targetPath) {
-        const files = fs.readdirSync(logsDir).filter(f => f.endsWith('.txt')).sort().reverse();
-        if (files.length > 0) {
-          targetPath = path.join(logsDir, files[0]);
+        if (fs.existsSync(reportsDir)) {
+          const files = fs.readdirSync(reportsDir).filter(f => f.endsWith('.txt')).sort().reverse();
+          if (files.length > 0) {
+            targetPath = path.join(reportsDir, files[0]);
+          }
         }
       }
       
@@ -452,90 +454,6 @@ function createTrainingRouter(projectsDir) {
     } catch (err) {
       logger.error(`Failed to open logs folder: ${err.message}`);
       res.status(500).json({ error: '打开文件夹失败', details: err.message });
-    }
-  });
-
-  return router;
-}
-
-function createSettingsRouter() {
-  const router = express.Router();
-
-  router.get('/', (req, res) => {
-    const config = settings.load();
-    res.json(config);
-  });
-
-  router.post('/', (req, res) => {
-    const { pythonPath, projectsDir } = req.body;
-    const updates = {};
-    if (pythonPath !== undefined) updates.pythonPath = pythonPath;
-    if (projectsDir !== undefined) updates.projectsDir = projectsDir;
-    
-    if (settings.save(updates)) {
-      res.json({ success: true, message: 'Settings saved', ...updates });
-    } else {
-      res.status(500).json({ success: false, error: 'Failed to save settings' });
-    }
-  });
-
-  router.get('/projects-dir', (req, res) => {
-    const projectsDir = settings.getProjectsDir();
-    const defaultName = settings.getDefaultProjectsDirName();
-    res.json({ 
-      projectsDir, 
-      defaultProjectsDirName: defaultName,
-      hasCustomDir: !!projectsDir 
-    });
-  });
-
-  router.post('/projects-dir', (req, res) => {
-    const { projectsDir } = req.body;
-    
-    if (projectsDir && !fs.existsSync(projectsDir)) {
-      return res.status(400).json({ 
-        success: false, 
-        error: '指定的目录不存在' 
-      });
-    }
-    
-    if (settings.setProjectsDir(projectsDir || null)) {
-      res.json({ 
-        success: true, 
-        message: projectsDir ? '项目目录已更新，重启应用后生效' : '已恢复默认项目目录，重启应用后生效',
-        projectsDir 
-      });
-    } else {
-      res.status(500).json({ success: false, error: '保存设置失败' });
-    }
-  });
-
-  router.post('/validate-python', async (req, res) => {
-    const { pythonPath } = req.body;
-    const PythonEnvService = require('../services/PythonEnvService');
-    const result = await PythonEnvService.validatePython(pythonPath);
-    res.json(result);
-  });
-
-  router.get('/scan-envs', async (req, res) => {
-    const PythonEnvService = require('../services/PythonEnvService');
-    try {
-      const results = await PythonEnvService.scanAll();
-      res.json(results);
-    } catch (err) {
-      logger.error('Failed to scan Python environments:', err);
-      res.status(500).json({ error: 'Failed to scan environments' });
-    }
-  });
-
-  router.get('/check-env', async (req, res) => {
-    const PythonEnvService = require('../services/PythonEnvService');
-    try {
-      const result = await PythonEnvService.checkEnv();
-      res.json(result);
-    } catch (err) {
-      logger.error('Failed to check environment:', err);
-      res.status(500).json({ error: 'Failed to check environment' });
     }
   });
 
@@ -754,8 +672,142 @@ function createUtilsRouter(projectsDir) {
   return router;
 }
 
+function createSettingsRouter() {
+  const router = express.Router();
+
+  router.get('/', (req, res) => {
+    const config = settings.load();
+    res.json(config);
+  });
+
+  router.post('/', (req, res) => {
+    const { pythonPath, projectsDir } = req.body;
+    const updates = {};
+    if (pythonPath !== undefined) updates.pythonPath = pythonPath;
+    if (projectsDir !== undefined) updates.projectsDir = projectsDir;
+    
+    if (settings.save(updates)) {
+      res.json({ success: true, message: 'Settings saved', ...updates });
+    } else {
+      res.status(500).json({ success: false, error: 'Failed to save settings' });
+    }
+  });
+
+  router.get('/projects-dir', (req, res) => {
+    const projectsDir = settings.getProjectsDir();
+    const defaultName = settings.getDefaultProjectsDirName();
+    res.json({ 
+      projectsDir, 
+      defaultProjectsDirName: defaultName,
+      hasCustomDir: !!projectsDir 
+    });
+  });
+
+  router.post('/projects-dir', (req, res) => {
+    const { projectsDir } = req.body;
+    
+    if (projectsDir && !fs.existsSync(projectsDir)) {
+      return res.status(400).json({ 
+        success: false, 
+        error: '指定的目录不存在' 
+      });
+    }
+    
+    if (settings.setProjectsDir(projectsDir || null)) {
+      res.json({ 
+        success: true, 
+        message: projectsDir ? '项目目录已更新，重启应用后生效' : '已恢复默认项目目录，重启应用后生效',
+        projectsDir 
+      });
+    } else {
+      res.status(500).json({ success: false, error: '保存设置失败' });
+    }
+  });
+
+  router.post('/validate-python', async (req, res) => {
+    const { pythonPath } = req.body;
+    const PythonEnvService = require('../services/PythonEnvService');
+    const result = await PythonEnvService.validatePython(pythonPath);
+    res.json(result);
+  });
+
+  router.get('/scan-envs', async (req, res) => {
+    const PythonEnvService = require('../services/PythonEnvService');
+    try {
+      const results = await PythonEnvService.scanAll();
+      res.json(results);
+    } catch (err) {
+      logger.error('Failed to scan Python environments:', err);
+      res.status(500).json({ error: 'Failed to scan environments' });
+    }
+  });
+
+  router.get('/check-env', async (req, res) => {
+    const PythonEnvService = require('../services/PythonEnvService');
+    try {
+      const result = await PythonEnvService.checkEnv();
+      res.json(result);
+    } catch (err) {
+      logger.error('Failed to check environment:', err);
+      res.status(500).json({ error: 'Failed to check environment' });
+    }
+  });
+
+  router.get('/envs', async (req, res) => {
+    const PythonEnvService = require('../services/PythonEnvService');
+    try {
+      const envs = await PythonEnvService.scanAll();
+      res.json({ envs });
+    } catch (err) {
+      logger.error('Failed to get environments:', err);
+      res.status(500).json({ error: 'Failed to get environments' });
+    }
+  });
+
+  router.get('/envs/compatibility', (req, res) => {
+    const PythonEnvService = require('../services/PythonEnvService');
+    try {
+      const matrix = PythonEnvService.getCompatibilityMatrix();
+      res.json(matrix);
+    } catch (err) {
+      logger.error('Failed to get compatibility matrix:', err);
+      res.status(500).json({ error: 'Failed to get compatibility matrix' });
+    }
+  });
+
+  router.get('/envs/detect-cuda', async (req, res) => {
+    const PythonEnvService = require('../services/PythonEnvService');
+    try {
+      const result = await PythonEnvService.detectCuda();
+      res.json(result);
+    } catch (err) {
+      logger.error('Failed to detect CUDA:', err);
+      res.status(500).json({ error: 'Failed to detect CUDA' });
+    }
+  });
+
+  router.post('/envs/create', async (req, res) => {
+    const PythonEnvService = require('../services/PythonEnvService');
+    const { name, pythonVersion, cudaVersion } = req.body;
+    
+    if (!name || !name.trim()) {
+      return res.status(400).json({ success: false, error: '环境名称不能为空' });
+    }
+
+    try {
+      const result = await PythonEnvService.createEnv({ name, pythonVersion, cudaVersion });
+      res.json(result);
+    } catch (err) {
+      logger.error('Failed to create environment:', err);
+      res.status(500).json({ success: false, error: err.message || 'Failed to create environment' });
+    }
+  });
+
+  return router;
+}
+
 module.exports = {
   createTrainingRouter,
-  createSettingsRouter,
-  createUtilsRouter
+  createUtilsRouter,
+  createSettingsRouter
 };

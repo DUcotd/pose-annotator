@@ -65,7 +65,13 @@ export const ImportCollaborationModal = ({ isOpen, onClose, onImport }) => {
 
         setIsImporting(true);
         try {
-            await onImport(zipPath, useCustomPath ? customPath : null);
+            let targetPath = null;
+            if (useCustomPath) {
+                targetPath = customPath;
+            } else if (defaultPath && defaultPath !== '使用默认位置') {
+                targetPath = defaultPath;
+            }
+            await onImport(zipPath, targetPath);
             onClose();
         } finally {
             setIsImporting(false);

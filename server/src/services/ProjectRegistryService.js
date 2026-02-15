@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const logger = require('../utils/logger');
-const settings = require('../config/settings');
+const PathService = require('./PathService');
 
 class ProjectRegistryService {
   constructor() {
@@ -10,7 +10,7 @@ class ProjectRegistryService {
   }
 
   init(projectsDir) {
-    this.registryPath = path.join(path.dirname(projectsDir), 'project-registry.json');
+    this.registryPath = PathService.getRegistryPath(projectsDir);
     this.load();
   }
 
@@ -129,15 +129,7 @@ class ProjectRegistryService {
   syncWithFilesystem(projectsDir) {
     if (!this.registry) this.load();
 
-    const config = settings.load();
-    const allPaths = [projectsDir];
-    if (config.additionalProjectPaths && Array.isArray(config.additionalProjectPaths)) {
-      config.additionalProjectPaths.forEach(p => {
-        if (p && fs.existsSync(p) && !allPaths.includes(p)) {
-          allPaths.push(p);
-        }
-      });
-    }
+    const allPaths = PathService.getAllProjectPaths(projectsDir);
 
     const filesystemProjects = new Map();
     allPaths.forEach(dir => {

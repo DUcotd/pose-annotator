@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const logger = require('../utils/logger');
+const EventEmitter = require('events');
 
 const JOB_STATUS = {
   PENDING: 'pending',
@@ -10,12 +11,12 @@ const JOB_STATUS = {
   CANCELLED: 'cancelled'
 };
 
-class JobQueue {
+class JobQueue extends EventEmitter {
   constructor(storagePath = null) {
+    super();
     this.jobs = new Map();
     this.storagePath = storagePath || path.join(__dirname, '..', '..', 'data', 'job_queue.json');
     this.currentJobId = null;
-    this.listeners = new Set();
     
     this.loadFromDisk();
   }
@@ -244,26 +245,6 @@ class JobQueue {
       failed: jobs.filter(j => j.status === JOB_STATUS.FAILED).length,
       currentJobId: this.currentJobId
     };
-  }
-
-  on(event, callback) {
-    this.listeners.add({ event, callback });
-  }
-
-  off(event, callback) {
-    this.listeners.delete({ event, callback });
-  }
-
-  emit(event, data) {
-    for (const listener of this.listeners) {
-      if (listener.event === event) {
-        try {
-          listener.callback(data);
-        } catch (err) {
-          logger.error('Error in queue listener:', err);
-        }
-      }
-    }
   }
 }
 

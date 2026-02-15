@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { ChevronDown, ChevronRight } from 'lucide-react';
 
 export const StatBadge = ({ icon: Icon, label, value, color, gradient }) => (
     <div style={{
@@ -67,31 +68,83 @@ export const ProgressRing = ({ progress, size = 120, strokeWidth = 10 }) => {
     );
 };
 
-export const SectionCard = ({ icon: Icon, title, color, gradient, children }) => (
-    <div style={{
-        background: 'rgba(255,255,255,0.02)',
-        backdropFilter: 'blur(16px)',
-        border: '1px solid rgba(255,255,255,0.06)',
-        borderRadius: '24px',
-        padding: '1.75rem'
-    }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '1.5rem' }}>
-            <div style={{
-                background: gradient || `rgba(${color}, 0.12)`,
-                color: `rgb(${color})`,
-                padding: '12px',
-                borderRadius: '14px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center'
-            }}>
-                <Icon size={22} />
+export const SectionCard = ({ icon: Icon, title, color, gradient, children, collapsible = false, defaultCollapsed = false, statusSummary = null }) => {
+    const [isCollapsed, setIsCollapsed] = useState(defaultCollapsed);
+    
+    const handleToggle = () => {
+        if (collapsible) {
+            setIsCollapsed(!isCollapsed);
+        }
+    };
+    
+    return (
+        <div style={{
+            background: 'rgba(255,255,255,0.02)',
+            backdropFilter: 'blur(16px)',
+            border: '1px solid rgba(255,255,255,0.06)',
+            borderRadius: '24px',
+            padding: '1.75rem',
+            transition: 'all 0.3s ease'
+        }}>
+            <div 
+                style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: '14px', 
+                    marginBottom: isCollapsed ? 0 : '1.5rem',
+                    cursor: collapsible ? 'pointer' : 'default'
+                }}
+                onClick={handleToggle}
+            >
+                {collapsible && (
+                    <div style={{ 
+                        color: 'var(--text-tertiary)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        transition: 'transform 0.2s ease'
+                    }}>
+                        {isCollapsed ? (
+                            <ChevronRight size={18} />
+                        ) : (
+                            <ChevronDown size={18} />
+                        )}
+                    </div>
+                )}
+                <div style={{
+                    background: gradient || `rgba(${color}, 0.12)`,
+                    color: `rgb(${color})`,
+                    padding: '12px',
+                    borderRadius: '14px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                }}>
+                    <Icon size={22} />
+                </div>
+                <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 700, color: 'var(--text-primary)', flex: 1 }}>{title}</h3>
+                {isCollapsed && statusSummary && (
+                    <span style={{ 
+                        fontSize: '12px', 
+                        color: 'var(--text-tertiary)',
+                        background: 'rgba(255,255,255,0.05)',
+                        padding: '4px 10px',
+                        borderRadius: '8px'
+                    }}>
+                        {statusSummary}
+                    </span>
+                )}
             </div>
-            <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 700, color: 'var(--text-primary)' }}>{title}</h3>
+            <div style={{
+                maxHeight: isCollapsed ? 0 : '2000px',
+                overflow: 'hidden',
+                transition: 'max-height 0.3s ease, opacity 0.3s ease',
+                opacity: isCollapsed ? 0 : 1
+            }}>
+                {children}
+            </div>
         </div>
-        {children}
-    </div>
-);
+    );
+};
 
 export const Toggle = ({ checked, onChange, label, desc, disabled = false }) => (
     <label style={{

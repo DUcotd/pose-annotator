@@ -715,12 +715,20 @@ export function AnnotationEditor({ image, projectId, onBack }) {
         }
     };
 
+    const handleBackClick = async () => {
+        if (annotations.length > 0) {
+            setSaveStatus('saving');
+            await saveAnnotations(annotations);
+        }
+        onBack();
+    };
+
     return (
         <div className="editor-container">
             {/* Top Toolbar */}
             <header className="editor-header">
                 <div className="editor-header-left">
-                    <button onClick={onBack} className="btn-secondary" style={{ padding: '8px 12px' }}>
+                    <button onClick={handleBackClick} className="btn-secondary" style={{ padding: '8px 12px' }}>
                         <ArrowLeft size={16} /> 返回
                     </button>
                     <div className="divider"></div>

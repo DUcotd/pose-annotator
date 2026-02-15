@@ -5,10 +5,10 @@ const multer = require('multer');
 const sharp = require('sharp');
 const archiver = require('archiver');
 const AdmZip = require('adm-zip');
-const { imageSize } = require('image-size');
 const logger = require('../utils/logger');
 const SafeFileOp = require('../services/FileService');
 const settings = require('../config/settings');
+const PathService = require('../services/PathService');
 const projectRegistry = require('../services/ProjectRegistryService');
 const projectValidator = require('../utils/ProjectValidator');
 const { extractZipAsync } = require('../utils/zipUtils');
@@ -18,76 +18,6 @@ function createProjectRouter(projectsDir) {
 
   projectRegistry.init(projectsDir);
 
-  const getAllProjectPaths = () => {
-    const config = settings.load();
-    const paths = [projectsDir];
-    if (config.additionalProjectPaths && Array.isArray(config.additionalProjectPaths)) {
-      config.additionalProjectPaths.forEach(p => {
-        if (p && fs.existsSync(p) && !paths.includes(p)) {
-          paths.push(p);
-        }
-      });
-    }
-    return paths;
-  };
-
-  const findProjectRoot = (projectId) => {
-    const allPaths = getAllProjectPaths();
-    for (const dir of allPaths) {
-      const root = path.join(dir, projectId);
-      if (fs.existsSync(root)) {
-        return root;
-      }
-    }
-    return path.join(projectsDir, projectId);
-  };
-
-  const getProjectPaths = (projectId) => {
-    const root = findProjectRoot(projectId);
-    return {
-      root,
-      uploads: path.join(root, 'uploads'),
-      annotations: path.join(root, 'annotations'),
-      thumbnails: path.join(root, 'thumbnails'),
-      dataset: path.join(root, 'dataset')
-    };
-  };
-
-  const ensureProjectDirs = (projectId, targetDir = null) => {
-    const root = targetDir ? path.join(targetDir, projectId) : findProjectRoot(projectId);
-    const paths = {
-      root,
-      uploads: path.join(root, 'uploads'),
-      annotations: path.join(root, 'annotations'),
-      thumbnails: path.join(root, 'thumbnails'),
-      dataset: path.join(root, 'dataset')
-    };
-    SafeFileOp.ensureDir(paths.root);
-    SafeFileOp.ensureDir(paths.uploads);
-    SafeFileOp.ensureDir(paths.annotations);
-    SafeFileOp.ensureDir(paths.thumbnails);
-    return paths;
-  };
-
-  const getNextFileIndex = (uploadsDir) => {
-    if (!fs.existsSync(uploadsDir)) return 0;
-    try {
-      const files = fs.readdirSync(uploadsDir);
-      let maxIndex = -1;
-      files.forEach(f => {
-        const match = f.match(/^(\d{6})\./);
-        if (match) {
-          const idx = parseInt(match[1], 10);
-          if (idx > maxIndex) maxIndex = idx;
-        }
-      });
-      return maxIndex + 1;
-    } catch (e) {
-      logger.error('Failed to get next file index:', e);
-      return 0;
-    }
-  };
-
   const storage = multer.diskStorage({
     destination: (req, file, cb) => {
       const projectId = req.params.projectId;
@@ -96,7 +26,8 @@ function createProjectRouter(projectsDir) {
         SafeFileOp.ensureDir(tempDir);
         return cb(null, tempDir);
       }
-      const paths = ensureProjectDirs(projectId);
+      const paths = PathService.getProjectPaths(projectId, projectsDir);
+      SafeFileOp.ensureDir(paths.uploads);
       cb(null, paths.uploads);
     },
     filename: (req, file, cb) => {
@@ -108,7 +39,7 @@ function createProjectRouter(projectsDir) {
 
   router.get('/', (req, res) => {
     try {
-      const allPaths = getAllProjectPaths();
+      const allPaths = PathService.getAllProjectPaths(projectsDir);
       const projectMap = new Map();
       let skippedCount = 0;
 
@@ -146,11 +77,7 @@ function createProjectRouter(projectsDir) {
       }
 
       const projectList = Array.from(projectMap.entries()).map(([p, root]) => {
-        const paths = {
-          root,
-          uploads: path.join(root, 'uploads'),
-          annotations: path.join(root, 'annotations')
-        };
+        const paths = PathService.getProjectPaths(p, projectsDir);
         let imageCount = 0;
         let annotatedCount = 0;
         try {
@@ -186,19 +113,19 @@ function createProjectRouter(projectsDir) {
     }
   });
 
-  router.post('/', (req, res) => {
+  router.post('/', async (req, res) => {
     const { name, customPath } = req.body;
     if (!name) return res.status(400).json({ error: 'Project name required' });
 
-    const safeName = name.trim().replace(/[<>:"/\\|?*\x00-\x1F]/g, '_');
+    const safeName = PathService.sanitizeProjectName(name);
     
     let targetDir = projectsDir;
     if (customPath) {
+      targetDir = PathService.resolveCustomProjectPath(customPath, projectsDir);
       try {
-        if (!fs.existsSync(customPath)) {
-          fs.mkdirSync(customPath, { recursive: true });
+        if (!fs.existsSync(targetDir)) {
+          fs.mkdirSync(targetDir, { recursive: true });
         }
-        targetDir = customPath;
       } catch (e) {
         return res.status(400).json({ error: `无法创建目录: ${e.message}` });
       }
@@ -209,38 +136,26 @@ function createProjectRouter(projectsDir) {
       return res.status(400).json({ error: '该项目名称已存在' });
     }
 
-    const paths = {
-      root: projectRoot,
-      uploads: path.join(projectRoot, 'uploads'),
-      annotations: path.join(projectRoot, 'annotations'),
-      thumbnails: path.join(projectRoot, 'thumbnails'),
-      dataset: path.join(projectRoot, 'dataset')
-    };
+    try {
+      const paths = await PathService.ensureProjectDirs(safeName, projectsDir, targetDir);
 
-    SafeFileOp.ensureDir(paths.root);
-    SafeFileOp.ensureDir(paths.uploads);
-    SafeFileOp.ensureDir(paths.annotations);
-    SafeFileOp.ensureDir(paths.thumbnails);
+      projectRegistry.registerProject(safeName, projectRoot, { name });
 
-    projectRegistry.registerProject(safeName, projectRoot, { name });
-
-    if (customPath && customPath !== projectsDir) {
-      const config = settings.load();
-      const additionalPaths = config.additionalProjectPaths || [];
-      if (!additionalPaths.includes(customPath)) {
-        additionalPaths.push(customPath);
-        settings.save({ additionalProjectPaths: additionalPaths });
+      if (customPath && customPath !== projectsDir) {
+        PathService.addToAdditionalPaths(customPath);
       }
-    }
 
-    logger.info(`Project created: ${safeName} at ${targetDir}`);
-    res.json({ message: 'Project created', id: safeName, path: projectRoot });
+      logger.info(`Project created: ${safeName} at ${targetDir}`);
+      res.json({ message: 'Project created', id: safeName, path: projectRoot });
+    } catch (e) {
+      logger.error('Failed to create project:', e);
+      res.status(500).json({ error: `创建项目失败: ${e.message}` });
+    }
   });
 
   router.get('/:projectId/config', (req, res) => {
     const { projectId } = req.params;
-    const paths = getProjectPaths(projectId);
-    const configPath = path.join(paths.root, 'config.json');
+    const configPath = PathService.getConfigPath(projectId, projectsDir);
 
     if (fs.existsSync(configPath)) {
       try {
@@ -254,11 +169,11 @@ function createProjectRouter(projectsDir) {
     }
   });
 
-  router.post('/:projectId/config', (req, res) => {
+  router.post('/:projectId/config', async (req, res) => {
     const { projectId } = req.params;
     const config = req.body;
-    const paths = ensureProjectDirs(projectId);
-    const configPath = path.join(paths.root, 'config.json');
+    await PathService.ensureProjectDirs(projectId, projectsDir);
+    const configPath = PathService.getConfigPath(projectId, projectsDir);
 
     try {
       fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
@@ -273,7 +188,7 @@ function createProjectRouter(projectsDir) {
     
     logger.info(`[Delete] Attempting to delete project: ${projectId}`);
     
-    const paths = getProjectPaths(projectId);
+    const paths = PathService.getProjectPaths(projectId, projectsDir);
     logger.info(`[Delete] Project path: ${paths.root}`);
 
     if (!fs.existsSync(paths.root)) {
@@ -324,7 +239,7 @@ function createProjectRouter(projectsDir) {
 
   router.get('/:projectId/uploads/:filename', (req, res) => {
     const { projectId, filename } = req.params;
-    const paths = getProjectPaths(projectId);
+    const paths = PathService.getProjectPaths(projectId, projectsDir);
     const projectPath = path.join(paths.uploads, filename);
     if (fs.existsSync(projectPath)) {
       res.sendFile(projectPath);
@@ -335,7 +250,7 @@ function createProjectRouter(projectsDir) {
 
   router.get('/:projectId/thumbnails/:filename', async (req, res) => {
     const { projectId, filename } = req.params;
-    const paths = ensureProjectDirs(projectId);
+    const paths = await PathService.ensureProjectDirs(projectId, projectsDir);
     const originalPath = path.join(paths.uploads, filename);
     const thumbPath = path.join(paths.thumbnails, filename);
 
@@ -362,11 +277,11 @@ function createProjectRouter(projectsDir) {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
     const { projectId } = req.params;
-    const paths = getProjectPaths(projectId);
+    const paths = PathService.getProjectPaths(projectId, projectsDir);
 
     try {
       const ext = path.extname(req.file.originalname) || '.jpg';
-      const nextIdx = getNextFileIndex(paths.uploads);
+      const nextIdx = PathService.getNextFileIndex(paths.uploads);
       const newFilename = String(nextIdx).padStart(6, '0') + ext;
       const targetPath = path.join(paths.uploads, newFilename);
 
@@ -379,9 +294,9 @@ function createProjectRouter(projectsDir) {
     }
   });
 
-  router.get('/:projectId/images', (req, res) => {
+  router.get('/:projectId/images', async (req, res) => {
     const { projectId } = req.params;
-    const paths = ensureProjectDirs(projectId);
+    const paths = await PathService.ensureProjectDirs(projectId, projectsDir);
 
     fs.readdir(paths.uploads, (err, files) => {
       if (err) return res.status(500).json({ error: 'Unable to scan directory' });
@@ -412,7 +327,7 @@ function createProjectRouter(projectsDir) {
 
   router.get('/:projectId/annotations/:imageId', (req, res) => {
     const { projectId, imageId } = req.params;
-    const paths = getProjectPaths(projectId);
+    const paths = PathService.getProjectPaths(projectId, projectsDir);
     const annotationPath = path.join(paths.annotations, `${imageId}.json`);
 
     if (fs.existsSync(annotationPath)) {
@@ -423,23 +338,27 @@ function createProjectRouter(projectsDir) {
     }
   });
 
-  router.post('/:projectId/annotations/:imageId', (req, res) => {
+  router.post('/:projectId/annotations/:imageId', async (req, res) => {
     const { projectId, imageId } = req.params;
-    const paths = ensureProjectDirs(projectId);
+    await PathService.ensureProjectDirs(projectId, projectsDir);
+    const paths = PathService.getProjectPaths(projectId, projectsDir);
     const annotations = req.body;
     const annotationPath = path.join(paths.annotations, `${imageId}.json`);
 
-    fs.writeFile(annotationPath, JSON.stringify(annotations, null, 2), (err) => {
-      if (err) return res.status(500).json({ error: 'Failed to save annotations' });
+    try {
+      await fs.promises.writeFile(annotationPath, JSON.stringify(annotations, null, 2));
       res.json({ message: 'Annotations saved successfully' });
-    });
+    } catch (err) {
+      logger.error(`Failed to save annotations for ${imageId}:`, err);
+      res.status(500).json({ error: 'Failed to save annotations' });
+    }
   });
 
   router.delete('/:projectId/images/:imageId', async (req, res) => {
     const { projectId, imageId } = req.params;
     logger.info(`[DeleteImage] Attempting to delete image: ${imageId} from project: ${projectId}`);
     
-    const paths = getProjectPaths(projectId);
+    const paths = PathService.getProjectPaths(projectId, projectsDir);
     const imagePath = path.join(paths.uploads, imageId);
     const annotationPath = path.join(paths.annotations, `${imageId}.json`);
     const thumbnailPath = path.join(paths.thumbnails, imageId);
@@ -473,10 +392,45 @@ function createProjectRouter(projectsDir) {
         ? fs.readdirSync(paths.uploads).filter(f => /\.(jpg|jpeg|png|gif|webp)$/i.test(f))
         : [];
       
-      logger.info(`[DeleteImage] Image deleted successfully. Remaining images: ${remainingFiles.length}`);
+      remainingFiles.sort();
+      
+      const renamePromises = [];
+      for (let i = 0; i < remainingFiles.length; i++) {
+        const oldName = remainingFiles[i];
+        const ext = path.extname(oldName);
+        const newName = `${String(i + 1).padStart(6, '0')}${ext}`;
+        
+        if (oldName !== newName) {
+          const oldImagePath = path.join(paths.uploads, oldName);
+          const newImagePath = path.join(paths.uploads, newName);
+          const oldAnnotationPath = path.join(paths.annotations, `${path.basename(oldName, ext)}.json`);
+          const newAnnotationPath = path.join(paths.annotations, `${path.basename(newName, ext)}.json`);
+          const oldThumbnailPath = path.join(paths.thumbnails, oldName);
+          const newThumbnailPath = path.join(paths.thumbnails, newName);
+          
+          renamePromises.push((async () => {
+            if (fs.existsSync(oldImagePath)) {
+              await fs.promises.rename(oldImagePath, newImagePath);
+              logger.info(`[DeleteImage] Renamed image: ${oldName} -> ${newName}`);
+            }
+            if (fs.existsSync(oldAnnotationPath)) {
+              await fs.promises.rename(oldAnnotationPath, newAnnotationPath);
+              logger.info(`[DeleteImage] Renamed annotation: ${path.basename(oldName, ext)}.json -> ${path.basename(newName, ext)}.json`);
+            }
+            if (fs.existsSync(oldThumbnailPath)) {
+              await fs.promises.rename(oldThumbnailPath, newThumbnailPath);
+              logger.info(`[DeleteImage] Renamed thumbnail: ${oldName} -> ${newName}`);
+            }
+          })());
+        }
+      }
+      
+      await Promise.all(renamePromises);
+      
+      logger.info(`[DeleteImage] Image deleted and renumbered. Remaining images: ${remainingFiles.length}`);
       
       res.json({ 
-        message: '图片已删除',
+        message: '图片已删除并重新编号',
         remainingCount: remainingFiles.length
       });
     } catch (err) {
@@ -487,7 +441,7 @@ function createProjectRouter(projectsDir) {
 
   router.get('/:projectId/dataset/stats', (req, res) => {
     const { projectId } = req.params;
-    const paths = getProjectPaths(projectId);
+    const paths = PathService.getProjectPaths(projectId, projectsDir);
 
     if (!fs.existsSync(paths.uploads)) {
       return res.json({ total: 0, annotated: 0, unannotated: 0, samples: [] });
@@ -546,8 +500,8 @@ function createProjectRouter(projectsDir) {
       return res.status(400).json({ error: '请提供要导入的图片列表' });
     }
 
-    const paths = getProjectPaths(projectId);
-    SafeFileOp.ensureDir(paths.uploads);
+    const paths = PathService.getProjectPaths(projectId, projectsDir);
+    await SafeFileOp.ensureDir(paths.uploads);
     const existingFiles = new Set(fs.readdirSync(paths.uploads));
 
     const results = { success: [], failed: [], skipped: [], duplicates: [] };
@@ -562,7 +516,7 @@ function createProjectRouter(projectsDir) {
       details: []
     };
 
-    let nextIdx = getNextFileIndex(paths.uploads);
+    let nextIdx = PathService.getNextFileIndex(paths.uploads);
 
     for (const imageInfo of images) {
       const { path: sourcePath, name: originalName } = imageInfo;
@@ -598,7 +552,7 @@ function createProjectRouter(projectsDir) {
     importRecord.successCount = results.success.length;
     importRecord.failedCount = results.failed.length;
 
-    const historyPath = path.join(paths.root, 'import-history.json');
+    const historyPath = PathService.getImportHistoryPath(projectId, projectsDir);
     let history = [];
     if (fs.existsSync(historyPath)) {
       try {
@@ -623,8 +577,7 @@ function createProjectRouter(projectsDir) {
 
   router.get('/:projectId/import-history', (req, res) => {
     const { projectId } = req.params;
-    const paths = getProjectPaths(projectId);
-    const historyPath = path.join(paths.root, 'import-history.json');
+    const historyPath = PathService.getImportHistoryPath(projectId, projectsDir);
 
     if (!fs.existsSync(historyPath)) {
       return res.json({ history: [] });
@@ -640,7 +593,7 @@ function createProjectRouter(projectsDir) {
 
   const createCollaborationArchive = (projectId, outputStream) => {
     return new Promise((resolve, reject) => {
-      const paths = getProjectPaths(projectId);
+      const paths = PathService.getProjectPaths(projectId, projectsDir);
       if (!fs.existsSync(paths.root)) {
         return reject(new Error('Project not found'));
       }
@@ -723,11 +676,11 @@ function createProjectRouter(projectsDir) {
 
     let targetDir = projectsDir;
     if (customPath) {
+      targetDir = PathService.resolveCustomProjectPath(customPath, projectsDir);
       try {
-        if (!fs.existsSync(customPath)) {
-          fs.mkdirSync(customPath, { recursive: true });
+        if (!fs.existsSync(targetDir)) {
+          fs.mkdirSync(targetDir, { recursive: true });
         }
-        targetDir = customPath;
       } catch (e) {
         return res.status(400).json({ error: `无法创建目录: ${e.message}` });
       }
@@ -737,11 +690,11 @@ function createProjectRouter(projectsDir) {
       const zip = new AdmZip(filePath);
       let projectName = req.body.name || path.basename(filePath, path.extname(filePath)).replace('_collaboration', '');
 
-      projectName = projectName.trim().replace(/[<>:"/\\|?*\x00-\x1F]/g, '_');
+      projectName = PathService.sanitizeProjectName(projectName);
 
       let finalProjectName = projectName;
       let counter = 1;
-      const allPaths = getAllProjectPaths();
+      const allPaths = PathService.getAllProjectPaths(projectsDir);
       const projectExists = (name) => {
         for (const dir of allPaths) {
           if (fs.existsSync(path.join(dir, name))) {
@@ -757,29 +710,14 @@ function createProjectRouter(projectsDir) {
       logger.info(`Extracting project to: ${finalProjectName} at ${targetDir}`);
       
       const projectRoot = path.join(targetDir, finalProjectName);
-      const paths = {
-        root: projectRoot,
-        uploads: path.join(projectRoot, 'uploads'),
-        annotations: path.join(projectRoot, 'annotations'),
-        thumbnails: path.join(projectRoot, 'thumbnails')
-      };
-      
-      SafeFileOp.ensureDir(paths.root);
-      SafeFileOp.ensureDir(paths.uploads);
-      SafeFileOp.ensureDir(paths.annotations);
-      SafeFileOp.ensureDir(paths.thumbnails);
+      await PathService.ensureProjectDirs(finalProjectName, projectsDir, targetDir);
 
-      await extractZipAsync(filePath, paths.root, true);
+      await extractZipAsync(filePath, projectRoot, true);
 
       projectRegistry.registerProject(finalProjectName, projectRoot);
 
       if (customPath && customPath !== projectsDir) {
-        const config = settings.load();
-        const additionalPaths = config.additionalProjectPaths || [];
-        if (!additionalPaths.includes(customPath)) {
-          additionalPaths.push(customPath);
-          settings.save({ additionalProjectPaths: additionalPaths });
-        }
+        PathService.addToAdditionalPaths(customPath);
       }
 
       if (req.file && fs.existsSync(req.file.path)) {

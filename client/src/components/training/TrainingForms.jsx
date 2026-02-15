@@ -416,10 +416,26 @@ export const TrainingForm = ({ config, updateConfig, status, onBrowseData, envIn
 
 export const HardwareForm = ({ config, updateConfig, status }) => {
     const isRunning = status === 'running' || status === 'starting';
+    const isEnabled = config.hardwareEnabled !== false;
     
     return (
-        <SectionCard icon={Server} title="硬件与性能" color="168,85,247" gradient="linear-gradient(135deg, rgba(168,85,247,0.15), rgba(139,92,246,0.05))">
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+        <SectionCard 
+            icon={Server} 
+            title="硬件与性能" 
+            color="168,85,247" 
+            gradient="linear-gradient(135deg, rgba(168,85,247,0.15), rgba(139,92,246,0.05))"
+            collapsible={true}
+            defaultCollapsed={true}
+            statusSummary={isEnabled ? `设备: ${config.device === '0' ? 'GPU 0' : config.device === 'cpu' ? 'CPU' : config.device}` : '已禁用'}
+        >
+            <Toggle
+                checked={isEnabled}
+                onChange={(e) => updateConfig({ hardwareEnabled: e.target.checked })}
+                label="启用硬件配置"
+                desc="自定义设备、线程数和缓存设置"
+                disabled={isRunning}
+            />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginTop: '1rem', opacity: isEnabled ? 1 : 0.5 }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                     <div>
                         <label style={{ fontSize: '13px', color: 'var(--text-tertiary)', marginBottom: '8px', display: 'block', fontWeight: 600 }}>设备 (Device)</label>
@@ -427,7 +443,7 @@ export const HardwareForm = ({ config, updateConfig, status }) => {
                             value={config.device}
                             options={deviceOptions}
                             onChange={(val) => updateConfig({ device: val })}
-                            disabled={isRunning}
+                            disabled={isRunning || !isEnabled}
                         />
                     </div>
                     <div>
@@ -436,7 +452,7 @@ export const HardwareForm = ({ config, updateConfig, status }) => {
                             type="number"
                             value={config.workers}
                             onChange={(e) => updateConfig({ workers: parseInt(e.target.value) })}
-                            disabled={isRunning}
+                            disabled={isRunning || !isEnabled}
                             style={{
                                 width: '100%',
                                 background: 'rgba(0,0,0,0.25)',
@@ -454,7 +470,7 @@ export const HardwareForm = ({ config, updateConfig, status }) => {
                     onChange={(e) => updateConfig({ cache_images: e.target.checked })}
                     label="缓存图片到内存"
                     desc="RAM > 16G 建议开启，训练速度快 50%"
-                    disabled={isRunning}
+                    disabled={isRunning || !isEnabled}
                 />
             </div>
         </SectionCard>
@@ -463,9 +479,26 @@ export const HardwareForm = ({ config, updateConfig, status }) => {
 
 export const StrategyForm = ({ config, updateConfig, status }) => {
     const isRunning = status === 'running' || status === 'starting';
+    const isEnabled = config.strategyEnabled !== false;
+    
     return (
-        <SectionCard icon={TrendingUp} title="训练策略" color="251,146,60" gradient="linear-gradient(135deg, rgba(251,146,60,0.15), rgba(245,158,11,0.05))">
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+        <SectionCard 
+            icon={TrendingUp} 
+            title="训练策略" 
+            color="251,146,60" 
+            gradient="linear-gradient(135deg, rgba(251,146,60,0.15), rgba(245,158,11,0.05))"
+            collapsible={true}
+            defaultCollapsed={true}
+            statusSummary={isEnabled ? `优化器: ${config.optimizer.toUpperCase()}` : '已禁用'}
+        >
+            <Toggle
+                checked={isEnabled}
+                onChange={(e) => updateConfig({ strategyEnabled: e.target.checked })}
+                label="启用训练策略"
+                desc="自定义早停、优化器和学习率策略"
+                disabled={isRunning}
+            />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginTop: '1rem', opacity: isEnabled ? 1 : 0.5 }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                     <div>
                         <label style={{ fontSize: '13px', color: 'var(--text-tertiary)', marginBottom: '8px', display: 'block', fontWeight: 600 }}>早停轮次 (Patience)</label>
@@ -473,7 +506,7 @@ export const StrategyForm = ({ config, updateConfig, status }) => {
                             type="number"
                             value={config.patience}
                             onChange={(e) => updateConfig({ patience: parseInt(e.target.value) })}
-                            disabled={isRunning}
+                            disabled={isRunning || !isEnabled}
                             style={{
                                 width: '100%',
                                 background: 'rgba(0,0,0,0.25)',
@@ -491,7 +524,7 @@ export const StrategyForm = ({ config, updateConfig, status }) => {
                             value={config.optimizer}
                             options={optimizerOptions}
                             onChange={(val) => updateConfig({ optimizer: val })}
-                            disabled={isRunning}
+                            disabled={isRunning || !isEnabled}
                         />
                     </div>
                 </div>
@@ -502,7 +535,7 @@ export const StrategyForm = ({ config, updateConfig, status }) => {
                             type="number"
                             value={config.close_mosaic}
                             onChange={(e) => updateConfig({ close_mosaic: parseInt(e.target.value) })}
-                            disabled={isRunning}
+                            disabled={isRunning || !isEnabled}
                             style={{
                                 width: '100%',
                                 background: 'rgba(0,0,0,0.25)',
@@ -520,21 +553,21 @@ export const StrategyForm = ({ config, updateConfig, status }) => {
                     onChange={(e) => updateConfig({ cos_lr: e.target.checked })}
                     label="余弦退火学习率"
                     desc="让后期收敛更精准"
-                    disabled={isRunning}
+                    disabled={isRunning || !isEnabled}
                 />
                 <Toggle
                     checked={config.rect}
                     onChange={(e) => updateConfig({ rect: e.target.checked })}
                     label="矩形训练"
                     desc="使用矩形图片进行训练"
-                    disabled={isRunning}
+                    disabled={isRunning || !isEnabled}
                 />
                 <Toggle
                     checked={config.resume}
                     onChange={(e) => updateConfig({ resume: e.target.checked })}
                     label="断点续训 (Resume)"
                     desc="从上次中断的地方继续训练"
-                    disabled={isRunning}
+                    disabled={isRunning || !isEnabled}
                 />
             </div>
         </SectionCard>
@@ -543,9 +576,26 @@ export const StrategyForm = ({ config, updateConfig, status }) => {
 
 export const LossForm = ({ config, updateConfig, status }) => {
     const isRunning = status === 'running' || status === 'starting';
+    const isEnabled = config.lossEnabled !== false;
+    
     return (
-        <SectionCard icon={Target} title="损失函数权重" color="236,72,153" gradient="linear-gradient(135deg, rgba(236,72,153,0.15), rgba(217,70,239,0.05))">
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+        <SectionCard 
+            icon={Target} 
+            title="损失函数权重" 
+            color="236,72,153" 
+            gradient="linear-gradient(135deg, rgba(236,72,153,0.15), rgba(217,70,239,0.05))"
+            collapsible={true}
+            defaultCollapsed={true}
+            statusSummary={isEnabled ? `Pose: ${config.loss_pose}, Box: ${config.loss_box}` : '已禁用'}
+        >
+            <Toggle
+                checked={isEnabled}
+                onChange={(e) => updateConfig({ lossEnabled: e.target.checked })}
+                label="启用损失权重配置"
+                desc="自定义关键点、边框和类别的损失权重"
+                disabled={isRunning}
+            />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginTop: '1rem', opacity: isEnabled ? 1 : 0.5 }}>
                 <div>
                     <label style={{ fontSize: '13px', color: 'var(--text-tertiary)', marginBottom: '8px', display: 'block', fontWeight: 600 }}>关键点损失权重 (Pose)</label>
                     <input
@@ -553,7 +603,7 @@ export const LossForm = ({ config, updateConfig, status }) => {
                         step="0.1"
                         value={config.loss_pose}
                         onChange={(e) => updateConfig({ loss_pose: parseFloat(e.target.value) })}
-                        disabled={isRunning}
+                        disabled={isRunning || !isEnabled}
                         style={{
                             width: '100%',
                             background: 'rgba(0,0,0,0.25)',
@@ -573,7 +623,7 @@ export const LossForm = ({ config, updateConfig, status }) => {
                             step="0.1"
                             value={config.loss_box}
                             onChange={(e) => updateConfig({ loss_box: parseFloat(e.target.value) })}
-                            disabled={isRunning}
+                            disabled={isRunning || !isEnabled}
                             style={{
                                 width: '100%',
                                 background: 'rgba(0,0,0,0.25)',
@@ -592,7 +642,7 @@ export const LossForm = ({ config, updateConfig, status }) => {
                             step="0.1"
                             value={config.loss_cls}
                             onChange={(e) => updateConfig({ loss_cls: parseFloat(e.target.value) })}
-                            disabled={isRunning}
+                            disabled={isRunning || !isEnabled}
                             style={{
                                 width: '100%',
                                 background: 'rgba(0,0,0,0.25)',
@@ -633,7 +683,15 @@ export const AugmentationForm = ({ config, updateConfig, status }) => {
     );
 
     return (
-        <SectionCard icon={Settings} title="数据增强" color="34,197,94" gradient="linear-gradient(135deg, rgba(34,197,94,0.15), rgba(74,222,128,0.05))">
+        <SectionCard 
+            icon={Settings} 
+            title="数据增强" 
+            color="34,197,94" 
+            gradient="linear-gradient(135deg, rgba(34,197,94,0.15), rgba(74,222,128,0.05))"
+            collapsible={true}
+            defaultCollapsed={true}
+            statusSummary={config.augmentationEnabled ? '已启用' : '已禁用'}
+        >
             <Toggle
                 checked={config.augmentationEnabled}
                 onChange={(e) => updateConfig({ augmentationEnabled: e.target.checked })}

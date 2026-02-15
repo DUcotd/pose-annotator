@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const logger = require('../utils/logger');
-const settings = require('../config/settings');
+const PathService = require('./PathService');
 
 class ProjectIndexService {
   constructor() {
@@ -9,33 +9,8 @@ class ProjectIndexService {
     this.cacheExpiry = 5 * 60 * 1000;
   }
 
-  getAllProjectPaths(projectsDir) {
-    const config = settings.load();
-    const paths = [projectsDir];
-    if (config.additionalProjectPaths && Array.isArray(config.additionalProjectPaths)) {
-      config.additionalProjectPaths.forEach(p => {
-        if (p && fs.existsSync(p) && !paths.includes(p)) {
-          paths.push(p);
-        }
-      });
-    }
-    return paths;
-  }
-
-  findProjectRoot(projectId, projectsDir) {
-    const allPaths = this.getAllProjectPaths(projectsDir);
-    for (const dir of allPaths) {
-      const root = path.join(dir, projectId);
-      if (fs.existsSync(root)) {
-        return root;
-      }
-    }
-    return path.join(projectsDir, projectId);
-  }
-
   getIndexPath(projectId, projectsDir) {
-    const root = this.findProjectRoot(projectId, projectsDir);
-    return path.join(root, 'index.json');
+    return PathService.getIndexPath(projectId, projectsDir);
   }
 
   async getIndex(projectId, projectsDir) {
@@ -83,9 +58,7 @@ class ProjectIndexService {
   }
 
   async buildIndex(projectId, projectsDir) {
-    const root = this.findProjectRoot(projectId, projectsDir);
-    const uploads = path.join(root, 'uploads');
-    const annotations = path.join(root, 'annotations');
+    const paths = PathService.getProjectPaths(projectId, projectsDir);
 
     const images = {};
     let total = 0;
@@ -93,12 +66,12 @@ class ProjectIndexService {
     let bboxes = 0;
     let keypoints = 0;
 
-    if (fs.existsSync(uploads)) {
-      const files = fs.readdirSync(uploads).filter(f => /\.(jpg|jpeg|png|gif|webp)$/i.test(f));
+    if (fs.existsSync(paths.uploads)) {
+      const files = fs.readdirSync(paths.uploads).filter(f => /\.(jpg|jpeg|png|gif|webp)$/i.test(f));
 
       for (const file of files) {
         total++;
-        const annotationPath = path.join(annotations, `${file}.json`);
+        const annotationPath = path.join(paths.annotations, `${file}.json`);
         let isAnnotated = false;
 
         if (fs.existsSync(annotationPath)) {
@@ -118,7 +91,7 @@ class ProjectIndexService {
 
         let size = 0;
         try {
-          const stats = fs.statSync(path.join(uploads, file));
+          const stats = fs.statSync(path.join(paths.uploads, file));
           size = stats.size;
         } catch (e) { }
 

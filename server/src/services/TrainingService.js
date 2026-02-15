@@ -13,6 +13,144 @@ const MAX_OOM_RETRIES = 3;
 const OOM_BATCH_DIVISOR = 2;
 
 class TrainingService {
+  static ERROR_MAPPINGS = {
+    oom: {
+      keywords: ['out of memory', 'OOM', 'CUDA out of memory', 'cudamalloc', 'memory allocation'],
+      type: 'oom',
+      title: '显存不足 (Out of Memory)',
+      icon: '⚠️',
+      suggestions: [
+        '减小 batch_size 参数（当前值可能过大）',
+        '减小 imgsz 图片尺寸（如从 1280 改为 640）',
+        '尝试使用更小的模型（如 yolov8n 或 yolov8s）',
+        '开启混合精度训练可减少显存占用',
+        '关闭不必要的后台程序释放显存'
+      ],
+      docLink: 'https://docs.ultralytics.com/yolov5/train/#gpu-memory-issues'
+    },
+    cuda: {
+      keywords: ['cuda', 'CUDA error', 'gpu device', 'device-side assert'],
+      type: 'cuda',
+      title: 'CUDA/GPU 错误',
+      icon: '🖥️',
+      suggestions: [
+        '请确认已正确安装 NVIDIA 显卡驱动',
+        '检查 PyTorch 是否支持 CUDA：python -c "import torch; print(torch.cuda.is_available())"',
+        '尝试将 device 参数改为 "cpu" 使用 CPU 模式训练',
+        '更新 NVIDIA 驱动到最新版本'
+      ],
+      docLink: 'https://pytorch.org/get-started/locally/'
+    },
+    cudnn: {
+      keywords: ['cudnn', 'CUDNN', 'cuDNN'],
+      type: 'cudnn',
+      title: 'cuDNN 错误',
+      icon: '🔧',
+      suggestions: [
+        '可能是 CUDA 版本与 cuDNN 不匹配',
+        '尝试更新 NVIDIA 驱动到最新版本',
+        '设置环境变量 CUDA_LAUNCH_BLOCKING=1 获取更多调试信息',
+        '重新安装 PyTorch 和 CUDA 工具包'
+      ]
+    },
+    no_gpu: {
+      keywords: ['No CUDA GPUs are available', 'No GPU detected', 'CUDA is not available'],
+      type: 'no_gpu',
+      title: '未检测到可用 GPU',
+      icon: '❓',
+      suggestions: [
+        '请确认电脑已安装 NVIDIA 显卡',
+        '检查显卡驱动是否正确安装',
+        '在设备管理器中确认显卡未被禁用',
+        '可使用 device: "cpu" 使用 CPU 进行训练'
+      ]
+    },
+    memory: {
+      keywords: ['MemoryError', 'cannot allocate memory', 'Unable to allocate', 'killed'],
+      type: 'memory',
+      title: '系统内存不足',
+      icon: '💾',
+      suggestions: [
+        '系统内存不足，尝试关闭其他程序',
+        '减小 batch_size 参数',
+        '减小 workers 参数',
+        '检查是否有内存泄漏'
+      ]
+    },
+    file_not_found: {
+      keywords: ['FileNotFoundError', 'No such file or directory', 'not found'],
+      type: 'file_not_found',
+      title: '文件未找到',
+      icon: '📁',
+      suggestions: [
+        '检查数据集路径是否正确',
+        '确认 YAML 配置文件中的路径配置',
+        '确保训练/验证图片目录存在',
+        '检查文件权限'
+      ]
+    },
+    yaml_error: {
+      keywords: ['YAML', 'yaml', 'mapping values are not allowed'],
+      type: 'yaml_error',
+      title: 'YAML 配置错误',
+      icon: '📄',
+      suggestions: [
+        '检查 YAML 文件语法是否正确',
+        '确保缩进使用空格而非制表符',
+        '验证 YAML 文件中的路径配置',
+        '使用在线 YAML 验证器检查语法'
+      ]
+    },
+    shape_error: {
+      keywords: ['shape', 'dimension', 'size mismatch', 'RuntimeError: shape'],
+      type: 'shape_error',
+      title: '张量维度错误',
+      icon: '📐',
+      suggestions: [
+        '检查数据集标注格式是否正确',
+        '确认关键点数量与模型配置匹配',
+        '验证图片尺寸与配置一致',
+        '检查数据集类别数量'
+      ]
+    },
+    permission: {
+      keywords: ['Permission denied', 'Access is denied', 'permission error'],
+      type: 'permission',
+      title: '权限错误',
+      icon: '🔒',
+      suggestions: [
+        '以管理员身份运行程序',
+        '检查目标文件夹的写入权限',
+        '关闭占用文件的其他程序',
+        '更改输出目录到有权限的位置'
+      ]
+    },
+    network: {
+      keywords: ['ConnectionError', 'NetworkError', 'timeout', 'download failed'],
+      type: 'network',
+      title: '网络错误',
+      icon: '🌐',
+      suggestions: [
+        '检查网络连接是否正常',
+        '如果下载模型失败，尝试手动下载',
+        '配置代理或镜像源',
+        '使用离线模式或本地模型'
+      ]
+    },
+    python_env: {
+      keywords: ['ModuleNotFoundError', 'ImportError', 'No module named'],
+      type: 'python_env',
+      title: 'Python 环境错误',
+      icon: '🐍',
+      suggestions: [
+        '检查 Python 环境是否正确激活',
+        '安装缺失的依赖包',
+        '确认 PyTorch 和 Ultralytics 已正确安装',
+        '尝试重新创建虚拟环境'
+      ]
+    }
+  };
+
   constructor() {
     this.processes = ProcessManager;
     this.retryState = {};
@@ -243,19 +381,34 @@ class TrainingService {
       '--imgsz', String(config.imgsz),
       '--project', config.project || '',
       '--name', config.name || 'exp_auto',
-      '--device', config.device || '0',
-      '--workers', String(config.workers || 0)
     ];
 
-    if (config.resume === true) {
-      args.push('--resume');
+    if (config.project) {
+      const modelsDir = path.join(config.project, 'models');
+      args.push('--models_dir', modelsDir);
     }
 
-    if (config.cache_images) args.push('--cache_images');
-    args.push('--patience', String(config.patience || 60));
-    if (config.cos_lr) args.push('--cos_lr');
-    args.push('--optimizer', config.optimizer || 'auto');
-    if (config.rect) args.push('--rect');
+    if (config.hardwareEnabled !== false) {
+      args.push('--device', config.device || '0');
+      args.push('--workers', String(config.workers || 0));
+      if (config.cache_images) args.push('--cache_images');
+    } else {
+      args.push('--device', '0');
+      args.push('--workers', '0');
+    }
+
+    if (config.strategyEnabled !== false) {
+      if (config.resume === true) {
+        args.push('--resume');
+      }
+      args.push('--patience', String(config.patience || 60));
+      if (config.cos_lr) args.push('--cos_lr');
+      args.push('--optimizer', config.optimizer || 'auto');
+      if (config.rect) args.push('--rect');
+    } else {
+      args.push('--patience', '50');
+      args.push('--optimizer', 'auto');
+    }
 
     if (config.augmentationEnabled !== false) {
       args.push('--degrees', String(config.degrees || 0));
@@ -279,9 +432,15 @@ class TrainingService {
       args.push('--mosaic', '0');
     }
 
-    args.push('--loss_pose', String(config.loss_pose || 25.0));
-    args.push('--loss_box', String(config.loss_box || 7.5));
-    args.push('--loss_cls', String(config.loss_cls || 0.5));
+    if (config.lossEnabled !== false) {
+      args.push('--loss_pose', String(config.loss_pose || 25.0));
+      args.push('--loss_box', String(config.loss_box || 7.5));
+      args.push('--loss_cls', String(config.loss_cls || 0.5));
+    } else {
+      args.push('--loss_pose', '12.0');
+      args.push('--loss_box', '7.5');
+      args.push('--loss_cls', '0.5');
+    }
 
     if (config.export_formats) {
       args.push('--export_formats', config.export_formats);
@@ -298,6 +457,23 @@ class TrainingService {
       lower.includes('cudamalloc');
   }
 
+  cleanString(str) {
+    if (typeof str !== 'string') return str;
+
+    let cleaned = str.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
+
+    cleaned = cleaned.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, '');
+
+    cleaned = cleaned.replace(/[\u200B-\u200D\uFEFF]/g, '');
+
+    const progressChars = ['━', '─', '╸', '█', '▓', '▒', '░', '►', '▸', '▶'];
+    progressChars.forEach(char => {
+      cleaned = cleaned.split(char).join('');
+    });
+
+    return cleaned.trim();
+  }
+
   shouldSkipLog(line) {
     if (!line || line.length === 0) return true;
 
@@ -307,17 +483,58 @@ class TrainingService {
       /^\s*Epoch\s+GPU_mem\s+box_loss/,
       /^[\d.]+it\/s/,
       /^\d+%\s*[━─╸]+/,
+      /^\s*all\s+\d+\s+\d+\s+[\d.]+\s+[\d.]+\s+[\d.]+\s+[\d.]+\s+[\d.]+\s+[\d.]+\s+[\d.]+\s+[\d.]+\s+[\d.]+\s+[\d.]+$/,
+      /^optimizer/,
+      /^albumentations/,
+      /^Scanning/,
+      /^Adding/,
+      /^AutoAnchor/,
+      /^Freezing/,
+      /^image\s+\d+/,
+      /^results\.csv/,
     ];
 
     for (const pattern of skipPatterns) {
       if (pattern.test(line)) return true;
     }
 
-    if (line.includes('━━━━') || line.includes('────') || line.includes('╸')) {
+    if (line.includes('━━━━') || line.includes('────') || line.includes('╸') ||
+        line.includes('█') || line.includes('▓') || line.includes('▒') || line.includes('░')) {
       return true;
     }
 
     return false;
+  }
+
+  classifyError(errorMsg) {
+    const lower = errorMsg.toLowerCase();
+
+    for (const [key, mapping] of Object.entries(TrainingService.ERROR_MAPPINGS)) {
+      for (const keyword of mapping.keywords) {
+        if (lower.includes(keyword.toLowerCase())) {
+          return {
+            type: mapping.type,
+            title: mapping.title,
+            icon: mapping.icon,
+            suggestions: mapping.suggestions,
+            docLink: mapping.docLink || null,
+            rawError: errorMsg.substring(0, 500)
+          };
+        }
+      }
+    }
+
+    return {
+      type: 'unknown',
+      title: '训练错误',
+      icon: '❌',
+      suggestions: [
+        '请检查配置参数是否正确',
+        '查看下方原始错误信息',
+        '尝试降低模型复杂度或数据量'
+      ],
+      rawError: errorMsg.substring(0, 500)
+    };
   }
 
   async start(projectId, config) {
@@ -352,6 +569,7 @@ class TrainingService {
 
     const processState = this.processes.create(projectId, config.project || null);
     this.processes.setStatus(projectId, 'starting');
+    this.processes.setErrorLogs(projectId, []);
 
     const projectPath = config.project || '';
     const csvWatcher = this.watchResultsCSV(projectId, projectPath);
@@ -361,7 +579,12 @@ class TrainingService {
 
     const child = spawn(pythonCmd, args, {
       windowsHide: true,
-      env: { ...process.env, KMP_DUPLICATE_LIB_OK: 'TRUE' }
+      env: { 
+        ...process.env, 
+        KMP_DUPLICATE_LIB_OK: 'TRUE',
+        PYTHONIOENCODING: 'utf-8',
+        PYTHONUTF8: '1'
+      }
     });
 
     this.processes.setPid(projectId, child.pid);
@@ -381,7 +604,7 @@ class TrainingService {
     });
 
     child.stdout.on('data', (data) => {
-      const chunk = data.toString();
+      const chunk = this.cleanString(data.toString());
       let buffer = this.jsonBuffer.get(projectId) || '';
       buffer += chunk;
 
@@ -498,59 +721,47 @@ class TrainingService {
       const lines = data.toString().split('\n');
       lines.forEach(line => {
         if (line.trim()) {
-          const trimmed = line.trim();
-          logger.error(`[Train ${projectId}] ${trimmed}`);
+          const cleanedLine = this.cleanString(line.trim());
+          if (!cleanedLine) return;
 
-          let errorType = null;
-          let errorSuggestions = [];
-          const lowerLine = trimmed.toLowerCase();
+          logger.error(`[Train ${projectId}] ${cleanedLine}`);
 
-          if (this.isOOMError(trimmed)) {
-            errorType = '显存不足 (OOM)';
-            errorSuggestions = [
-              '减小 batch_size 参数',
-              '减小 imgsz 图片尺寸',
-              '尝试使用更小的模型'
-            ];
+          const classified = this.classifyError(cleanedLine);
 
+          if (classified.type !== 'unknown') {
             this.processes.addLog(projectId, {
               type: 'error',
-              msg: `⚠️ 检测到显存不足 (OOM) 错误！`,
+              msg: `${classified.icon} ${classified.title}`,
+              errorType: classified.type,
               time: Date.now()
             });
 
-            this.handleOOMError(projectId, config, retryCount);
-          }
-          else if (lowerLine.includes('no cuda gpu') || lowerLine.includes('no gpu') || lowerLine.includes('cuda is not available')) {
-            errorType = 'GPU 不可用';
-            errorSuggestions = [
-              '请确认已正确安装 NVIDIA 显卡驱动',
-              '将 device 参数改为 cpu 使用 CPU 模式'
-            ];
-          }
-          else if (lowerLine.includes('cuda') && (lowerLine.includes('error') || lowerLine.includes('failed'))) {
-            errorType = 'CUDA 相关错误';
-            errorSuggestions = [
-              '可能是 CUDA 版本与显卡驱动不匹配',
-              '尝试更新 NVIDIA 驱动到最新版本'
-            ];
-          }
-
-          let displayMsg = trimmed;
-          if (errorType) {
-            displayMsg = `[${errorType}] ${trimmed}`;
-            if (errorSuggestions.length > 0) {
+            if (classified.suggestions && classified.suggestions.length > 0) {
               this.processes.addLog(projectId, {
                 type: 'suggestion',
-                msg: `💡 建议: ${errorSuggestions.join('; ')}`,
+                msg: `💡 解决建议:\n${classified.suggestions.map((s, i) => `   ${i + 1}. ${s}`).join('\n')}`,
+                time: Date.now()
+              });
+            }
+
+            if (classified.docLink) {
+              this.processes.addLog(projectId, {
+                type: 'info',
+                msg: `� 文档: ${classified.docLink}`,
                 time: Date.now()
               });
             }
           }
 
+          if (classified.type === 'oom') {
+            this.handleOOMError(projectId, config, retryCount);
+          }
+
+          this.processes.addErrorLog(projectId, cleanedLine);
+
           this.processes.addLog(projectId, {
             type: 'stderr',
-            msg: displayMsg,
+            msg: cleanedLine,
             time: Date.now()
           });
         }
@@ -585,11 +796,30 @@ class TrainingService {
       else {
         const status = 'failed';
         this.processes.setStatus(projectId, status);
+        
+        const errorLogs = this.processes.getErrorLogs(projectId) || [];
+        const recentErrors = errorLogs.slice(-10);
+        
         this.processes.addLog(projectId, {
           type: 'system',
           msg: `❌ 训练失败！进程退出码: ${code}`,
           time: Date.now()
         });
+        
+        if (recentErrors.length > 0) {
+          this.processes.addLog(projectId, {
+            type: 'error',
+            msg: `📋 错误详情:\n${recentErrors.join('\n')}`,
+            time: Date.now()
+          });
+        } else {
+          this.processes.addLog(projectId, {
+            type: 'error',
+            msg: `⚠️ 未捕获到具体错误信息，请检查:\n1. 数据集是否正确导出\n2. Python环境是否配置正确\n3. 模型文件是否存在`,
+            time: Date.now()
+          });
+        }
+        
         logger.info(`Training for project ${projectId} ${status}`);
       }
 
