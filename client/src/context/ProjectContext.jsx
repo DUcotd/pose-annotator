@@ -84,17 +84,19 @@ export const ProjectProvider = ({ children }) => {
         });
     };
 
-    const createProject = async (name) => {
+    const createProject = async (name, customPath = null) => {
         try {
             const res = await fetch('http://localhost:5000/api/projects', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name })
+                body: JSON.stringify({ name, customPath })
             });
             const data = await res.json();
             if (res.ok) {
                 await fetchProjects();
                 return data.id;
+            } else {
+                console.error("Failed to create project:", data.error);
             }
         } catch (err) {
             console.error("Failed to create project", err);

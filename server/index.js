@@ -1,13 +1,24 @@
 const path = require('path');
+const fs = require('fs');
 const createApp = require('./src/app');
 
 const PROJECTS_DIR = (function() {
   if (process.versions?.electron) {
     const { app } = require('electron');
-    return path.join(app.getPath('userData'), 'projects');
+    const exePath = app.getPath('exe');
+    const installDir = path.dirname(exePath);
+    return path.join(installDir, 'projects');
   }
   return path.join(__dirname, 'projects');
 })();
+
+if (!fs.existsSync(PROJECTS_DIR)) {
+  try {
+    fs.mkdirSync(PROJECTS_DIR, { recursive: true });
+  } catch (e) {
+    console.error('Failed to create projects directory:', e.message);
+  }
+}
 
 const app = createApp(PROJECTS_DIR);
 const PORT = process.env.PORT || 5000;

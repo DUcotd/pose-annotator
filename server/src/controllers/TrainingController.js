@@ -360,11 +360,46 @@ function createSettingsRouter() {
   });
 
   router.post('/', (req, res) => {
-    const { pythonPath } = req.body;
-    if (settings.setPythonPath(pythonPath)) {
-      res.json({ success: true, message: 'Settings saved', pythonPath });
+    const { pythonPath, projectsDir } = req.body;
+    const updates = {};
+    if (pythonPath !== undefined) updates.pythonPath = pythonPath;
+    if (projectsDir !== undefined) updates.projectsDir = projectsDir;
+    
+    if (settings.save(updates)) {
+      res.json({ success: true, message: 'Settings saved', ...updates });
     } else {
       res.status(500).json({ success: false, error: 'Failed to save settings' });
+    }
+  });
+
+  router.get('/projects-dir', (req, res) => {
+    const projectsDir = settings.getProjectsDir();
+    const defaultName = settings.getDefaultProjectsDirName();
+    res.json({ 
+      projectsDir, 
+      defaultProjectsDirName: defaultName,
+      hasCustomDir: !!projectsDir 
+    });
+  });
+
+  router.post('/projects-dir', (req, res) => {
+    const { projectsDir } = req.body;
+    
+    if (projectsDir && !fs.existsSync(projectsDir)) {
+      return res.status(400).json({ 
+        success: false, 
+        error: '指定的目录不存在' 
+      });
+    }
+    
+    if (settings.setProjectsDir(projectsDir || null)) {
+      res.json({ 
+        success: true, 
+        message: projectsDir ? '项目目录已更新，重启应用后生效' : '已恢复默认项目目录，重启应用后生效',
+        projectsDir 
+      });
+    } else {
+      res.status(500).json({ success: false, error: '保存设置失败' });
     }
   });
 

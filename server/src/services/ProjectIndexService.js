@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const logger = require('../utils/logger');
+const settings = require('../config/settings');
 
 class ProjectIndexService {
   constructor() {
@@ -8,8 +9,33 @@ class ProjectIndexService {
     this.cacheExpiry = 5 * 60 * 1000;
   }
 
+  getAllProjectPaths(projectsDir) {
+    const config = settings.load();
+    const paths = [projectsDir];
+    if (config.additionalProjectPaths && Array.isArray(config.additionalProjectPaths)) {
+      config.additionalProjectPaths.forEach(p => {
+        if (p && fs.existsSync(p) && !paths.includes(p)) {
+          paths.push(p);
+        }
+      });
+    }
+    return paths;
+  }
+
+  findProjectRoot(projectId, projectsDir) {
+    const allPaths = this.getAllProjectPaths(projectsDir);
+    for (const dir of allPaths) {
+      const root = path.join(dir, projectId);
+      if (fs.existsSync(root)) {
+        return root;
+      }
+    }
+    return path.join(projectsDir, projectId);
+  }
+
   getIndexPath(projectId, projectsDir) {
-    return path.join(projectsDir, projectId, 'index.json');
+    const root = this.findProjectRoot(projectId, projectsDir);
+    return path.join(root, 'index.json');
   }
 
   async getIndex(projectId, projectsDir) {
@@ -57,7 +83,7 @@ class ProjectIndexService {
   }
 
   async buildIndex(projectId, projectsDir) {
-    const root = path.join(projectsDir, projectId);
+    const root = this.findProjectRoot(projectId, projectsDir);
     const uploads = path.join(root, 'uploads');
     const annotations = path.join(root, 'annotations');
 

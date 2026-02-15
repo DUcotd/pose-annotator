@@ -93,22 +93,31 @@ process.on('unhandledRejection', (reason) => {
 
 // --- DATA DIRECTORY LOGIC ---
 let PROJECTS_DIR;
-if (process.versions.electron) {
-    // If running in Electron, use the user's data directory to ensure it's writable
-    const { app } = require('electron');
-    // Note: server.js is required by main process, so app is available
-    PROJECTS_DIR = path.join(app.getPath('userData'), 'projects');
-} else {
-    PROJECTS_DIR = path.join(__dirname, 'projects');
+
+function initProjectsDir() {
+    const customDir = loadGlobalConfig().projectsDir;
+    if (customDir && fs.existsSync(customDir)) {
+        PROJECTS_DIR = customDir;
+    } else if (process.versions.electron) {
+        const { app } = require('electron');
+        const exePath = app.getPath('exe');
+        const installDir = path.dirname(exePath);
+        PROJECTS_DIR = path.join(installDir, 'projects');
+    } else {
+        PROJECTS_DIR = path.join(__dirname, 'projects');
+    }
+    
+    if (!fs.existsSync(PROJECTS_DIR)) {
+        try {
+            fs.mkdirSync(PROJECTS_DIR, { recursive: true });
+        } catch (e) {
+            console.error('Failed to create projects directory:', e.message);
+        }
+    }
+    return PROJECTS_DIR;
 }
 
-if (!fs.existsSync(PROJECTS_DIR)) {
-    try {
-        fs.mkdirSync(PROJECTS_DIR, { recursive: true });
-    } catch (e) {
-        console.error('Failed to create projects directory:', e.message);
-    }
-}
+initProjectsDir();
 
 // --- MIGRATION LOGIC ---
 const LEGACY_UPLOADS = path.join(__dirname, 'uploads');
@@ -129,9 +138,33 @@ if (fs.existsSync(LEGACY_UPLOADS)) {
 }
 // -----------------------
 
+const getAllProjectPaths = () => {
+    const config = loadGlobalConfig();
+    const paths = [PROJECTS_DIR];
+    if (config.additionalProjectPaths && Array.isArray(config.additionalProjectPaths)) {
+        config.additionalProjectPaths.forEach(p => {
+            if (p && fs.existsSync(p) && !paths.includes(p)) {
+                paths.push(p);
+            }
+        });
+    }
+    return paths;
+};
+
+const findProjectRoot = (projectId) => {
+    const allPaths = getAllProjectPaths();
+    for (const dir of allPaths) {
+        const root = path.join(dir, projectId);
+        if (fs.existsSync(root)) {
+            return root;
+        }
+    }
+    return path.join(PROJECTS_DIR, projectId);
+};
+
 // Helper: Get Paths
 const getProjectPaths = (projectId) => {
-    const root = path.join(PROJECTS_DIR, projectId);
+    const root = findProjectRoot(projectId);
     return {
         root,
         uploads: path.join(root, 'uploads'),
@@ -198,47 +231,61 @@ const upload = multer({ storage });
 // List Projects
 app.get('/api/projects', async (req, res) => {
     try {
-        const projects = await fs.promises.readdir(PROJECTS_DIR).then(files => files.filter(file => {
-            // Filter out hidden folders and our Windows-specific temp deletion folders
-            return !file.startsWith('.') && !file.startsWith('_to_delete_');
-        }));
+        const allPaths = getAllProjectPaths();
+        const projectMap = new Map();
+
+        for (const dir of allPaths) {
+            if (!fs.existsSync(dir)) continue;
+            try {
+                const projects = await fs.promises.readdir(dir).then(files => files.filter(file => {
+                    return !file.startsWith('.') && !file.startsWith('_to_delete_');
+                }));
+
+                for (const p of projects) {
+                    if (projectMap.has(p)) continue;
+                    try {
+                        const projectPath = path.join(dir, p);
+                        const stat = await fs.promises.stat(projectPath);
+                        if (!stat.isDirectory()) continue;
+
+                        projectMap.set(p, projectPath);
+                    } catch (e) { /* ignore */ }
+                }
+            } catch (e) { /* ignore */ }
+        }
 
         const projectList = [];
-        for (const p of projects) {
+        for (const [p, projectPath] of projectMap) {
+            const paths = {
+                root: projectPath,
+                uploads: path.join(projectPath, 'uploads'),
+                annotations: path.join(projectPath, 'annotations')
+            };
+            let imageCount = 0;
+            let annotatedCount = 0;
             try {
-                const projectPath = path.join(PROJECTS_DIR, p);
-                const stat = await fs.promises.stat(projectPath);
-                if (!stat.isDirectory()) continue;
+                if (fs.existsSync(paths.uploads)) {
+                    const files = await fs.promises.readdir(paths.uploads).then(files => files.filter(f => /\.(jpg|jpeg|png|gif|webp)$/i.test(f)));
+                    imageCount = files.length;
 
-                const paths = getProjectPaths(p);
-                let imageCount = 0;
-                let annotatedCount = 0;
-                try {
-                    if (fs.existsSync(paths.uploads)) {
-                        const files = await fs.promises.readdir(paths.uploads).then(files => files.filter(f => /\.(jpg|jpeg|png|gif|webp)$/i.test(f)));
-                        imageCount = files.length;
-
-                        // Count annotated images (limit to first 100 files to avoid performance issues)
-                        const filesToCheck = files.slice(0, 100);
-                        for (const file of filesToCheck) {
-                            const annotationPath = path.join(paths.annotations, `${file}.json`);
-                            if (fs.existsSync(annotationPath)) {
-                                try {
-                                    const data = JSON.parse(fs.readFileSync(annotationPath));
-                                    if (data.some(a => a.type === 'bbox' || a.type === 'keypoint')) {
-                                        annotatedCount++;
-                                    }
-                                } catch (e) { }
-                            }
-                        }
-                        // Estimate total annotated count if there are more than 100 files
-                        if (files.length > 100) {
-                            annotatedCount = Math.round((annotatedCount / 100) * files.length);
+                    const filesToCheck = files.slice(0, 100);
+                    for (const file of filesToCheck) {
+                        const annotationPath = path.join(paths.annotations, `${file}.json`);
+                        if (fs.existsSync(annotationPath)) {
+                            try {
+                                const data = JSON.parse(fs.readFileSync(annotationPath));
+                                if (data.some(a => a.type === 'bbox' || a.type === 'keypoint')) {
+                                    annotatedCount++;
+                                }
+                            } catch (e) { }
                         }
                     }
-                } catch (e) { /* ignore */ }
-                projectList.push({ id: p, name: p, imageCount, annotatedCount });
+                    if (files.length > 100) {
+                        annotatedCount = Math.round((annotatedCount / 100) * files.length);
+                    }
+                }
             } catch (e) { /* ignore */ }
+            projectList.push({ id: p, name: p, imageCount, annotatedCount });
         }
 
         res.json(projectList);
@@ -342,7 +389,7 @@ app.delete('/api/projects/:projectId', (req, res) => {
     if (fs.existsSync(paths.root)) {
         try {
             // Windows fix: Try renaming first to break accidental handles, then delete
-            const tempDeletePath = path.join(PROJECTS_DIR, `_to_delete_${Date.now()}_${projectId}`);
+            const tempDeletePath = path.join(path.dirname(paths.root), `_to_delete_${Date.now()}_${projectId}`);
             fs.renameSync(paths.root, tempDeletePath);
 
             // Asynchronous removal is safer for the main event loop
@@ -1862,7 +1909,16 @@ app.post('/api/projects/collaboration/import', upload.single('file'), async (req
         // Ensure project name is unique
         let finalProjectName = projectName;
         let counter = 1;
-        while (fs.existsSync(path.join(PROJECTS_DIR, finalProjectName))) {
+        const allPaths = getAllProjectPaths();
+        const projectExists = (name) => {
+            for (const dir of allPaths) {
+                if (fs.existsSync(path.join(dir, name))) {
+                    return true;
+                }
+            }
+            return false;
+        };
+        while (projectExists(finalProjectName)) {
             finalProjectName = `${projectName}_${counter++}`;
         }
 

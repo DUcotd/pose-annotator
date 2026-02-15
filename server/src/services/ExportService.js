@@ -4,6 +4,7 @@ const { imageSize: sizeOf } = require('image-size');
 const logger = require('../utils/logger');
 const SafeFileOp = require('./FileService');
 const PathUtils = require('../utils/PathUtils');
+const settings = require('../config/settings');
 
 class ExportService {
   constructor() {
@@ -11,8 +12,32 @@ class ExportService {
     this.SUPPORTED_EXTENSIONS = /\.(jpg|jpeg|png|gif|webp)$/i;
   }
 
+  getAllProjectPaths(projectsDir) {
+    const config = settings.load();
+    const paths = [projectsDir];
+    if (config.additionalProjectPaths && Array.isArray(config.additionalProjectPaths)) {
+      config.additionalProjectPaths.forEach(p => {
+        if (p && fs.existsSync(p) && !paths.includes(p)) {
+          paths.push(p);
+        }
+      });
+    }
+    return paths;
+  }
+
+  findProjectRoot(projectId, projectsDir) {
+    const allPaths = this.getAllProjectPaths(projectsDir);
+    for (const dir of allPaths) {
+      const root = path.join(dir, projectId);
+      if (fs.existsSync(root)) {
+        return root;
+      }
+    }
+    return path.join(projectsDir, projectId);
+  }
+
   getProjectPaths(projectId, projectsDir) {
-    const root = path.join(projectsDir, projectId);
+    const root = this.findProjectRoot(projectId, projectsDir);
     return {
       root,
       uploads: path.join(root, 'uploads'),

@@ -14,8 +14,32 @@ const { extractZipAsync } = require('../utils/zipUtils');
 function createProjectRouter(projectsDir) {
   const router = express.Router();
 
+  const getAllProjectPaths = () => {
+    const config = settings.load();
+    const paths = [projectsDir];
+    if (config.additionalProjectPaths && Array.isArray(config.additionalProjectPaths)) {
+      config.additionalProjectPaths.forEach(p => {
+        if (p && fs.existsSync(p) && !paths.includes(p)) {
+          paths.push(p);
+        }
+      });
+    }
+    return paths;
+  };
+
+  const findProjectRoot = (projectId) => {
+    const allPaths = getAllProjectPaths();
+    for (const dir of allPaths) {
+      const root = path.join(dir, projectId);
+      if (fs.existsSync(root)) {
+        return root;
+      }
+    }
+    return path.join(projectsDir, projectId);
+  };
+
   const getProjectPaths = (projectId) => {
-    const root = path.join(projectsDir, projectId);
+    const root = findProjectRoot(projectId);
     return {
       root,
       uploads: path.join(root, 'uploads'),
@@ -25,8 +49,15 @@ function createProjectRouter(projectsDir) {
     };
   };
 
-  const ensureProjectDirs = (projectId) => {
-    const paths = getProjectPaths(projectId);
+  const ensureProjectDirs = (projectId, targetDir = null) => {
+    const root = targetDir ? path.join(targetDir, projectId) : path.join(projectsDir, projectId);
+    const paths = {
+      root,
+      uploads: path.join(root, 'uploads'),
+      annotations: path.join(root, 'annotations'),
+      thumbnails: path.join(root, 'thumbnails'),
+      dataset: path.join(root, 'dataset')
+    };
     SafeFileOp.ensureDir(paths.root);
     SafeFileOp.ensureDir(paths.uploads);
     SafeFileOp.ensureDir(paths.annotations);
@@ -74,15 +105,35 @@ function createProjectRouter(projectsDir) {
 
   router.get('/', (req, res) => {
     try {
-      const projects = fs.readdirSync(projectsDir).filter(file => {
-        if (file.startsWith('.') || file.startsWith('_to_delete_')) return false;
+      const allPaths = getAllProjectPaths();
+      const projectMap = new Map();
+
+      allPaths.forEach(dir => {
+        if (!fs.existsSync(dir)) return;
         try {
-          return fs.statSync(path.join(projectsDir, file)).isDirectory();
-        } catch (e) { return false; }
+          const projects = fs.readdirSync(dir).filter(file => {
+            if (file.startsWith('.') || file.startsWith('_to_delete_')) return false;
+            try {
+              return fs.statSync(path.join(dir, file)).isDirectory();
+            } catch (e) { return false; }
+          });
+
+          projects.forEach(p => {
+            if (!projectMap.has(p)) {
+              projectMap.set(p, path.join(dir, p));
+            }
+          });
+        } catch (e) {
+          logger.error(`Failed to scan directory ${dir}:`, e);
+        }
       });
 
-      const projectList = projects.map(p => {
-        const paths = getProjectPaths(p);
+      const projectList = Array.from(projectMap.entries()).map(([p, root]) => {
+        const paths = {
+          root,
+          uploads: path.join(root, 'uploads'),
+          annotations: path.join(root, 'annotations')
+        };
         let imageCount = 0;
         let annotatedCount = 0;
         try {
@@ -113,14 +164,52 @@ function createProjectRouter(projectsDir) {
   });
 
   router.post('/', (req, res) => {
-    const { name } = req.body;
+    const { name, customPath } = req.body;
     if (!name) return res.status(400).json({ error: 'Project name required' });
 
     const safeName = name.trim().replace(/[<>:"/\\|?*\x00-\x1F]/g, '_');
-    const paths = ensureProjectDirs(safeName);
+    
+    let targetDir = projectsDir;
+    if (customPath) {
+      try {
+        if (!fs.existsSync(customPath)) {
+          fs.mkdirSync(customPath, { recursive: true });
+        }
+        targetDir = customPath;
+      } catch (e) {
+        return res.status(400).json({ error: `无法创建目录: ${e.message}` });
+      }
+    }
 
-    logger.info(`Project created: ${safeName}`);
-    res.json({ message: 'Project created', id: safeName });
+    const projectRoot = path.join(targetDir, safeName);
+    if (fs.existsSync(projectRoot)) {
+      return res.status(400).json({ error: '该项目名称已存在' });
+    }
+
+    const paths = {
+      root: projectRoot,
+      uploads: path.join(projectRoot, 'uploads'),
+      annotations: path.join(projectRoot, 'annotations'),
+      thumbnails: path.join(projectRoot, 'thumbnails'),
+      dataset: path.join(projectRoot, 'dataset')
+    };
+
+    SafeFileOp.ensureDir(paths.root);
+    SafeFileOp.ensureDir(paths.uploads);
+    SafeFileOp.ensureDir(paths.annotations);
+    SafeFileOp.ensureDir(paths.thumbnails);
+
+    if (customPath && customPath !== projectsDir) {
+      const config = settings.load();
+      const additionalPaths = config.additionalProjectPaths || [];
+      if (!additionalPaths.includes(customPath)) {
+        additionalPaths.push(customPath);
+        settings.save({ additionalProjectPaths: additionalPaths });
+      }
+    }
+
+    logger.info(`Project created: ${safeName} at ${targetDir}`);
+    res.json({ message: 'Project created', id: safeName, path: projectRoot });
   });
 
   router.get('/:projectId/config', (req, res) => {
@@ -177,7 +266,8 @@ function createProjectRouter(projectsDir) {
 
   router.get('/:projectId/uploads/:filename', (req, res) => {
     const { projectId, filename } = req.params;
-    const projectPath = path.join(projectsDir, projectId, 'uploads', filename);
+    const paths = getProjectPaths(projectId);
+    const projectPath = path.join(paths.uploads, filename);
     if (fs.existsSync(projectPath)) {
       res.sendFile(projectPath);
     } else {
@@ -536,7 +626,16 @@ function createProjectRouter(projectsDir) {
 
       let finalProjectName = projectName;
       let counter = 1;
-      while (fs.existsSync(path.join(projectsDir, finalProjectName))) {
+      const allPaths = getAllProjectPaths();
+      const projectExists = (name) => {
+        for (const dir of allPaths) {
+          if (fs.existsSync(path.join(dir, name))) {
+            return true;
+          }
+        }
+        return false;
+      };
+      while (projectExists(finalProjectName)) {
         finalProjectName = `${projectName}_${counter++}`;
       }
 

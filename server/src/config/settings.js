@@ -57,6 +57,23 @@ class SettingsService {
   setPythonPath(pythonPath) {
     return this.save({ pythonPath });
   }
+
+  getProjectsDir() {
+    const config = this.load();
+    if (config.projectsDir && fs.existsSync(config.projectsDir)) {
+      return config.projectsDir;
+    }
+    return null;
+  }
+
+  setProjectsDir(projectsDir) {
+    return this.save({ projectsDir });
+  }
+
+  getDefaultProjectsDirName() {
+    const config = this.load();
+    return config.defaultProjectsDirName || 'projects';
+  }
 }
 
 module.exports = new SettingsService();

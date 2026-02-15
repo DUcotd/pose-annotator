@@ -1,6 +1,8 @@
 module.exports = {
   port: process.env.PORT || 5000,
   projectsDir: null,
+  defaultProjectsDirName: 'projects',
+  additionalProjectPaths: [],
   maxLogLines: 1000,
   python: {
     defaultPaths: [

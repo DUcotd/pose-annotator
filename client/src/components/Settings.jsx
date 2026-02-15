@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
     Settings as SettingsIcon, CheckCircle, AlertTriangle, RefreshCw,
-    FolderOpen, Info, ArrowLeft, Terminal, Cpu, Save
+    FolderOpen, Info, ArrowLeft, Terminal, Cpu, Save, Database
 } from 'lucide-react';
 import { createPortal } from 'react-dom';
 
@@ -13,6 +13,9 @@ export const Settings = ({ onBack }) => {
     const [saveMessage, setSaveMessage] = useState(null);
     const [detectedEnvs, setDetectedEnvs] = useState([]);
     const [isScanning, setIsScanning] = useState(false);
+    const [projectsDir, setProjectsDir] = useState('');
+    const [isSavingDir, setIsSavingDir] = useState(false);
+    const [dirSaveMessage, setDirSaveMessage] = useState(null);
 
     useEffect(() => {
         fetchSettings();
@@ -28,6 +31,13 @@ export const Settings = ({ onBack }) => {
             }
         } catch (err) {
             console.error('Failed to load settings:', err);
+        }
+        try {
+            const res = await fetch('http://localhost:5000/api/settings/projects-dir');
+            const data = await res.json();
+            setProjectsDir(data.projectsDir || '');
+        } catch (err) {
+            console.error('Failed to load projects dir:', err);
         }
     };
 
@@ -106,6 +116,70 @@ export const Settings = ({ onBack }) => {
             setSaveMessage({ type: 'error', text: '保存失败: ' + err.message });
         } finally {
             setIsSaving(false);
+        }
+    };
+
+    const handleSelectProjectsDir = async () => {
+        try {
+            const res = await fetch('http://localhost:5000/api/utils/select-folder', { method: 'POST' });
+            const data = await res.json();
+            if (data.path) {
+                setProjectsDir(data.path);
+                setDirSaveMessage(null);
+            }
+        } catch (err) {
+            console.error('Failed to select folder:', err);
+        }
+    };
+
+    const handleSaveProjectsDir = async () => {
+        setIsSavingDir(true);
+        setDirSaveMessage(null);
+
+        try {
+            const res = await fetch('http://localhost:5000/api/settings/projects-dir', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ projectsDir })
+            });
+            const data = await res.json();
+
+            if (data.success) {
+                setDirSaveMessage({ type: 'success', text: data.message });
+                setTimeout(() => setDirSaveMessage(null), 5000);
+            } else {
+                setDirSaveMessage({ type: 'error', text: data.error });
+            }
+        } catch (err) {
+            setDirSaveMessage({ type: 'error', text: '保存失败: ' + err.message });
+        } finally {
+            setIsSavingDir(false);
+        }
+    };
+
+    const handleResetProjectsDir = async () => {
+        setProjectsDir('');
+        setIsSavingDir(true);
+        setDirSaveMessage(null);
+
+        try {
+            const res = await fetch('http://localhost:5000/api/settings/projects-dir', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ projectsDir: null })
+            });
+            const data = await res.json();
+
+            if (data.success) {
+                setDirSaveMessage({ type: 'success', text: data.message });
+                setTimeout(() => setDirSaveMessage(null), 5000);
+            } else {
+                setDirSaveMessage({ type: 'error', text: data.error });
+            }
+        } catch (err) {
+            setDirSaveMessage({ type: 'error', text: '保存失败: ' + err.message });
+        } finally {
+            setIsSavingDir(false);
         }
     };
 
@@ -584,6 +658,130 @@ export const Settings = ({ onBack }) => {
                             textAlign: 'center'
                         }}>
                             {saveMessage.text}
+                        </div>
+                    )}
+                </div>
+
+                {/* Projects Directory Configuration */}
+                <div style={{
+                    background: 'rgba(255,255,255,0.02)',
+                    borderRadius: '24px',
+                    padding: '2rem',
+                    border: '1px solid rgba(255,255,255,0.06)',
+                    marginBottom: '1.5rem'
+                }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '1.5rem' }}>
+                        <Database size={20} style={{ color: 'rgb(77,161,255)' }} />
+                        <h3 style={{ fontSize: '1.2rem', fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
+                            项目存储位置
+                        </h3>
+                    </div>
+
+                    <p style={{ fontSize: '14px', color: 'var(--text-secondary)', marginBottom: '1.5rem', lineHeight: 1.6 }}>
+                        设置项目的默认存储位置。如果不设置，项目将保存在应用数据目录中。
+                    </p>
+
+                    <div style={{ marginBottom: '1.5rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                            <label style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                                项目存储目录
+                            </label>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '10px', marginBottom: '1rem' }}>
+                            <input
+                                type="text"
+                                value={projectsDir}
+                                onChange={(e) => setProjectsDir(e.target.value)}
+                                placeholder="默认使用应用数据目录"
+                                style={{
+                                    flex: 1,
+                                    height: '52px',
+                                    padding: '0 16px',
+                                    fontSize: '14px',
+                                    background: 'rgba(0,0,0,0.3)',
+                                    border: '1px solid rgba(255,255,255,0.1)',
+                                    borderRadius: '14px',
+                                    color: 'var(--text-primary)',
+                                    outline: 'none'
+                                }}
+                            />
+                            <button
+                                onClick={handleSelectProjectsDir}
+                                style={{
+                                    width: '52px',
+                                    height: '52px',
+                                    background: 'rgba(255,255,255,0.06)',
+                                    border: '1px solid rgba(255,255,255,0.1)',
+                                    borderRadius: '14px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    color: 'var(--text-secondary)',
+                                    cursor: 'pointer'
+                                }}
+                                title="浏览文件夹"
+                            >
+                                <FolderOpen size={20} />
+                            </button>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '10px' }}>
+                            <button
+                                onClick={handleSaveProjectsDir}
+                                disabled={isSavingDir}
+                                style={{
+                                    flex: 1,
+                                    height: '48px',
+                                    background: isSavingDir ? 'rgba(255,255,255,0.05)' : 'linear-gradient(135deg, #4da1ff, #34d399)',
+                                    border: 'none',
+                                    borderRadius: '12px',
+                                    color: 'white',
+                                    fontSize: '14px',
+                                    fontWeight: 600,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: '8px',
+                                    cursor: isSavingDir ? 'not-allowed' : 'pointer'
+                                }}
+                            >
+                                {isSavingDir ? <RefreshCw size={16} className="spin" /> : <Save size={16} />}
+                                保存设置
+                            </button>
+                            {projectsDir && (
+                                <button
+                                    onClick={handleResetProjectsDir}
+                                    disabled={isSavingDir}
+                                    style={{
+                                        height: '48px',
+                                        padding: '0 1.5rem',
+                                        background: 'rgba(239,68,68,0.1)',
+                                        border: '1px solid rgba(239,68,68,0.3)',
+                                        borderRadius: '12px',
+                                        color: '#f87171',
+                                        fontSize: '14px',
+                                        fontWeight: 600,
+                                        cursor: isSavingDir ? 'not-allowed' : 'pointer'
+                                    }}
+                                >
+                                    恢复默认
+                                </button>
+                            )}
+                        </div>
+                    </div>
+
+                    {dirSaveMessage && (
+                        <div style={{
+                            padding: '12px 16px',
+                            borderRadius: '12px',
+                            background: dirSaveMessage.type === 'success' ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)',
+                            color: dirSaveMessage.type === 'success' ? '#4ade80' : '#f87171',
+                            fontSize: '14px',
+                            fontWeight: 500,
+                            textAlign: 'center'
+                        }}>
+                            {dirSaveMessage.text}
                         </div>
                     )}
                 </div>
