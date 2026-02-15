@@ -37,56 +37,87 @@ class SafeFileOp {
   }
 
   static async removeDirRename(dirPath, options = {}) {
-    const { retries = 3, delay = 500 } = options;
+    const { retries = 3, delay = 1000 } = options;
+    
+    logger.info(`[SafeFileOp] Starting removal of: ${dirPath}`);
     
     if (!(await this.exists(dirPath))) {
-      logger.debug(`Directory does not exist, nothing to remove: ${dirPath}`);
+      logger.info(`[SafeFileOp] Directory does not exist: ${dirPath}`);
       return { success: true, alreadyGone: true };
     }
 
     const tempPath = dirPath + '_to_delete_' + Date.now();
+    logger.info(`[SafeFileOp] Will rename to: ${tempPath}`);
     
+    let renameSuccess = false;
     for (let attempt = 1; attempt <= retries; attempt++) {
       try {
         await fs.rename(dirPath, tempPath);
-        logger.debug(`Renamed directory: ${dirPath} -> ${tempPath}`);
+        logger.info(`[SafeFileOp] Successfully renamed: ${dirPath} -> ${tempPath}`);
+        renameSuccess = true;
         break;
       } catch (renameErr) {
+        logger.warn(`[SafeFileOp] Rename attempt ${attempt}/${retries} failed: ${renameErr.code} - ${renameErr.message}`);
+        
         if (renameErr.code === 'ENOENT') {
-          logger.debug(`Directory already removed: ${dirPath}`);
+          logger.info(`[SafeFileOp] Directory already removed: ${dirPath}`);
           return { success: true, alreadyGone: true };
         }
+        
         if (attempt === retries) {
-          logger.error(`Failed to rename directory after ${retries} attempts: ${dirPath}`, renameErr);
+          logger.error(`[SafeFileOp] Failed to rename directory after ${retries} attempts: ${dirPath}`);
+          
+          if (renameErr.code === 'EBUSY' || renameErr.code === 'EPERM' || 
+              renameErr.code === 'ENOTEMPTY' || renameErr.code === 'EACCES') {
+            logger.info(`[SafeFileOp] Trying direct removal as fallback...`);
+            try {
+              await fs.rm(dirPath, { recursive: true, force: true });
+              logger.info(`[SafeFileOp] Direct removal succeeded: ${dirPath}`);
+              return { success: true, cleaned: true };
+            } catch (directErr) {
+              logger.error(`[SafeFileOp] Direct removal also failed: ${directErr.message}`);
+              throw new Error(`无法删除目录，文件可能被占用。请关闭所有打开的文件后重试。错误: ${renameErr.message}`);
+            }
+          }
+          
           throw new Error(`无法重命名目录: ${renameErr.message}`);
         }
-        logger.warn(`Rename attempt ${attempt}/${retries} failed, retrying: ${dirPath}`);
+        
+        logger.info(`[SafeFileOp] Waiting ${delay * attempt}ms before retry...`);
         await new Promise(resolve => setTimeout(resolve, delay * attempt));
       }
     }
 
+    if (!renameSuccess) {
+      throw new Error('重命名操作失败');
+    }
+
+    logger.info(`[SafeFileOp] Starting removal of temp directory: ${tempPath}`);
+    
     for (let attempt = 1; attempt <= 5; attempt++) {
       try {
         await fs.rm(tempPath, { recursive: true, force: true });
-        logger.debug(`Successfully removed directory via rename: ${dirPath}`);
+        logger.info(`[SafeFileOp] Successfully removed temp directory: ${tempPath}`);
         return { success: true, cleaned: true };
       } catch (rmErr) {
+        logger.warn(`[SafeFileOp] Removal attempt ${attempt}/5 failed: ${rmErr.code} - ${rmErr.message}`);
+        
         if (rmErr.code === 'ENOENT') {
-          logger.debug(`Temp directory already removed: ${tempPath}`);
+          logger.info(`[SafeFileOp] Temp directory already removed: ${tempPath}`);
           return { success: true, cleaned: true };
         }
         
-        if (rmErr.code === 'EBUSY' || rmErr.code === 'EPERM') {
+        if (rmErr.code === 'EBUSY' || rmErr.code === 'EPERM' || rmErr.code === 'ENOTEMPTY') {
           if (attempt < 5) {
-            logger.warn(`Directory locked, attempt ${attempt}/5, waiting ${delay * attempt}ms: ${tempPath}`);
+            logger.info(`[SafeFileOp] Waiting ${delay * attempt}ms before retry...`);
             await new Promise(resolve => setTimeout(resolve, delay * attempt));
             continue;
           }
-          logger.warn(`Directory still locked after 5 attempts, will cleanup on restart: ${tempPath}`);
+          logger.warn(`[SafeFileOp] Directory still locked after 5 attempts, will cleanup on restart: ${tempPath}`);
           return { success: true, pendingCleanup: true, tempPath };
         }
         
-        logger.error(`Failed to remove temp directory: ${tempPath}`, rmErr);
+        logger.error(`[SafeFileOp] Failed to remove temp directory: ${tempPath}`, rmErr);
         throw new Error(`删除临时目录失败: ${rmErr.message}`);
       }
     }

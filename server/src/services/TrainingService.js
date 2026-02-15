@@ -235,7 +235,7 @@ class TrainingService {
 
   buildArgs(config) {
     const args = [
-      path.join(__dirname, '..', '..', 'scripts', 'train.py'),
+      path.join(__dirname, '..', '..', '..', 'scripts', 'train.py'),
       '--data', config.data,
       '--model', config.model,
       '--epochs', String(config.epochs),

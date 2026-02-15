@@ -10,6 +10,7 @@ const logger = require('../utils/logger');
 const SafeFileOp = require('../services/FileService');
 const settings = require('../config/settings');
 const projectRegistry = require('../services/ProjectRegistryService');
+const projectValidator = require('../utils/ProjectValidator');
 const { extractZipAsync } = require('../utils/zipUtils');
 
 function createProjectRouter(projectsDir) {
@@ -53,7 +54,7 @@ function createProjectRouter(projectsDir) {
   };
 
   const ensureProjectDirs = (projectId, targetDir = null) => {
-    const root = targetDir ? path.join(targetDir, projectId) : path.join(projectsDir, projectId);
+    const root = targetDir ? path.join(targetDir, projectId) : findProjectRoot(projectId);
     const paths = {
       root,
       uploads: path.join(root, 'uploads'),
@@ -109,6 +110,7 @@ function createProjectRouter(projectsDir) {
     try {
       const allPaths = getAllProjectPaths();
       const projectMap = new Map();
+      let skippedCount = 0;
 
       allPaths.forEach(dir => {
         if (!fs.existsSync(dir)) return;
@@ -122,13 +124,26 @@ function createProjectRouter(projectsDir) {
 
           projects.forEach(p => {
             if (!projectMap.has(p)) {
-              projectMap.set(p, path.join(dir, p));
+              const projectPath = path.join(dir, p);
+              
+              const validation = projectValidator.validateProject(projectPath, p);
+              if (!validation.valid) {
+                logger.warn(`[Projects] Skipping invalid project '${p}': ${validation.reason}`);
+                skippedCount++;
+                return;
+              }
+              
+              projectMap.set(p, projectPath);
             }
           });
         } catch (e) {
           logger.error(`Failed to scan directory ${dir}:`, e);
         }
       });
+
+      if (skippedCount > 0) {
+        logger.info(`[Projects] Skipped ${skippedCount} invalid projects`);
+      }
 
       const projectList = Array.from(projectMap.entries()).map(([p, root]) => {
         const paths = {
@@ -255,42 +270,55 @@ function createProjectRouter(projectsDir) {
 
   router.delete('/:projectId', async (req, res) => {
     const { projectId } = req.params;
+    
+    logger.info(`[Delete] Attempting to delete project: ${projectId}`);
+    
     const paths = getProjectPaths(projectId);
+    logger.info(`[Delete] Project path: ${paths.root}`);
 
     if (!fs.existsSync(paths.root)) {
+      logger.info(`[Delete] Project directory not found, removing from registry: ${projectId}`);
       projectRegistry.unregisterProject(projectId);
-      return res.json({ message: 'Project not found, removed from registry' });
+      return res.json({ message: '项目不存在，已从注册表中移除' });
     }
 
     try {
+      logger.info(`[Delete] Marking project as deleted in registry: ${projectId}`);
       projectRegistry.markProjectDeleted(projectId);
       
+      logger.info(`[Delete] Starting directory removal: ${paths.root}`);
       const result = await SafeFileOp.removeDirRename(paths.root);
+      
+      logger.info(`[Delete] Removal result:`, result);
       
       if (result.success) {
         if (result.pendingCleanup) {
-          logger.info(`Project deletion pending cleanup: ${projectId}`);
+          logger.info(`[Delete] Project deletion pending cleanup: ${projectId}`);
           res.json({ 
             message: '项目删除中（部分文件被占用，将在重启后清理）',
             pendingCleanup: true 
           });
         } else {
           projectRegistry.unregisterProject(projectId);
-          logger.info(`Project deleted: ${projectId}`);
+          logger.info(`[Delete] Project deleted successfully: ${projectId}`);
           res.json({ message: '项目已成功删除' });
         }
       } else {
         throw new Error('删除操作未完成');
       }
     } catch (err) {
-      logger.error(`Failed to delete project ${projectId}:`, err);
+      logger.error(`[Delete] Failed to delete project ${projectId}:`, err);
       
       const registryProject = projectRegistry.getProject(projectId);
       if (registryProject && registryProject.status === 'deleted') {
         projectRegistry.updateProject(projectId, { status: 'active' });
       }
       
-      res.status(500).json({ error: '删除项目失败', details: err.message });
+      res.status(500).json({ 
+        error: '删除项目失败', 
+        details: err.message,
+        path: paths.root
+      });
     }
   });
 
@@ -405,6 +433,56 @@ function createProjectRouter(projectsDir) {
       if (err) return res.status(500).json({ error: 'Failed to save annotations' });
       res.json({ message: 'Annotations saved successfully' });
     });
+  });
+
+  router.delete('/:projectId/images/:imageId', async (req, res) => {
+    const { projectId, imageId } = req.params;
+    logger.info(`[DeleteImage] Attempting to delete image: ${imageId} from project: ${projectId}`);
+    
+    const paths = getProjectPaths(projectId);
+    const imagePath = path.join(paths.uploads, imageId);
+    const annotationPath = path.join(paths.annotations, `${imageId}.json`);
+    const thumbnailPath = path.join(paths.thumbnails, imageId);
+
+    try {
+      let deleted = false;
+      
+      if (fs.existsSync(imagePath)) {
+        await fs.promises.unlink(imagePath);
+        logger.info(`[DeleteImage] Deleted image file: ${imagePath}`);
+        deleted = true;
+      } else {
+        logger.warn(`[DeleteImage] Image file not found: ${imagePath}`);
+      }
+
+      if (fs.existsSync(annotationPath)) {
+        await fs.promises.unlink(annotationPath);
+        logger.info(`[DeleteImage] Deleted annotation file: ${annotationPath}`);
+      }
+
+      if (fs.existsSync(thumbnailPath)) {
+        await fs.promises.unlink(thumbnailPath);
+        logger.info(`[DeleteImage] Deleted thumbnail file: ${thumbnailPath}`);
+      }
+
+      if (!deleted) {
+        return res.status(404).json({ error: 'Image not found' });
+      }
+
+      const remainingFiles = fs.existsSync(paths.uploads) 
+        ? fs.readdirSync(paths.uploads).filter(f => /\.(jpg|jpeg|png|gif|webp)$/i.test(f))
+        : [];
+      
+      logger.info(`[DeleteImage] Image deleted successfully. Remaining images: ${remainingFiles.length}`);
+      
+      res.json({ 
+        message: '图片已删除',
+        remainingCount: remainingFiles.length
+      });
+    } catch (err) {
+      logger.error(`[DeleteImage] Failed to delete image ${imageId}:`, err);
+      res.status(500).json({ error: '删除图片失败', details: err.message });
+    }
   });
 
   router.get('/:projectId/dataset/stats', (req, res) => {

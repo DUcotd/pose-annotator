@@ -39,10 +39,17 @@ export const ProjectDashboard = ({ projects = [], onCreateProject, onSelectProje
     const confirmDelete = async () => {
         if (!projectToDelete) return;
         const result = await onDeleteProject(projectToDelete);
+        
+        let message = result.message;
+        if (!result.success && result.details) {
+            message = `${result.message}: ${result.details}`;
+        }
+        
         setNotification({
             type: result.success ? 'success' : 'error',
-            message: result.message
+            message: message
         });
+        
         if (result.pendingCleanup) {
             setNotification({
                 type: 'warning',

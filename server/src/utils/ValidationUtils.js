@@ -156,8 +156,7 @@ const TrainConfigSchema = {
     },
     data: {
       type: 'string',
-      required: true,
-      minLength: 1
+      required: false
     },
     workers: {
       type: 'number',
