@@ -1170,6 +1170,25 @@ gpu_monitor = None
 visual_validator = None
 performance_benchmark = None
 
+def get_scalar(val, default=0.0):
+    """安全地将各种类型（Tensor, numpy, list等）转换为 Python float"""
+    if val is None:
+        return default
+    try:
+        if hasattr(val, 'numel'):
+            if val.numel() > 1:
+                return float(val.mean().item())
+            return float(val.item())
+        if hasattr(val, 'item'):
+            return float(val.item())
+        if isinstance(val, (list, tuple, np.ndarray)):
+            if len(val) > 0:
+                return float(np.mean(val))
+            return default
+        return float(val)
+    except:
+        return default
+
 def on_train_epoch_end(trainer):
     global training_logger, gpu_monitor
     
@@ -1186,35 +1205,15 @@ def on_train_epoch_end(trainer):
         loss_items = trainer.loss_items
         try:
             if hasattr(loss_items, '__len__') and len(loss_items) > 0:
-                loss0 = loss_items[0]
-                if hasattr(loss0, 'item'):
-                    log_data["box_loss"] = float(loss0.item())
-                else:
-                    log_data["box_loss"] = float(loss0)
+                log_data["box_loss"] = get_scalar(loss_items[0])
             if hasattr(loss_items, '__len__') and len(loss_items) > 1:
-                loss1 = loss_items[1]
-                if hasattr(loss1, 'item'):
-                    log_data["cls_loss"] = float(loss1.item())
-                else:
-                    log_data["cls_loss"] = float(loss1)
+                log_data["cls_loss"] = get_scalar(loss_items[1])
             if hasattr(loss_items, '__len__') and len(loss_items) > 2:
-                loss2 = loss_items[2]
-                if hasattr(loss2, 'item'):
-                    log_data["dfl_loss"] = float(loss2.item())
-                else:
-                    log_data["dfl_loss"] = float(loss2)
+                log_data["dfl_loss"] = get_scalar(loss_items[2])
             if hasattr(loss_items, '__len__') and len(loss_items) > 3:
-                loss3 = loss_items[3]
-                if hasattr(loss3, 'item'):
-                    log_data["pose_loss"] = float(loss3.item())
-                else:
-                    log_data["pose_loss"] = float(loss3)
+                log_data["pose_loss"] = get_scalar(loss_items[3])
             if hasattr(loss_items, '__len__') and len(loss_items) > 4:
-                loss4 = loss_items[4]
-                if hasattr(loss4, 'item'):
-                    log_data["kobj_loss"] = float(loss4.item())
-                else:
-                    log_data["kobj_loss"] = float(loss4)
+                log_data["kobj_loss"] = get_scalar(loss_items[4])
         except Exception as e:
             training_logger.warning('epoch_end', f'解析 loss_items 时出错: {e}')
 
@@ -1222,28 +1221,20 @@ def on_train_epoch_end(trainer):
         if hasattr(trainer.metrics, 'box'):
             box = trainer.metrics.box
             try:
-                mp_val = getattr(box, 'mp', 0)
-                mr_val = getattr(box, 'mr', 0)
-                map50_val = getattr(box, 'map50', 0)
-                map_val = getattr(box, 'map', 0)
-                log_data["box_precision"] = float(mp_val.item()) if hasattr(mp_val, 'item') else float(mp_val)
-                log_data["box_recall"] = float(mr_val.item()) if hasattr(mr_val, 'item') else float(mr_val)
-                log_data["mAP50"] = float(map50_val.item()) if hasattr(map50_val, 'item') else float(map50_val)
-                log_data["mAP50_95"] = float(map_val.item()) if hasattr(map_val, 'item') else float(map_val)
+                log_data["box_precision"] = get_scalar(getattr(box, 'mp', 0))
+                log_data["box_recall"] = get_scalar(getattr(box, 'mr', 0))
+                log_data["mAP50"] = get_scalar(getattr(box, 'map50', 0))
+                log_data["mAP50_95"] = get_scalar(getattr(box, 'map', 0))
             except Exception as e:
                 training_logger.warning('epoch_end', f'解析 box metrics 时出错: {e}')
         
         if hasattr(trainer.metrics, 'pose'):
             pose = trainer.metrics.pose
             try:
-                mp_val = getattr(pose, 'mp', 0)
-                mr_val = getattr(pose, 'mr', 0)
-                map50_val = getattr(pose, 'map50', 0)
-                map_val = getattr(pose, 'map', 0)
-                log_data["pose_precision"] = float(mp_val.item()) if hasattr(mp_val, 'item') else float(mp_val)
-                log_data["pose_recall"] = float(mr_val.item()) if hasattr(mr_val, 'item') else float(mr_val)
-                log_data["pose_mAP50"] = float(map50_val.item()) if hasattr(map50_val, 'item') else float(map50_val)
-                log_data["pose_mAP50_95"] = float(map_val.item()) if hasattr(map_val, 'item') else float(map_val)
+                log_data["pose_precision"] = get_scalar(getattr(pose, 'mp', 0))
+                log_data["pose_recall"] = get_scalar(getattr(pose, 'mr', 0))
+                log_data["pose_mAP50"] = get_scalar(getattr(pose, 'map50', 0))
+                log_data["pose_mAP50_95"] = get_scalar(getattr(pose, 'map', 0))
             except Exception as e:
                 training_logger.warning('epoch_end', f'解析 pose metrics 时出错: {e}')
 
@@ -1255,39 +1246,21 @@ def on_train_epoch_end(trainer):
     if hasattr(trainer, 'tloss') and trainer.tloss is not None:
         tloss = trainer.tloss
         try:
-            if hasattr(tloss, 'numel'):
-                num_elements = tloss.numel()
-                if num_elements == 1:
-                    log_data["train_loss"] = float(tloss.detach().item())
-                elif num_elements > 1:
-                    if hasattr(trainer, 'loss') and trainer.loss is not None:
-                        loss_val = trainer.loss
-                        if hasattr(loss_val, 'detach'):
-                            log_data["train_loss"] = float(loss_val.detach().item())
-                        elif hasattr(loss_val, 'item'):
-                            log_data["train_loss"] = float(loss_val.item())
-                        else:
-                            try:
-                                log_data["train_loss"] = float(loss_val)
-                            except:
-                                log_data["train_loss"] = 0.0
-                    else:
-                        log_data["train_loss"] = float(tloss.mean().detach().item())
-                    if num_elements >= 5:
-                        try:
-                            log_data["train_box_loss"] = float(tloss[0].detach().item()) if num_elements > 0 else 0
-                            log_data["train_cls_loss"] = float(tloss[1].detach().item()) if num_elements > 1 else 0
-                            log_data["train_dfl_loss"] = float(tloss[2].detach().item()) if num_elements > 2 else 0
-                            log_data["train_pose_loss"] = float(tloss[3].detach().item()) if num_elements > 3 else 0
-                            log_data["train_kobj_loss"] = float(tloss[4].detach().item()) if num_elements > 4 else 0
-                        except:
-                            pass
-            elif hasattr(tloss, 'detach'):
-                log_data["train_loss"] = float(tloss.detach().item())
-            elif hasattr(tloss, 'item'):
-                log_data["train_loss"] = float(tloss.item())
-            else:
-                log_data["train_loss"] = float(tloss)
+            log_data["train_loss"] = get_scalar(tloss)
+            
+            # 如果 trainer.loss 存在，尝试更精确的损失获取
+            if hasattr(trainer, 'loss') and trainer.loss is not None:
+                log_data["train_loss"] = get_scalar(trainer.loss)
+                
+            if hasattr(tloss, 'numel') and tloss.numel() >= 5:
+                try:
+                    log_data["train_box_loss"] = get_scalar(tloss[0])
+                    log_data["train_cls_loss"] = get_scalar(tloss[1])
+                    log_data["train_dfl_loss"] = get_scalar(tloss[2])
+                    log_data["train_pose_loss"] = get_scalar(tloss[3])
+                    log_data["train_kobj_loss"] = get_scalar(tloss[4])
+                except:
+                    pass
         except Exception as e:
             training_logger.warning('epoch_end', f'解析 tloss 时出错: {e}')
     
