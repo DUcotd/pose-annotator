@@ -12,6 +12,7 @@ const PathService = require('../services/PathService');
 const projectRegistry = require('../services/ProjectRegistryService');
 const projectValidator = require('../utils/ProjectValidator');
 const { extractZipAsync } = require('../utils/zipUtils');
+const RenumberService = require('../services/RenumberService');
 
 function createProjectRouter(projectsDir) {
   const router = express.Router();
@@ -553,6 +554,33 @@ function createProjectRouter(projectsDir) {
       res.json({ history });
     } catch (e) {
       res.json({ history: [] });
+    }
+  });
+
+  router.post('/:projectId/renumber-all', async (req, res) => {
+    const { projectId } = req.params;
+
+    try {
+      if (!projectId) {
+        return res.status(400).json({ error: 'Project ID required' });
+      }
+
+      const paths = PathService.getProjectPaths(projectId, projectsDir);
+      if (!fs.existsSync(paths.root)) {
+        return res.status(404).json({ error: 'Project not found' });
+      }
+
+      const result = await RenumberService.renumberProject(projectId, projectsDir);
+
+      res.json({
+        message: `Renumbered ${result.count} files successfully`,
+        count: result.count,
+        totalImages: result.totalImages,
+        filesRenamed: result.filesRenamed
+      });
+    } catch (err) {
+      logger.error('Renumbering failed:', err);
+      res.status(500).json({ error: 'Failed to renumber files', details: err.message });
     }
   });
 

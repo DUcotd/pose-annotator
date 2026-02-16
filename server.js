@@ -588,65 +588,7 @@ app.post('/api/projects/:projectId/annotations/:imageId', (req, res) => {
     });
 });
 
-// Bulk Renumber All Images in Project
-app.post('/api/projects/:projectId/renumber-all', async (req, res) => {
-    const { projectId } = req.params;
-    const paths = ensureProjectDirs(projectId);
 
-    try {
-        const files = fs.readdirSync(paths.uploads)
-            .filter(f => /\.(jpg|jpeg|png|gif|webp)$/i.test(f))
-            .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
-
-        console.log(`Renumbering ${files.length} images for project: ${projectId}`);
-
-        const results = [];
-        for (let i = 0; i < files.length; i++) {
-            const oldName = files[i];
-            const ext = path.extname(oldName);
-            const newName = String(i + 1).padStart(6, '0') + ext;
-            const newId = String(i + 1).padStart(6, '0');
-
-            if (oldName === newName) continue;
-
-            const oldPath = path.join(paths.uploads, oldName);
-            const newPath = path.join(paths.uploads, newName);
-
-            // Rename image
-            fs.renameSync(oldPath, newPath);
-
-            // Sync annotation if exists
-            const oldAnnPath = path.join(paths.annotations, `${oldName}.json`);
-            const newAnnPath = path.join(paths.annotations, `${newName}.json`);
-            if (fs.existsSync(oldAnnPath)) {
-                fs.renameSync(oldAnnPath, newAnnPath);
-            }
-
-            // Sync thumbnail if exists
-            const oldThumbPath = path.join(paths.thumbnails, oldName);
-            const newThumbPath = path.join(paths.thumbnails, newName);
-            if (fs.existsSync(oldThumbPath)) {
-                fs.renameSync(oldThumbPath, newThumbPath);
-            }
-
-            results.push({ old: oldName, new: newName });
-        }
-
-        // Update config nextImageId
-        const configPath = path.join(paths.root, 'config.json');
-        let config = { classMapping: {} };
-        if (fs.existsSync(configPath)) {
-            config = JSON.parse(fs.readFileSync(configPath));
-        }
-        config.nextImageId = files.length + 1;
-        fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
-
-        res.json({ message: `Renumbered ${results.length} files successfully`, count: results.length });
-    } catch (err) {
-        console.error('Renumbering failed:', err.message);
-        res.status(500).json({ error: 'Failed to renumber files', details: err.message });
-    }
-});
 
 app.delete('/api/projects/:projectId/images/:imageId', async (req, res) => {
     const { projectId, imageId } = req.params;
