@@ -115,6 +115,7 @@ export const ProjectProvider = ({ children }) => {
             const data = await res.json();
             
             if (res.ok) {
+                setProjects(prev => prev.filter(p => p.id !== projectId));
                 await fetchProjects();
                 if (currentProject === projectId) {
                     setCurrentProject(null);

@@ -1,279 +1,181 @@
-# Pose Annotator: 智能姿态与目标检测标注平台
+# Pose Annotator：目标检测与姿态关键点标注平台
 
-![Version](https://img.shields.io/badge/version-1.3.0-blue.svg)
+![Version](https://img.shields.io/badge/version-1.3.4-blue.svg)
 ![License](https://img.shields.io/badge/license-ISC-green.svg)
-![React](https://img.shields.io/badge/Frontend-React-61DAFB.svg)
-![Node](https://img.shields.io/badge/Backend-Node.js-339933.svg)
-![Electron](https://img.shields.io/badge/Desktop-Electron-47848F.svg)
+![Frontend](https://img.shields.io/badge/Frontend-React%20%2B%20Vite-61DAFB.svg)
+![Backend](https://img.shields.io/badge/Backend-Node.js-339933.svg)
+![Desktop](https://img.shields.io/badge/Desktop-Electron-47848F.svg)
 
-**Pose Annotator** 是一个专为计算机视觉任务设计的现代、高性能标注工具。它结合了 Web 的灵活性与原生应用的强大性能，支持 **目标检测 (Bounding Box)** 和 **姿态估计 (Keypoint)** 两种标注模式，并深度集成了 YOLOv8-Pose 的数据格式导出与模型训练流程。
+Pose Annotator 是一个面向计算机视觉数据制作流程的桌面标注工具，覆盖从数据集管理、标注、导出到训练/预标注的闭环。
 
----
+## 功能概览
 
-## ✨ 核心特性
+- 标注模式：边界框（BBox）与关键点（Keypoints，可挂在某个 BBox 下）
+- 数据管理：项目隔离、图库浏览、缩略图缓存、批量导入
+- 自动保存：标注实时落盘到本地 JSON，降低数据丢失风险
+- 数据导出：一键导出 YOLO Pose 数据集结构（images/labels/data.yaml）
+- 训练/预测：可配置本机 Python 环境（ultralytics），在界面内启动训练/预标注（可选）
 
-### 🚀 极致性能
-- **百万级图库支持**：后端集成 `sharp` 高性能图像处理引擎，支持实时生成缩略图，浏览海量数据集流畅无卡顿。
-- **原生系统集成**：基于 Electron 构建，提供原生文件系统访问、目录选择器等桌面级体验。
+## 界面预览
 
-### 🎯 专业标注体验
-- **多模式标注**：支持矩形框 (BBox) 与 关键点 (Pose) 混合标注。
-- **智能辅助**：
-  - **十字辅助线**：像素级对齐。
-  - **自动标签**：支持类别 ID 记忆与快速切换。
-  - **自动保存**：所有操作实时保存至本地 JSON 文件，防止数据丢失。
-- **现代化 UI**：采用 Glassmorphism（毛玻璃）设计风格，界面简洁直观，减少视觉疲劳。
-
-### 📊 数据管理与导出
-- **项目隔离**：支持多项目管理，数据相互独立。
-- **高级导出**：
-  - **YOLO Pose 格式直出**：一键生成标准 YOLOv8-Pose 数据集结构 (`images`, `labels`, `data.yaml`)。
-  - **数据集划分**：支持自定义 **Train/Val/Test** 比例（如 8:1:1）。
-  - **随机打乱**：内置 Fisher-Yates 洗牌算法，确保数据集分布均匀。
-  - **灵活配置**：支持导出是否包含不可见点 (Visibility Flag)，支持筛选仅已标注图片。
-  - **导出路径展示**：导出完成后弹窗显示完整保存路径。
-
-### 🤖 AI 模型训练集成
-- **YOLOv8-Pose 支持**：内置 YOLOv8n-pose/s-pose/m-pose/l-pose/x-pose 模型选项。
-- **内置训练 UI**：无需编写代码，直接在界面配置 Epochs, Batch Size, Model 等参数。
-- **实时监控**：训练日志实时回显，随时掌握训练进度（需配置 Python 环境）。
-- **数据集状态检测**：训练界面自动检测数据集是否已导出，显示关键点配置信息。
-
----
-
-## 🆕 v1.3.0 更新内容
-
-### 新增功能
-- **YOLOv8-Pose 模型支持**：修复训练时模型选择问题，现在默认使用 `yolov8n-pose.pt` 等 Pose 模型。
-- **导出路径弹窗**：数据集导出完成后显示详细弹窗，包含导出统计信息和完整保存路径。
-- **训练界面数据集状态**：实时显示数据集是否已导出、关键点数量、data.yaml 路径等信息。
-- **图片删除功能**：
-  - 图库界面：鼠标悬停显示删除按钮，支持批量管理。
-  - 编辑器界面：工具栏新增删除按钮，支持删除当前图片。
-  - 自动重新编号：删除图片后自动重新编号保持连续（000001, 000002...）。
-
-### 修复问题
-- 修复使用普通检测模型训练 Pose 数据集导致的格式错误。
-- 修复删除图片后界面不刷新的问题。
-
----
-
-## 🖼️ 界面预览
-
-| 项目工作台 (Dashboard) | 标注编辑器 (Editor) |
+| Dashboard | Gallery |
 | :---: | :---: |
-| ![Dashboard](./docs/images/dashboard.png) | ![Editor](./docs/images/editor.png) |
-| 现代化项目管理界面，支持 ZIP 持续协作。 | 强大的标注工具，支持垂直辅助线与实时保存。 |
+| ![Dashboard](./docs/images/dashboard.png) | ![Gallery](./docs/images/gallery.png) |
 
-| 数据集导出 (Dataset Export) |
-| :---: |
-| ![Export](./docs/images/export.png) |
-| 独立的导出配置页面，支持 Train/Val/Test 自由划分。 |
+| Editor | Dataset Export |
+| :---: | :---: |
+| ![Editor](./docs/images/editor.png) | ![Export](./docs/images/export.png) |
 
----
+| Training | Settings |
+| :---: | :---: |
+| ![Training](./docs/images/training.png) | ![Settings](./docs/images/settings.png) |
 
-## 🛠️ 环境准备
+## 环境要求
 
-在开始之前，请确保您的环境满足以下要求：
+- Node.js：v16+（推荐 v18 或更高）
+- Python：3.8+（仅在使用训练/预测功能时需要）
 
-*   **Node.js**: v16+ (推荐 v18 或更高)
-*   **Python**: 3.8+ (仅使用训练功能时需要，需安装 `ultralytics` 库)
+## 安装
 
----
+```bash
+npm install
+npm install --prefix client
+```
 
-## 📦 安装指南
+## 运行方式
 
-1.  **克隆或下载项目**
-    ```bash
-    git clone [repository-url]
-    cd pose-annotator
-    ```
-
-2.  **安装依赖**
-    项目采用前后端分离架构，需要分别安装依赖：
-
-    ```bash
-    # 1. 安装根目录依赖 (Electron & Backend)
-    npm install
-
-    # 2. 安装前端依赖 (React Client)
-    cd client
-    npm install
-    cd ..
-    ```
-
----
-
-## 🚀 快速启动
-
-我们提供了多种启动方式以适应不同的开发与使用场景：
-
-### 方式 A：桌面客户端模式（推荐）
-这是最完整的体验方式，在一个窗口中同时运行后端服务与前端界面。
+### 桌面端开发模式（推荐）
 
 ```bash
 npm run electron:dev
 ```
-> **注意**：启动后会弹出一个 Electron 窗口，包含所有功能。
 
-### 方式 B：打包构建（Windows）
-如果您想生成可分发的 `.exe` 安装包：
+### Web 开发模式（前后端分离）
+
+```bash
+npm start
+```
+
+另开一个终端：
+
+```bash
+npm run client:dev
+```
+
+默认：
+- 后端：http://localhost:5000
+- 前端：Vite 会优先使用 5173（占用会自动换端口）
+
+### 打包构建（Electron）
 
 ```bash
 npm run electron:build
 ```
-构建产物将位于 `dist/` 目录下。
 
-### 方式 C：Web 开发模式
-如果您需要调试前端或后端代码：
+构建产物位于 `dist/`，Windows 默认生成 NSIS 安装包（例如 `Pose Annotator Setup 1.3.4.exe`）。
 
-1.  **启动后端** (http://localhost:5000)
-    ```bash
-    npm start
-    ```
-2.  **启动前端** (http://localhost:5173)
-    ```bash
-    npm run client:dev
-    ```
+## 配置
 
----
+后端运行时配置位于 `server/settings.json`，常用字段：
+- `projectsDir`：项目数据存放根目录（默认会在此目录下创建项目文件夹）
+- `additionalProjectPaths`：额外扫描/创建项目的目录列表
+- `pythonPath`：指定 Python 解释器路径（用于训练/预测）
 
-## 📖 使用指南
+## 使用流程
 
-### 1. 创建项目
-启动应用后，点击首页的 **"New Project"** 卡片，输入项目名称（支持中文）。项目数据将存储在 `projects/` 目录下。
-> **提示**：如果是旧版本用户，系统会自动将 `uploads/` 下的数据迁移至 `projects/Default_Project/`。
+1. 创建项目：在 Dashboard 输入项目名创建项目
+2. 导入图片：进入项目后上传/导入图片
+3. 标注：先画 BBox，再添加该框对应的关键点
+4. 导出：在“导出数据集”页面设置 Train/Val/Test 比例并导出
+5. 训练/预测：配置 Python 环境后在“模型训练”页启动训练（可选）
 
-### 2. 导入图片
-进入项目后，点击右上角的 **Upload** 按钮或直接拖拽图片到窗口中。支持 JPG, PNG, WEBP 等常见格式。
+## 数据与目录结构
 
-### 3. 进行标注
-*   **切换模式**：在顶部工具栏切换 **BBox** (矩形框) 或 **Pose** (关键点) 模式。
-*   **快捷键**：
-    *   `Delete` / `Backspace`: 删除选中的标注。
-    *   `A` / `D` 或 `←` / `→`: 切换上一张/下一张图片。
-*   **关键点逻辑**：关键点必须归属于某个矩形框。先画框，再在框内点选关键点。
-*   **删除图片**：在图库或编辑器中点击删除按钮，删除后自动重新编号。
-
-### 4. 导出数据
-点击 **Export** 按钮，打开导出配置面板：
-*   **Path**: 选择导出目录（支持新建文件夹）。
-*   **Split Ratio**: 设置训练集、验证集、测试集的比例。
-*   **Keypoints**: 设置关键点数量（默认为 17，对应 COCO 格式）。
-*   导出完成后会显示完整路径弹窗。
-
-### 5. 模型训练
-点击 **Train** 按钮，进入训练配置页面：
-*   界面会显示数据集状态（是否已导出、关键点数量）。
-*   选择 Pose 模型（yolov8n-pose ~ yolov8x-pose）。
-*   配置参数后点击 **Start Training**。
-*   **依赖提示**：请确保 Python 环境已安装 YOLOv8 (`pip install ultralytics`)。
-
----
-
-## 📂 目录结构
+项目数据会存放在 `projectsDir/<projectId>/` 下：
 
 ```text
-pose-annotator/
-├── client/                      # React 前端应用
-│   ├── src/
-│   │   ├── components/          # UI 组件
-│   │   │   ├── AnnotationEditor.jsx      # 标注编辑器
-│   │   │   ├── ClassInputModal.jsx       # 类别输入弹窗
-│   │   │   ├── ClassManagerModal.jsx    # 类别管理弹窗
-│   │   │   ├── DatasetExport.jsx         # 数据集导出页面
-│   │   │   ├── ImageGallery.jsx          # 图片画廊
-│   │   │   ├── ImageUpload.jsx           # 图片上传
-│   │   │   ├── TrainingConfig.jsx        # 训练配置面板
-│   │   │   └── training/                 # 训练相关组件
-│   │   ├── context/              # React Context
-│   │   │   └── ProjectContext.jsx
-│   │   ├── hooks/                # 自定义 Hooks
-│   │   │   └── useTraining.js
-│   │   └── App.jsx               # 应用入口
-│   └── package.json              # 前端依赖配置
-├── projects/                     # [自动生成] 项目数据存储目录
-│   └── MyProject/
-│       ├── uploads/              # 原始图片
-│       ├── annotations/          # JSON 标注文件
-│       ├── thumbnails/           # 缩略图缓存
-│       └── dataset/              # 导出的 YOLO 格式数据集
-│           ├── images/           # 图片目录
-│           │   ├── train/
-│           │   ├── val/
-│           │   └── test/
-│           ├── labels/           # 标签目录
-│           └── data.yaml         # YOLO 配置文件
-├── scripts/                      # 辅助脚本
-│   └── train.py                  # YOLOv8 训练脚本
-├── docs/                         # 项目文档
-│   └── images/                   # 界面截图
-├── dist/                         # [自动生成] 构建产物
-├── server.js                     # Node.js 后端服务
-├── electron-main.js              # Electron 主进程
-├── package.json                  # 项目依赖配置
-└── README.md                     # 项目说明
+<projectId>/
+├── uploads/         原始图片
+├── annotations/     每张图片对应一个 <image>.json
+├── thumbnails/      缩略图缓存
+└── dataset/         导出的 YOLO 数据集（images/labels/data.yaml）
 ```
 
----
+## 标注文件格式（JSON）
 
-## 📋 数据格式
-
-### 标注文件格式 (JSON)
-每张图片对应一个 JSON 文件，位于 `projects/{project}/annotations/`：
+每张图片对应一个 JSON 文件，例如 `annotations/000001.JPG.json`：
 
 ```json
 [
   {
-    "id": 1701234567890,
+    "id": 1771242508799.3801,
     "type": "bbox",
-    "x": 100,
-    "y": 150,
-    "width": 200,
-    "height": 300,
-    "classIndex": 0,
-    "label": "person"
+    "x": 331.76,
+    "y": 794.88,
+    "width": 4567.35,
+    "height": 1577.31,
+    "label": "",
+    "classIndex": 0
   },
   {
-    "id": 1701234567891,
+    "id": 1771242508799.9583,
     "type": "keypoint",
-    "x": 150,
-    "y": 180,
+    "x": 391.43,
+    "y": 1649.7,
+    "label": "Keypoint",
     "keypointIndex": 0,
-    "parentId": 1701234567890
+    "parentId": 1771242508799.3801
   }
 ]
 ```
 
-### YOLO Pose 标签格式
-导出的标签文件格式：
-```
+约束：
+- `type: "keypoint"` 必须通过 `parentId` 关联到某个 `type: "bbox"`。
+
+## YOLO Pose 标签格式
+
+导出的标签行格式：
+
+```text
 <class_id> <cx> <cy> <w> <h> <kp1_x> <kp1_y> <kp1_v> <kp2_x> <kp2_y> <kp2_v> ...
 ```
 
-### data.yaml 配置
-```yaml
-path: /path/to/dataset
-train: images/train
-val: images/val
-test: images/test
-kpt_shape: [17, 3]
-flip_idx: [0, 1, 2, 4, 3, 6, 5, 8, 7, 10, 9, 12, 11, 14, 13, 16, 15]
-names:
-  0: person
+对应的 `data.yaml` 会包含 `kpt_shape` 等配置。
+
+## 常见问题
+
+### 1) 删除项目失败（EBUSY / 文件被占用）
+
+Windows 下删除目录会先尝试“重命名后后台清理”。如果目录被占用，重命名也会失败，表现为 `EBUSY: resource busy or locked`。
+
+处理建议：
+- 关闭正在打开的图片/标注文件（包括资源管理器预览窗格）
+- 停止正在运行的训练/预测任务
+- 退出应用并重启后再删除
+
+### 2) 端口冲突
+
+- 后端默认 5000；被占用时请先释放端口或修改配置
+- 前端 5173 被占用时 Vite 会自动尝试下一个端口
+
+### 3) 训练/预测不可用
+
+确认：
+- `server/settings.json` 里的 `pythonPath` 指向有效解释器
+- Python 环境已安装 `ultralytics`（以及训练所需依赖）
+
+## 目录结构（源码）
+
+```text
+pose-annotator/
+├── client/              前端（React + Vite）
+├── server/              后端（Express，模块化实现）
+├── scripts/             训练/预测相关脚本
+├── docs/                文档与截图
+├── electron-main.js     Electron 主进程
+└── server.js            旧版后端（仅作为兼容回退）
 ```
 
----
+## License
 
-## 📄 许可证
-
-本项目采用 **ISC License** 许可证。
-
----
-
-## 🙏 致谢
-
-- [YOLOv8](https://github.com/ultralytics/ultralytics) - 强大的目标检测与姿态估计框架
-- [React](https://react.dev/) - 现代 Web 前端框架
-- [Electron](https://www.electronjs.org/) - 跨平台桌面应用框架
-- [sharp](https://sharp.pixelplumbing.com/) - 高性能图像处理库
+ISC License

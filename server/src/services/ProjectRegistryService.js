@@ -136,7 +136,7 @@ class ProjectRegistryService {
       if (!fs.existsSync(dir)) return;
       try {
         const projects = fs.readdirSync(dir).filter(file => {
-          if (file.startsWith('.') || file.startsWith('_to_delete_')) return false;
+          if (file.startsWith('.') || file.includes('_to_delete_')) return false;
           try {
             return fs.statSync(path.join(dir, file)).isDirectory();
           } catch (e) { return false; }
