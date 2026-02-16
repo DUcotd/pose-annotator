@@ -1,22 +1,95 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, Tag, X, Hash } from 'lucide-react';
 
-export const ClassInputModal = ({ isOpen, onClose, onSubmit, initialValue }) => {
+export const ClassInputModal = ({ isOpen, onClose, onSubmit, initialValue, classMapping = {}, projectId }) => {
     const [value, setValue] = useState(initialValue || 0);
     const inputRef = useRef(null);
+    const [recent, setRecent] = useState([]);
+    const [activeIdx, setActiveIdx] = useState(0);
+
+    const classOptions = useMemo(() => {
+        const entries = Object.entries(classMapping || {});
+        return entries
+            .map(([k, v]) => ({ index: parseInt(k, 10), name: String(v ?? '') }))
+            .filter(x => Number.isFinite(x.index))
+            .sort((a, b) => a.index - b.index);
+    }, [classMapping]);
 
     useEffect(() => {
         if (isOpen) {
             setValue(initialValue || 0);
+            setActiveIdx(0);
+            if (projectId) {
+                try {
+                    const raw = localStorage.getItem(`pose-annotator:recent-classes:${projectId}`);
+                    const parsed = raw ? JSON.parse(raw) : [];
+                    setRecent(Array.isArray(parsed) ? parsed.filter(n => Number.isFinite(n)).slice(0, 8) : []);
+                } catch {
+                    setRecent([]);
+                }
+            } else {
+                setRecent([]);
+            }
             setTimeout(() => inputRef.current?.focus(), 100);
         }
     }, [isOpen, initialValue]);
 
+    useEffect(() => {
+        if (!isOpen) return;
+        if (!classOptions.length) return;
+        const idx = classOptions.findIndex(o => o.index === (parseInt(initialValue, 10) || 0));
+        setActiveIdx(idx >= 0 ? idx : 0);
+    }, [classOptions, initialValue, isOpen]);
+
+    const persistRecent = (picked) => {
+        if (!projectId) return;
+        const next = [picked, ...recent.filter(x => x !== picked)].slice(0, 8);
+        setRecent(next);
+        try {
+            localStorage.setItem(`pose-annotator:recent-classes:${projectId}`, JSON.stringify(next));
+        } catch {
+        }
+    };
+
     const handleSubmit = (e) => {
         e.preventDefault();
-        onSubmit(parseInt(value) || 0);
+        const picked = parseInt(value, 10) || 0;
+        persistRecent(picked);
+        onSubmit(picked);
         onClose();
+    };
+
+    const quickPick = (picked) => {
+        persistRecent(picked);
+        onSubmit(picked);
+        onClose();
+    };
+
+    const handleKeyDown = (e) => {
+        if (e.key === 'Escape') {
+            e.preventDefault();
+            onClose();
+            return;
+        }
+        if (!classOptions.length) return;
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            const next = (activeIdx + 1) % classOptions.length;
+            setActiveIdx(next);
+            setValue(classOptions[next].index);
+            return;
+        }
+        if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            const next = (activeIdx - 1 + classOptions.length) % classOptions.length;
+            setActiveIdx(next);
+            setValue(classOptions[next].index);
+            return;
+        }
+        if (e.key === 'Enter') {
+            return;
+        }
     };
 
     if (!isOpen) return null;
@@ -26,6 +99,8 @@ export const ClassInputModal = ({ isOpen, onClose, onSubmit, initialValue }) => 
             <div
                 className="animate-scale-in modal-panel modal-panel-sm"
                 onClick={e => e.stopPropagation()}
+                onKeyDown={handleKeyDown}
+                tabIndex={-1}
                 style={{
                     overflow: 'visible',
                     boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.05)'
@@ -90,6 +165,78 @@ export const ClassInputModal = ({ isOpen, onClose, onSubmit, initialValue }) => 
                                 }}
                             />
                         </div>
+
+                        {recent.length > 0 && (
+                            <div style={{ marginTop: '14px' }}>
+                                <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', marginBottom: '8px' }}>
+                                    最近使用
+                                </div>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                                    {recent.map((idx) => (
+                                        <button
+                                            key={idx}
+                                            type="button"
+                                            onClick={() => quickPick(idx)}
+                                            className="btn-modern-secondary"
+                                            style={{ padding: '0 10px', height: '34px', fontSize: '0.85rem' }}
+                                        >
+                                            {idx}{classMapping && classMapping[idx] ? ` · ${classMapping[idx]}` : ''}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {classOptions.length > 0 && (
+                            <div style={{ marginTop: '14px' }}>
+                                <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', marginBottom: '8px', display: 'flex', justifyContent: 'space-between' }}>
+                                    <span>类别列表</span>
+                                    <span>↑↓ 选择 / Enter 确认</span>
+                                </div>
+                                <div style={{
+                                    maxHeight: '240px',
+                                    overflow: 'auto',
+                                    borderRadius: '12px',
+                                    border: '1px solid rgba(255,255,255,0.08)',
+                                    background: 'rgba(0,0,0,0.12)'
+                                }}>
+                                    {classOptions.map((opt, i) => {
+                                        const isActive = i === activeIdx;
+                                        return (
+                                            <button
+                                                key={opt.index}
+                                                type="button"
+                                                onClick={() => quickPick(opt.index)}
+                                                style={{
+                                                    width: '100%',
+                                                    textAlign: 'left',
+                                                    padding: '10px 12px',
+                                                    border: 'none',
+                                                    background: isActive ? 'rgba(88, 166, 255, 0.15)' : 'transparent',
+                                                    color: 'var(--text-primary)',
+                                                    display: 'flex',
+                                                    gap: '10px',
+                                                    alignItems: 'center',
+                                                    cursor: 'pointer'
+                                                }}
+                                            >
+                                                <span style={{
+                                                    minWidth: '44px',
+                                                    fontFamily: 'monospace',
+                                                    fontSize: '0.85rem',
+                                                    color: isActive ? 'var(--accent-primary)' : 'var(--text-tertiary)'
+                                                }}>
+                                                    {opt.index}
+                                                </span>
+                                                <span style={{ fontSize: '0.9rem', color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
+                                                    {opt.name || `Class ${opt.index}`}
+                                                </span>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
                     </div>
 
                     <div className="modal-footer" style={{

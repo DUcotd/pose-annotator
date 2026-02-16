@@ -48,6 +48,10 @@ export function AnnotationEditor({ image, projectId, onBack }) {
     const [history, setHistory] = useState([]);
     const [historyIndex, setHistoryIndex] = useState(-1);
     const [annotationStats, setAnnotationStats] = useState({ bboxes: 0, keypoints: 0, labeled: 0 });
+    const historyRef = useRef([]);
+    const historyIndexRef = useRef(-1);
+    const dragStartSnapshotRef = useRef(null);
+    const pendingPasteRef = useRef(null);
 
     // Completion Dialog State
     const [showCompletionDialog, setShowCompletionDialog] = useState(false);
@@ -118,30 +122,72 @@ export function AnnotationEditor({ image, projectId, onBack }) {
     }, [annotations]);
 
     // Undo/Redo functionality
+    const syncHistoryState = useCallback((nextHistory, nextIndex) => {
+        historyRef.current = nextHistory;
+        historyIndexRef.current = nextIndex;
+        setHistory(nextHistory);
+        setHistoryIndex(nextIndex);
+    }, []);
+
+    const resetHistory = useCallback((initialAnnotations = []) => {
+        const snap = JSON.stringify(initialAnnotations || []);
+        syncHistoryState([snap], 0);
+    }, [syncHistoryState]);
+
     const pushToHistory = useCallback((newAnnotations) => {
-        setHistory(prev => {
-            const newHistory = prev.slice(0, historyIndex + 1);
-            newHistory.push(JSON.stringify(newAnnotations));
-            return newHistory.slice(-50); // Keep last 50 states
-        });
-        setHistoryIndex(prev => Math.min(prev + 1, 49));
-    }, [historyIndex]);
+        const snap = JSON.stringify(newAnnotations || []);
+        const h = historyRef.current || [];
+        const i = historyIndexRef.current ?? -1;
+
+        if (h.length === 0 || i < 0) {
+            syncHistoryState([snap], 0);
+            return;
+        }
+
+        if (h[i] === snap) return;
+
+        let nextHistory = h.slice(0, i + 1);
+        nextHistory.push(snap);
+
+        if (nextHistory.length > 50) {
+            const overflow = nextHistory.length - 50;
+            nextHistory = nextHistory.slice(overflow);
+        }
+
+        const nextIndex = nextHistory.length - 1;
+        syncHistoryState(nextHistory, nextIndex);
+    }, [syncHistoryState]);
 
     const undo = useCallback(() => {
-        if (historyIndex > 0) {
-            const newIndex = historyIndex - 1;
-            setHistoryIndex(newIndex);
-            setAnnotations(JSON.parse(history[newIndex]));
+        const h = historyRef.current || [];
+        const i = historyIndexRef.current ?? -1;
+        if (i > 0) {
+            const nextIndex = i - 1;
+            syncHistoryState(h, nextIndex);
+            setAnnotations(JSON.parse(h[nextIndex]));
         }
-    }, [history, historyIndex, setAnnotations]);
+    }, [setAnnotations, syncHistoryState]);
 
     const redo = useCallback(() => {
-        if (historyIndex < history.length - 1) {
-            const newIndex = historyIndex + 1;
-            setHistoryIndex(newIndex);
-            setAnnotations(JSON.parse(history[newIndex]));
+        const h = historyRef.current || [];
+        const i = historyIndexRef.current ?? -1;
+        if (i >= 0 && i < h.length - 1) {
+            const nextIndex = i + 1;
+            syncHistoryState(h, nextIndex);
+            setAnnotations(JSON.parse(h[nextIndex]));
         }
-    }, [history, historyIndex, setAnnotations]);
+    }, [setAnnotations, syncHistoryState]);
+
+    const applyAnnotationEdit = useCallback((updater) => {
+        setAnnotations(prev => {
+            if ((historyRef.current?.length ?? 0) === 0 || (historyIndexRef.current ?? -1) < 0) {
+                syncHistoryState([JSON.stringify(prev || [])], 0);
+            }
+            const next = (typeof updater === 'function') ? updater(prev) : updater;
+            pushToHistory(next);
+            return next;
+        });
+    }, [pushToHistory, setAnnotations, syncHistoryState]);
 
     const resetView = useCallback(() => {
         setZoomLevel(1);
@@ -163,12 +209,34 @@ export function AnnotationEditor({ image, projectId, onBack }) {
         setMode('bbox');
         setSelectedId(null); // Reset selection on image change
         setShowDeleteConfirm(false); // Ensure delete dialog is closed when image changes
+        syncHistoryState([], -1);
+        dragStartSnapshotRef.current = null;
 
         // Check if image is already loaded (from cache)
         if (imageRef.current && imageRef.current.complete) {
             handleImageLoad();
         }
     }, [image, handleImageLoad]);
+
+    useEffect(() => {
+        if (!isLoaded) return;
+        if (!lastLoadTime) return;
+        resetHistory(annotations);
+    }, [image, isLoaded, lastLoadTime, resetHistory]);
+
+    useEffect(() => {
+        const pending = pendingPasteRef.current;
+        if (!pending) return;
+        if (pending.targetImage !== image) return;
+        if (!isLoaded || !lastLoadTime) return;
+        pendingPasteRef.current = null;
+        try {
+            const parsed = JSON.parse(pending.snapshot);
+            applyAnnotationEdit(Array.isArray(parsed) ? parsed : []);
+        } catch {
+            applyAnnotationEdit([]);
+        }
+    }, [applyAnnotationEdit, image, isLoaded, lastLoadTime]);
 
     const retryLoad = session.retryLoad;
 
@@ -203,8 +271,7 @@ export function AnnotationEditor({ image, projectId, onBack }) {
         try {
             const result = await predictSingleImage(projectId, image, predictionModelPath, 0.25);
             if (result.success && result.predictions) {
-                setAnnotations(result.predictions);
-                pushToHistory(result.predictions);
+                applyAnnotationEdit(result.predictions);
             } else {
                 setPredictionError(result.error || '预标注失败');
                 setShowPredictionError(true);
@@ -235,6 +302,27 @@ export function AnnotationEditor({ image, projectId, onBack }) {
         if (!nav) return;
         if (nav.type === 'back') {
             onBack();
+            return;
+        }
+        if (nav.type === 'copyPrevToCurrent') {
+            try {
+                const res = await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/annotations/${encodeURIComponent(nav.sourceImage)}`);
+                if (!res.ok) {
+                    const t = await res.text().catch(() => '');
+                    throw new Error(t ? `HTTP ${res.status}: ${t}` : `HTTP ${res.status}`);
+                }
+                const data = await res.json();
+                applyAnnotationEdit(Array.isArray(data) ? data : []);
+                setSelectedId(null);
+            } catch (err) {
+                setPredictionError(err?.message ? `复制标注失败：${String(err.message)}` : `复制标注失败：${String(err)}`);
+                setShowPredictionError(true);
+            }
+            return;
+        }
+        if (nav.type === 'copyCurrentToNext') {
+            pendingPasteRef.current = { targetImage: nav.targetImage, snapshot: nav.snapshot };
+            openEditor(nav.targetImage);
             return;
         }
         if (nav.type === 'openEditor') {
@@ -280,7 +368,7 @@ export function AnnotationEditor({ image, projectId, onBack }) {
             setShowCompletionDialog(false);
             goToTraining(projectId);
         }
-    }, [exportProject, goToTraining, onBack, openEditor, projectId]);
+    }, [applyAnnotationEdit, exportProject, goToTraining, onBack, openEditor, projectId]);
 
     const attemptNavigation = useCallback(async (nav) => session.attemptNavigation(nav, runNavigation), [runNavigation, session]);
 
@@ -332,12 +420,27 @@ export function AnnotationEditor({ image, projectId, onBack }) {
     }, [projectId]);
 
     const [annotatedCount, setAnnotatedCount] = useState(0);
+    const [datasetStats, setDatasetStats] = useState(null);
 
     useEffect(() => {
         if (showCompletionDialog) {
             getAnnotatedImagesCount().then(setAnnotatedCount);
         }
     }, [showCompletionDialog, getAnnotatedImagesCount]);
+
+    const refreshDatasetStats = useCallback(async () => {
+        try {
+            const res = await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/dataset/stats`);
+            const data = await res.json();
+            setDatasetStats(data || null);
+        } catch {
+            setDatasetStats(null);
+        }
+    }, [projectId]);
+
+    useEffect(() => {
+        refreshDatasetStats();
+    }, [lastLoadTime, lastSaveTime, refreshDatasetStats]);
 
 
     // Navigation Logic
@@ -356,6 +459,47 @@ export function AnnotationEditor({ image, projectId, onBack }) {
             await attemptNavigation({ type: 'openEditor', image: typeof prevImg === 'string' ? prevImg : prevImg.name });
         }
     }, [currentIndex, images, attemptNavigation]);
+
+    const copyPrevToCurrent = useCallback(async () => {
+        if (currentIndex <= 0) return;
+        const prevImg = images[currentIndex - 1];
+        const prevName = typeof prevImg === 'string' ? prevImg : prevImg.name;
+        await attemptNavigation({ type: 'copyPrevToCurrent', sourceImage: prevName });
+    }, [attemptNavigation, currentIndex, images]);
+
+    const copyCurrentToNext = useCallback(async () => {
+        if (currentIndex >= images.length - 1) return;
+        const nextImg = images[currentIndex + 1];
+        const nextName = typeof nextImg === 'string' ? nextImg : nextImg.name;
+        const snapshot = JSON.stringify(annotations || []);
+        await attemptNavigation({ type: 'copyCurrentToNext', targetImage: nextName, snapshot });
+    }, [annotations, attemptNavigation, currentIndex, images]);
+
+    const goToNextUnannotated = useCallback(async () => {
+        for (let i = currentIndex + 1; i < images.length; i++) {
+            const img = images[i];
+            const isUnannotated = typeof img === 'string' ? true : !img.hasAnnotation;
+            if (isUnannotated) {
+                await attemptNavigation({ type: 'openEditor', image: typeof img === 'string' ? img : img.name });
+                return;
+            }
+        }
+        setPredictionError('已全部标注');
+        setShowPredictionError(true);
+    }, [attemptNavigation, currentIndex, images]);
+
+    const goToPrevUnannotated = useCallback(async () => {
+        for (let i = currentIndex - 1; i >= 0; i--) {
+            const img = images[i];
+            const isUnannotated = typeof img === 'string' ? true : !img.hasAnnotation;
+            if (isUnannotated) {
+                await attemptNavigation({ type: 'openEditor', image: typeof img === 'string' ? img : img.name });
+                return;
+            }
+        }
+        setPredictionError('已全部标注');
+        setShowPredictionError(true);
+    }, [attemptNavigation, currentIndex, images]);
 
     // Keyboard Shortcuts for Navigation
     useEffect(() => {
@@ -513,6 +657,7 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                 if (ann && ann.type === 'bbox') {
                     const handle = getResizeHandle(pos, ann);
                     if (handle) {
+                        dragStartSnapshotRef.current = JSON.stringify(annotations || []);
                         setDragState({ type: 'resize', handle, startX: pos.x, startY: pos.y, initialAnn: { ...ann } });
                         return;
                     }
@@ -523,6 +668,7 @@ export function AnnotationEditor({ image, projectId, onBack }) {
 
             if (clickedAnn) {
                 setSelectedId(clickedAnn.id);
+                dragStartSnapshotRef.current = JSON.stringify(annotations || []);
                 setDragState({ type: 'move', startX: pos.x, startY: pos.y, initialAnn: { ...clickedAnn } });
             } else {
                 setSelectedId(null);
@@ -540,7 +686,7 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                 keypointIndex: nextIndex,
                 parentId: selectedId
             };
-            setAnnotations(prev => [...prev, newAnnotation]);
+            applyAnnotationEdit(prev => [...prev, newAnnotation]);
             return;
         }
 
@@ -657,7 +803,18 @@ export function AnnotationEditor({ image, projectId, onBack }) {
     const handlePointerUp = (e) => {
         if (e.button !== 0) return;
         e.currentTarget.releasePointerCapture(e.pointerId);
-        if (dragState) { setDragState(null); return; }
+        if (dragState) {
+            setDragState(null);
+            const startSnap = dragStartSnapshotRef.current;
+            dragStartSnapshotRef.current = null;
+            if (startSnap != null) {
+                const endSnap = JSON.stringify(annotations || []);
+                if (endSnap !== startSnap) {
+                    pushToHistory(annotations || []);
+                }
+            }
+            return;
+        }
         if (!isDrawing) return;
 
         // Minimum box size threshold in natural pixels (scale 5 display pixels to natural)
@@ -684,7 +841,7 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                 classIndex: index,
                 label: pendingBBox.label || mappedName || ''
             };
-            setAnnotations(prev => [...prev, finalizedBBox]);
+            applyAnnotationEdit(prev => [...prev, finalizedBBox]);
 
             setSelectedId(finalizedBBox.id);
             setMode('keypoint');
@@ -727,9 +884,9 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                     .filter(a => a.type === 'keypoint' && a.parentId === id)
                     .map(a => a.id)
             );
-            setAnnotations(prev => prev.filter(a => a.id !== id && !childIds.has(a.id)));
+            applyAnnotationEdit(prev => prev.filter(a => a.id !== id && !childIds.has(a.id)));
         } else {
-            setAnnotations(prev => prev.filter(a => a.id !== id));
+            applyAnnotationEdit(prev => prev.filter(a => a.id !== id));
         }
         if (selectedId === id) setSelectedId(null);
     };
@@ -806,14 +963,47 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                         >
                             <ChevronLeft size={20} />
                         </button>
+                        <button
+                            onClick={goToPrevUnannotated}
+                            disabled={navLocked || currentIndex <= 0}
+                            className="icon-btn"
+                            title="上一张未标注"
+                        >
+                            <Play size={18} style={{ transform: 'rotate(180deg)' }} />
+                        </button>
+                        <button
+                            onClick={copyPrevToCurrent}
+                            disabled={navLocked || currentIndex <= 0}
+                            className="icon-btn"
+                            title="复制上一张标注到当前"
+                        >
+                            <RotateCcw size={18} />
+                        </button>
 
                         <div className="editor-nav-info">
                             <h3>{image}</h3>
                             <div className="editor-nav-counter">
                                 {currentIndex + 1} / {images.length}
+                                {datasetStats && Number.isFinite(datasetStats.unannotated) ? ` · 未标注 ${datasetStats.unannotated}` : ''}
                             </div>
                         </div>
 
+                        <button
+                            onClick={copyCurrentToNext}
+                            disabled={navLocked || currentIndex >= images.length - 1}
+                            className="icon-btn"
+                            title="复制当前标注到下一张"
+                        >
+                            <RotateCcw size={18} style={{ transform: 'scaleX(-1)' }} />
+                        </button>
+                        <button
+                            onClick={goToNextUnannotated}
+                            disabled={navLocked || currentIndex >= images.length - 1}
+                            className="icon-btn"
+                            title="下一张未标注"
+                        >
+                            <Play size={18} />
+                        </button>
                         <button
                             onClick={goToNext}
                             disabled={navLocked || currentIndex >= images.length - 1}
@@ -1060,7 +1250,7 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                     <button 
                         onClick={undo} 
                         disabled={historyIndex <= 0}
-                        title="撤销 (Ctrl+Z)" 
+                        title="撤销 (Ctrl/Cmd+Z)" 
                         className="tool-btn"
                         style={{ opacity: historyIndex <= 0 ? 0.4 : 1 }}
                     >
@@ -1069,7 +1259,7 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                     <button 
                         onClick={redo} 
                         disabled={historyIndex >= history.length - 1}
-                        title="重做 (Ctrl+Y)" 
+                        title="重做 (Ctrl/Cmd+Shift+Z / Ctrl/Cmd+Y)" 
                         className="tool-btn"
                         style={{ opacity: historyIndex >= history.length - 1 ? 0.4 : 1 }}
                     >
@@ -1367,7 +1557,7 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                                                 value={group.classIndex ?? 0}
                                                 onChange={(e) => {
                                                     const val = parseInt(e.target.value) || 0;
-                                                    setAnnotations(prev => prev.map(a => a.id === group.id ? { ...a, classIndex: val } : a));
+                                                    applyAnnotationEdit(prev => prev.map(a => a.id === group.id ? { ...a, classIndex: val } : a));
                                                 }}
                                                 className="input-inline"
                                             />
@@ -1396,7 +1586,7 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                                                                 onClick={(e) => e.stopPropagation()}
                                                                 onChange={(e) => {
                                                                     const val = parseInt(e.target.value) || 0;
-                                                                    setAnnotations(prev => prev.map(a => a.id === kp.id ? { ...a, keypointIndex: val } : a));
+                                                                    applyAnnotationEdit(prev => prev.map(a => a.id === kp.id ? { ...a, keypointIndex: val } : a));
                                                                 }}
                                                                 className="input-inline-xs"
                                                             />
@@ -1437,6 +1627,9 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                 isOpen={isClassModalOpen}
                 onClose={() => { setIsClassModalOpen(false); setPendingBBox(null); }}
                 onSubmit={confirmClassIndex}
+                initialValue={pendingBBox?.classIndex ?? 0}
+                classMapping={projectConfig.classMapping}
+                projectId={projectId}
             />
 
             <ClassManagerModal
@@ -1524,9 +1717,10 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                                     {[
                                         ['A / ←', '上一张图片'],
                                         ['D / →', '下一张图片'],
-                                        ['Ctrl+Z', '撤销'],
-                                        ['Ctrl+Y', '重做'],
-                                        ['Delete', '删除选中']
+                                        ['Ctrl/Cmd+Z', '撤销'],
+                                        ['Ctrl/Cmd+Shift+Z', '重做'],
+                                        ['Ctrl/Cmd+Y', '重做'],
+                                        ['Delete / Backspace', '删除选中']
                                     ].map(([key, desc]) => (
                                         <div key={key} style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                                             <kbd style={{
@@ -1536,7 +1730,7 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                                                 fontSize: '12px',
                                                 fontFamily: 'monospace',
                                                 color: 'var(--text-primary)',
-                                                minWidth: '60px',
+                                                minWidth: '140px',
                                                 textAlign: 'center'
                                             }}>{key}</kbd>
                                             <span style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>{desc}</span>
@@ -2231,7 +2425,7 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                             </div>
                             <div>
                                 <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                                    预标注失败
+                                    操作失败
                                 </h3>
                             </div>
                         </div>
