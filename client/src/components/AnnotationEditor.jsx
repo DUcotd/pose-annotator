@@ -3,12 +3,25 @@ import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { Save, ArrowLeft, Trash2, Crosshair, Box, MousePointer2, ChevronDown, ChevronRight, ChevronLeft, Layers, ZoomIn, ZoomOut, Maximize, Tag, HelpCircle, Undo2, Redo2, RotateCcw, Grid3X3, Link, CheckCircle, Play, X, AlertTriangle, RefreshCw, Wand2 } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { useProject } from '../context/ProjectContext';
+import { useAnnotationSession } from '../hooks/useAnnotationSession';
 import { ClassInputModal } from './ClassInputModal';
 import { ClassManagerModal } from './ClassManagerModal';
 
 export function AnnotationEditor({ image, projectId, onBack }) {
     const { images, openEditor, goToTraining, currentProject, exportProject, deleteImage, predictSingleImage, getPredictionSettings } = useProject();
-    const [annotations, setAnnotations] = useState([]);
+    const session = useAnnotationSession({ projectId, imageId: image });
+    const annotations = session.annotations;
+    const setAnnotations = session.setAnnotations;
+    const isLoaded = session.isLoaded;
+    const saveStatus = session.saveStatus;
+    const hasUnsavedChanges = session.hasUnsavedChanges;
+    const lastLoadError = session.lastLoadError;
+    const lastSaveError = session.lastSaveError;
+    const lastLoadTime = session.lastLoadTime;
+    const lastSaveTime = session.lastSaveTime;
+    const annotationEtag = session.annotationEtag;
+    const conflictInfo = session.conflictInfo;
+    const blockedNavigation = session.blockedNavigation;
     const [mode, setMode] = useState('bbox'); // 'bbox' | 'keypoint' | 'select'
     const [isDrawing, setIsDrawing] = useState(false);
     const [startPos, setStartPos] = useState(null);
@@ -21,11 +34,8 @@ export function AnnotationEditor({ image, projectId, onBack }) {
     // New Workflow State
     const [isClassModalOpen, setIsClassModalOpen] = useState(false);
     const [pendingBBox, setPendingBBox] = useState(null);
-    const [isLoaded, setIsLoaded] = useState(false);
     const [isImageLoaded, setIsImageLoaded] = useState(false);
     const [imageDims, setImageDims] = useState({ width: 0, height: 0, naturalWidth: 0, naturalHeight: 0 });
-    const [saveStatus, setSaveStatus] = useState('saved'); // 'saved' | 'saving' | 'error'
-    const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
     const [showGuides, setShowGuides] = useState(false);
     const [projectConfig, setProjectConfig] = useState({ classMapping: {} });
     const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
@@ -56,6 +66,9 @@ export function AnnotationEditor({ image, projectId, onBack }) {
 
     const imageRef = useRef(null);
     const containerRef = useRef(null);
+    const [showStatusPanel, setShowStatusPanel] = useState(false);
+    const formatTime = useCallback((t) => t ? new Date(t).toLocaleString() : '-', []);
+    const navLocked = session.phase !== 'ready' && session.phase !== 'dirty';
 
     // Derived State: Group Keypoints by BBox
     const { groups, unassignedKeypoints } = useMemo(() => {
@@ -120,7 +133,7 @@ export function AnnotationEditor({ image, projectId, onBack }) {
             setHistoryIndex(newIndex);
             setAnnotations(JSON.parse(history[newIndex]));
         }
-    }, [history, historyIndex]);
+    }, [history, historyIndex, setAnnotations]);
 
     const redo = useCallback(() => {
         if (historyIndex < history.length - 1) {
@@ -128,7 +141,7 @@ export function AnnotationEditor({ image, projectId, onBack }) {
             setHistoryIndex(newIndex);
             setAnnotations(JSON.parse(history[newIndex]));
         }
-    }, [history, historyIndex]);
+    }, [history, historyIndex, setAnnotations]);
 
     const resetView = useCallback(() => {
         setZoomLevel(1);
@@ -144,13 +157,9 @@ export function AnnotationEditor({ image, projectId, onBack }) {
         }
     }, []);
 
-    // Load existing annotations
     useEffect(() => {
-        let isCancelled = false;
-        setIsLoaded(false);
         setIsImageLoaded(false);
         setImageDims({ width: 0, height: 0, naturalWidth: 0, naturalHeight: 0 });
-        setAnnotations([]); // Clear old annotations immediately
         setMode('bbox');
         setSelectedId(null); // Reset selection on image change
         setShowDeleteConfirm(false); // Ensure delete dialog is closed when image changes
@@ -159,26 +168,9 @@ export function AnnotationEditor({ image, projectId, onBack }) {
         if (imageRef.current && imageRef.current.complete) {
             handleImageLoad();
         }
+    }, [image, handleImageLoad]);
 
-        fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/annotations/${encodeURIComponent(image)}`)
-            .then(res => res.json())
-            .then(data => {
-                if (!isCancelled) {
-                    setAnnotations(data || []);
-                    setIsLoaded(true);
-                }
-            })
-            .catch(err => {
-                console.error('Error loading annotations:', err);
-                if (!isCancelled) {
-                    setIsLoaded(true);
-                }
-            });
-
-        return () => {
-            isCancelled = true;
-        };
-    }, [image, projectId, handleImageLoad]);
+    const retryLoad = session.retryLoad;
 
     // Load project config
     useEffect(() => {
@@ -237,34 +229,66 @@ export function AnnotationEditor({ image, projectId, onBack }) {
             .catch(err => console.error('[AnnotationEditor] Error saving config:', err));
     };
 
+    const retrySave = useCallback(() => session.save(), [session]);
 
-    // Save Helper
-    const saveAnnotations = useCallback(async (currentAnnotations) => {
-        try {
-            setSaveStatus('saving');
-            const response = await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/annotations/${encodeURIComponent(image)}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(currentAnnotations)
-            });
-            if (response.ok) {
-                setSaveStatus('saved');
-                setHasUnsavedChanges(false);
-            } else {
-                setSaveStatus('error');
-            }
-        } catch (error) {
-            setSaveStatus('error');
+    const runNavigation = useCallback(async (nav) => {
+        if (!nav) return;
+        if (nav.type === 'back') {
+            onBack();
+            return;
         }
-    }, [image, projectId]);
+        if (nav.type === 'openEditor') {
+            openEditor(nav.image);
+            return;
+        }
+        if (nav.type === 'openCompletionDialog') {
+            setShowCompletionDialog(true);
+            return;
+        }
+        if (nav.type === 'goToGallery') {
+            setShowCompletionDialog(false);
+            onBack();
+            return;
+        }
+        if (nav.type === 'goToTraining') {
+            if (nav.exportFirst) {
+                setIsExporting(true);
+                setExportStatus(null);
+                try {
+                    const result = await exportProject(projectId, {
+                        trainRatio: 0.7,
+                        valRatio: 0.2,
+                        testRatio: 0.1,
+                        includeVisibility: true
+                    });
+                    setExportStatus(result);
+                    if (result.success) {
+                        setTimeout(() => {
+                            setShowCompletionDialog(false);
+                            setIsExporting(false);
+                            goToTraining(projectId);
+                        }, 500);
+                    } else {
+                        setIsExporting(false);
+                    }
+                } catch (err) {
+                    setExportStatus({ success: false, message: err.message });
+                    setIsExporting(false);
+                }
+                return;
+            }
+            setShowCompletionDialog(false);
+            goToTraining(projectId);
+        }
+    }, [exportProject, goToTraining, onBack, openEditor, projectId]);
 
-    // Auto-save logic with debounce and change detection
-    useEffect(() => {
-        if (!isLoaded) return;
-        setHasUnsavedChanges(true);
-        const timer = setTimeout(() => saveAnnotations(annotations), 3000);
-        return () => clearTimeout(timer);
-    }, [annotations, isLoaded, saveAnnotations]);
+    const attemptNavigation = useCallback(async (nav) => session.attemptNavigation(nav, runNavigation), [runNavigation, session]);
+
+    const retryBlockedNavigation = useCallback(async () => session.retryBlockedNavigation(runNavigation), [runNavigation, session]);
+
+    const closeConflict = session.closeConflict;
+    const reloadAfterConflict = session.reloadAfterConflict;
+    const forceOverwriteAfterConflict = session.forceOverwriteAfterConflict;
 
     // Page close/refresh protection
     useEffect(() => {
@@ -281,8 +305,7 @@ export function AnnotationEditor({ image, projectId, onBack }) {
 
     // Completion Handlers
     const handleCompleteAnnotation = async () => {
-        await saveAnnotations(annotations);
-        setShowCompletionDialog(true);
+        await attemptNavigation({ type: 'openCompletionDialog' });
     };
 
     const handleContinueAnnotation = () => {
@@ -290,42 +313,11 @@ export function AnnotationEditor({ image, projectId, onBack }) {
     };
 
     const handleGoToGallery = async () => {
-        await saveAnnotations(annotations);
-        setShowCompletionDialog(false);
-        onBack();
+        await attemptNavigation({ type: 'goToGallery' });
     };
 
     const handleGoToTraining = async (exportFirst = false) => {
-        await saveAnnotations(annotations);
-        
-        if (exportFirst) {
-            setIsExporting(true);
-            setExportStatus(null);
-            try {
-                const result = await exportProject(projectId, {
-                    trainRatio: 0.7,
-                    valRatio: 0.2,
-                    testRatio: 0.1,
-                    includeVisibility: true
-                });
-                setExportStatus(result);
-                if (result.success) {
-                    setTimeout(() => {
-                        setShowCompletionDialog(false);
-                        setIsExporting(false);
-                        goToTraining(projectId);
-                    }, 500);
-                } else {
-                    setIsExporting(false);
-                }
-            } catch (err) {
-                setExportStatus({ success: false, message: err.message });
-                setIsExporting(false);
-            }
-        } else {
-            setShowCompletionDialog(false);
-            goToTraining(projectId);
-        }
+        await attemptNavigation({ type: 'goToTraining', exportFirst });
     };
 
     // Get annotated images count
@@ -353,19 +345,17 @@ export function AnnotationEditor({ image, projectId, onBack }) {
 
     const goToNext = useCallback(async () => {
         if (currentIndex < images.length - 1) {
-            await saveAnnotations(annotations);
             const nextImg = images[currentIndex + 1];
-            openEditor(typeof nextImg === 'string' ? nextImg : nextImg.name);
+            await attemptNavigation({ type: 'openEditor', image: typeof nextImg === 'string' ? nextImg : nextImg.name });
         }
-    }, [currentIndex, images, annotations, openEditor, saveAnnotations]);
+    }, [currentIndex, images, attemptNavigation]);
 
     const goToPrev = useCallback(async () => {
         if (currentIndex > 0) {
-            await saveAnnotations(annotations);
             const prevImg = images[currentIndex - 1];
-            openEditor(typeof prevImg === 'string' ? prevImg : prevImg.name);
+            await attemptNavigation({ type: 'openEditor', image: typeof prevImg === 'string' ? prevImg : prevImg.name });
         }
-    }, [currentIndex, images, annotations, openEditor, saveAnnotations]);
+    }, [currentIndex, images, attemptNavigation]);
 
     // Keyboard Shortcuts for Navigation
     useEffect(() => {
@@ -374,8 +364,10 @@ export function AnnotationEditor({ image, projectId, onBack }) {
             if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
 
             if (e.key === 'd' || e.key === 'ArrowRight') {
+                if (navLocked) return;
                 goToNext();
             } else if (e.key === 'a' || e.key === 'ArrowLeft') {
+                if (navLocked) return;
                 goToPrev();
             } else if (e.key === 'v') {
                 setMode('select');
@@ -412,7 +404,6 @@ export function AnnotationEditor({ image, projectId, onBack }) {
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [goToNext, goToPrev, isClassModalOpen, undo, redo, selectedId]);
-
 
     // Auto-expand group when selecting a bbox
     useEffect(() => {
@@ -549,7 +540,7 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                 keypointIndex: nextIndex,
                 parentId: selectedId
             };
-            setAnnotations([...annotations, newAnnotation]);
+            setAnnotations(prev => [...prev, newAnnotation]);
             return;
         }
 
@@ -612,7 +603,7 @@ export function AnnotationEditor({ image, projectId, onBack }) {
             // Only update if there's actual movement to reduce re-renders
             if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return;
 
-            setAnnotations(annotations.map(ann => {
+            setAnnotations(prev => prev.map(ann => {
                 if (ann.id !== selectedId) return ann;
 
                 if (dragState.type === 'move') {
@@ -693,7 +684,7 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                 classIndex: index,
                 label: pendingBBox.label || mappedName || ''
             };
-            setAnnotations([...annotations, finalizedBBox]);
+            setAnnotations(prev => [...prev, finalizedBBox]);
 
             setSelectedId(finalizedBBox.id);
             setMode('keypoint');
@@ -736,9 +727,9 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                     .filter(a => a.type === 'keypoint' && a.parentId === id)
                     .map(a => a.id)
             );
-            setAnnotations(annotations.filter(a => a.id !== id && !childIds.has(a.id)));
+            setAnnotations(prev => prev.filter(a => a.id !== id && !childIds.has(a.id)));
         } else {
-            setAnnotations(annotations.filter(a => a.id !== id));
+            setAnnotations(prev => prev.filter(a => a.id !== id));
         }
         if (selectedId === id) setSelectedId(null);
     };
@@ -753,7 +744,7 @@ export function AnnotationEditor({ image, projectId, onBack }) {
         
         // First save current annotations before deleting
         try {
-            await saveAnnotations(annotations);
+            await session.save();
         } catch (err) {
             console.warn('Failed to save annotations before delete:', err);
         }
@@ -792,9 +783,7 @@ export function AnnotationEditor({ image, projectId, onBack }) {
     };
 
     const handleBackClick = async () => {
-        setSaveStatus('saving');
-        await saveAnnotations(annotations);
-        onBack();
+        await attemptNavigation({ type: 'back' });
     };
 
     return (
@@ -802,7 +791,7 @@ export function AnnotationEditor({ image, projectId, onBack }) {
             {/* Top Toolbar */}
             <header className="editor-header">
                 <div className="editor-header-left">
-                    <button onClick={handleBackClick} className="btn-secondary" style={{ padding: '8px 12px' }}>
+                    <button onClick={handleBackClick} disabled={navLocked} className="btn-secondary" style={{ padding: '8px 12px', opacity: navLocked ? 0.5 : 1, cursor: navLocked ? 'not-allowed' : 'pointer' }}>
                         <ArrowLeft size={16} /> 返回
                     </button>
                     <div className="divider"></div>
@@ -811,7 +800,7 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                     <div className="editor-nav">
                         <button
                             onClick={goToPrev}
-                            disabled={currentIndex <= 0}
+                            disabled={navLocked || currentIndex <= 0}
                             className="icon-btn"
                             title="上一张 (A 或 左箭头)"
                         >
@@ -827,7 +816,7 @@ export function AnnotationEditor({ image, projectId, onBack }) {
 
                         <button
                             onClick={goToNext}
-                            disabled={currentIndex >= images.length - 1}
+                            disabled={navLocked || currentIndex >= images.length - 1}
                             className="icon-btn"
                             title="下一张 (D 或 右箭头)"
                         >
@@ -841,9 +830,9 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                         {saveStatus === 'saving' && '保存中...'}
                         {saveStatus === 'error' && (
                             <>
-                                保存失败!
+                                保存失败!{lastSaveError ? ` ${lastSaveError}` : ''}
                                 <button
-                                    onClick={() => saveAnnotations(annotations)}
+                                    onClick={retrySave}
                                     style={{
                                         marginLeft: '8px',
                                         padding: '2px 8px',
@@ -866,7 +855,19 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                         )}
                     </div>
                     <button
+                        onClick={() => setShowStatusPanel(v => !v)}
+                        className="icon-btn"
+                        title="状态/错误面板"
+                        style={{
+                            marginRight: '10px',
+                            border: showStatusPanel ? '1px solid rgba(99,102,241,0.6)' : undefined
+                        }}
+                    >
+                        <Layers size={18} />
+                    </button>
+                    <button
                         onClick={handleCompleteAnnotation}
+                        disabled={navLocked}
                         style={{
                             display: 'flex',
                             alignItems: 'center',
@@ -878,7 +879,8 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                             color: 'white',
                             fontSize: '0.85rem',
                             fontWeight: 600,
-                            cursor: 'pointer',
+                            cursor: navLocked ? 'not-allowed' : 'pointer',
+                            opacity: navLocked ? 0.6 : 1,
                             boxShadow: '0 4px 12px rgba(34, 197, 94, 0.3)',
                             transition: 'all 0.2s ease'
                         }}
@@ -890,6 +892,153 @@ export function AnnotationEditor({ image, projectId, onBack }) {
             </header>
 
             <div className="editor-body">
+                {showStatusPanel && (
+                    <div
+                        style={{
+                            position: 'absolute',
+                            top: 70,
+                            right: 16,
+                            width: 360,
+                            maxWidth: 'calc(100vw - 32px)',
+                            zIndex: 50,
+                            background: 'rgba(15, 23, 42, 0.92)',
+                            border: '1px solid rgba(148, 163, 184, 0.25)',
+                            borderRadius: 12,
+                            padding: 12,
+                            backdropFilter: 'blur(10px)',
+                            color: 'var(--text-primary)'
+                        }}
+                    >
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                            <div style={{ fontSize: 13, fontWeight: 700, opacity: 0.95 }}>状态/错误</div>
+                            <button
+                                onClick={() => setShowStatusPanel(false)}
+                                className="icon-btn"
+                                title="关闭"
+                                style={{ width: 30, height: 30 }}
+                            >
+                                <X size={16} />
+                            </button>
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', rowGap: 6, columnGap: 10, fontSize: 12 }}>
+                            <div style={{ color: 'var(--text-secondary)' }}>imageId</div>
+                            <div style={{ wordBreak: 'break-all' }}>{image}</div>
+
+                            <div style={{ color: 'var(--text-secondary)' }}>isLoaded</div>
+                            <div>{String(isLoaded)}</div>
+
+                            <div style={{ color: 'var(--text-secondary)' }}>saveStatus</div>
+                            <div>{saveStatus}</div>
+
+                            <div style={{ color: 'var(--text-secondary)' }}>hasUnsavedChanges</div>
+                            <div>{String(hasUnsavedChanges)}</div>
+
+                            <div style={{ color: 'var(--text-secondary)' }}>annotationEtag</div>
+                            <div style={{ wordBreak: 'break-all' }}>{annotationEtag || '-'}</div>
+
+                            <div style={{ color: 'var(--text-secondary)' }}>conflictEtag</div>
+                            <div style={{ wordBreak: 'break-all', color: conflictInfo?.serverEtag ? '#fca5a5' : 'var(--text-secondary)' }}>
+                                {conflictInfo?.serverEtag || '-'}
+                            </div>
+
+                            <div style={{ color: 'var(--text-secondary)' }}>最近加载时间</div>
+                            <div>{formatTime(lastLoadTime)}</div>
+
+                            <div style={{ color: 'var(--text-secondary)' }}>最近保存时间</div>
+                            <div>{formatTime(lastSaveTime)}</div>
+
+                            <div style={{ color: 'var(--text-secondary)' }}>最近加载错误</div>
+                            <div style={{ color: lastLoadError ? '#fca5a5' : 'var(--text-secondary)', wordBreak: 'break-word' }}>
+                                {lastLoadError || '-'}
+                            </div>
+
+                            <div style={{ color: 'var(--text-secondary)' }}>最近保存错误</div>
+                            <div style={{ color: lastSaveError ? '#fca5a5' : 'var(--text-secondary)', wordBreak: 'break-word' }}>
+                                {lastSaveError || '-'}
+                            </div>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                            <button
+                                onClick={retryLoad}
+                                style={{
+                                    flex: 1,
+                                    padding: '8px 10px',
+                                    borderRadius: 10,
+                                    border: '1px solid rgba(148, 163, 184, 0.25)',
+                                    background: 'rgba(255,255,255,0.06)',
+                                    color: 'var(--text-primary)',
+                                    cursor: 'pointer',
+                                    fontSize: 12,
+                                    fontWeight: 600
+                                }}
+                            >
+                                重试加载
+                            </button>
+                            <button
+                                onClick={retrySave}
+                                style={{
+                                    flex: 1,
+                                    padding: '8px 10px',
+                                    borderRadius: 10,
+                                    border: '1px solid rgba(148, 163, 184, 0.25)',
+                                    background: 'rgba(255,255,255,0.06)',
+                                    color: 'var(--text-primary)',
+                                    cursor: 'pointer',
+                                    fontSize: 12,
+                                    fontWeight: 600
+                                }}
+                            >
+                                重试保存
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {lastLoadError && (
+                    <div
+                        style={{
+                            position: 'absolute',
+                            top: 70,
+                            left: 16,
+                            right: showStatusPanel ? 392 : 16,
+                            zIndex: 40,
+                            background: 'rgba(239, 68, 68, 0.12)',
+                            border: '1px solid rgba(239, 68, 68, 0.35)',
+                            borderRadius: 12,
+                            padding: '10px 12px',
+                            color: '#fecaca',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            gap: 12
+                        }}
+                    >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                            <AlertTriangle size={18} />
+                            <div style={{ fontSize: 12, fontWeight: 600, wordBreak: 'break-word' }}>
+                                加载失败：{lastLoadError}
+                            </div>
+                        </div>
+                        <button
+                            onClick={retryLoad}
+                            style={{
+                                padding: '6px 10px',
+                                borderRadius: 10,
+                                border: '1px solid rgba(239, 68, 68, 0.4)',
+                                background: 'rgba(239, 68, 68, 0.18)',
+                                color: '#fecaca',
+                                cursor: 'pointer',
+                                fontSize: 12,
+                                fontWeight: 700,
+                                whiteSpace: 'nowrap'
+                            }}
+                        >
+                            重试加载
+                        </button>
+                    </div>
+                )}
 
                 {/* Floating Toolbar */}
                 <div className="editor-toolbar">
@@ -1659,6 +1808,256 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                         </div>
                     </div>
                 </div>
+            )}
+
+            {conflictInfo && createPortal(
+                <div style={{
+                    position: 'fixed',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    background: 'rgba(0, 0, 0, 0.7)',
+                    backdropFilter: 'blur(8px)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    zIndex: 10000
+                }}
+                onClick={() => saveStatus !== 'saving' && closeConflict()}
+                >
+                    <div style={{
+                        background: 'linear-gradient(135deg, rgba(22, 27, 34, 0.98), rgba(13, 17, 23, 0.98))',
+                        borderRadius: '20px',
+                        padding: '2rem',
+                        maxWidth: '520px',
+                        width: '90%',
+                        border: '1px solid rgba(239, 68, 68, 0.3)',
+                        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)'
+                    }}
+                    onClick={e => e.stopPropagation()}
+                    >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '1.25rem' }}>
+                            <div style={{
+                                width: '48px',
+                                height: '48px',
+                                borderRadius: '14px',
+                                background: 'rgba(239, 68, 68, 0.15)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                color: '#ef4444'
+                            }}>
+                                <AlertTriangle size={24} />
+                            </div>
+                            <div>
+                                <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                                    保存冲突
+                                </h3>
+                                <p style={{ margin: '4px 0 0 0', color: 'var(--text-secondary)', fontSize: '13px', lineHeight: 1.5 }}>
+                                    该图片的标注已被其他进程更新（例如 AI 预标注或另一个页面）。请选择处理方式。
+                                </p>
+                            </div>
+                        </div>
+
+                        {conflictInfo.serverEtag && (
+                            <div style={{
+                                background: 'rgba(239, 68, 68, 0.12)',
+                                borderRadius: '10px',
+                                padding: '12px',
+                                marginBottom: '1.25rem',
+                                border: '1px solid rgba(239, 68, 68, 0.25)',
+                                color: '#fecaca',
+                                fontSize: '13px',
+                                lineHeight: 1.5,
+                                wordBreak: 'break-word'
+                            }}>
+                                服务器版本：{conflictInfo.serverEtag}
+                            </div>
+                        )}
+
+                        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                            <button
+                                onClick={closeConflict}
+                                disabled={saveStatus === 'saving'}
+                                style={{
+                                    flex: '1 1 120px',
+                                    padding: '12px',
+                                    borderRadius: '12px',
+                                    background: 'rgba(255, 255, 255, 0.05)',
+                                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                                    color: 'var(--text-primary)',
+                                    fontSize: '14px',
+                                    fontWeight: 600,
+                                    cursor: saveStatus === 'saving' ? 'not-allowed' : 'pointer',
+                                    opacity: saveStatus === 'saving' ? 0.5 : 1
+                                }}
+                            >
+                                取消
+                            </button>
+                            <button
+                                onClick={reloadAfterConflict}
+                                disabled={saveStatus === 'saving'}
+                                style={{
+                                    flex: '1 1 160px',
+                                    padding: '12px',
+                                    borderRadius: '12px',
+                                    background: 'rgba(59, 130, 246, 0.15)',
+                                    border: '1px solid rgba(59, 130, 246, 0.35)',
+                                    color: '#93c5fd',
+                                    fontSize: '14px',
+                                    fontWeight: 700,
+                                    cursor: saveStatus === 'saving' ? 'not-allowed' : 'pointer',
+                                    opacity: saveStatus === 'saving' ? 0.7 : 1
+                                }}
+                            >
+                                重新加载服务器版本
+                            </button>
+                            <button
+                                onClick={forceOverwriteAfterConflict}
+                                disabled={saveStatus === 'saving'}
+                                style={{
+                                    flex: '1 1 160px',
+                                    padding: '12px',
+                                    borderRadius: '12px',
+                                    background: 'linear-gradient(135deg, #ef4444, #dc2626)',
+                                    border: 'none',
+                                    color: 'white',
+                                    fontSize: '14px',
+                                    fontWeight: 700,
+                                    cursor: saveStatus === 'saving' ? 'not-allowed' : 'pointer',
+                                    opacity: saveStatus === 'saving' ? 0.7 : 1
+                                }}
+                            >
+                                强制覆盖保存
+                            </button>
+                        </div>
+                    </div>
+                </div>,
+                document.body
+            )}
+
+            {blockedNavigation && createPortal(
+                <div style={{
+                    position: 'fixed',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    background: 'rgba(0, 0, 0, 0.7)',
+                    backdropFilter: 'blur(8px)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    zIndex: 10000
+                }}
+                onClick={() => saveStatus !== 'saving' && session.closeBlockedNavigation()}
+                >
+                    <div style={{
+                        background: 'linear-gradient(135deg, rgba(22, 27, 34, 0.98), rgba(13, 17, 23, 0.98))',
+                        borderRadius: '20px',
+                        padding: '2rem',
+                        maxWidth: '440px',
+                        width: '90%',
+                        border: '1px solid rgba(239, 68, 68, 0.3)',
+                        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)'
+                    }}
+                    onClick={e => e.stopPropagation()}
+                    >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '1.25rem' }}>
+                            <div style={{
+                                width: '48px',
+                                height: '48px',
+                                borderRadius: '14px',
+                                background: 'rgba(239, 68, 68, 0.15)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                color: '#ef4444'
+                            }}>
+                                <AlertTriangle size={24} />
+                            </div>
+                            <div>
+                                <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                                    无法继续
+                                </h3>
+                                <p style={{ margin: '4px 0 0 0', color: 'var(--text-secondary)', fontSize: '13px', lineHeight: 1.5 }}>
+                                    请先处理当前状态后再继续。
+                                </p>
+                            </div>
+                        </div>
+
+                        {lastSaveError && (
+                            <div style={{
+                                background: 'rgba(239, 68, 68, 0.12)',
+                                borderRadius: '10px',
+                                padding: '12px',
+                                marginBottom: '1.25rem',
+                                border: '1px solid rgba(239, 68, 68, 0.25)',
+                                color: '#fecaca',
+                                fontSize: '13px',
+                                lineHeight: 1.5,
+                                wordBreak: 'break-word'
+                            }}>
+                                {lastSaveError}
+                            </div>
+                        )}
+
+                        <div style={{ display: 'flex', gap: '12px' }}>
+                            <button
+                                onClick={() => session.closeBlockedNavigation()}
+                                disabled={saveStatus === 'saving'}
+                                style={{
+                                    flex: 1,
+                                    padding: '12px',
+                                    borderRadius: '12px',
+                                    background: 'rgba(255, 255, 255, 0.05)',
+                                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                                    color: 'var(--text-primary)',
+                                    fontSize: '14px',
+                                    fontWeight: 600,
+                                    cursor: saveStatus === 'saving' ? 'not-allowed' : 'pointer',
+                                    opacity: saveStatus === 'saving' ? 0.5 : 1
+                                }}
+                            >
+                                取消
+                            </button>
+                            <button
+                                onClick={retryBlockedNavigation}
+                                disabled={saveStatus === 'saving'}
+                                style={{
+                                    flex: 1,
+                                    padding: '12px',
+                                    borderRadius: '12px',
+                                    background: 'linear-gradient(135deg, #ef4444, #dc2626)',
+                                    border: 'none',
+                                    color: 'white',
+                                    fontSize: '14px',
+                                    fontWeight: 700,
+                                    cursor: saveStatus === 'saving' ? 'not-allowed' : 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: '8px',
+                                    opacity: saveStatus === 'saving' ? 0.7 : 1
+                                }}
+                            >
+                                {saveStatus === 'saving' ? (
+                                    <>
+                                        <RefreshCw size={16} className="animate-spin" />
+                                        保存中...
+                                    </>
+                                ) : (
+                                    <>
+                                        <Save size={16} />
+                                        重试保存并继续
+                                    </>
+                                )}
+                            </button>
+                        </div>
+                    </div>
+                </div>,
+                document.body
             )}
 
             {/* Delete Image Confirmation Dialog */}

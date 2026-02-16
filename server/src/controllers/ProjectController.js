@@ -331,11 +331,15 @@ function createProjectRouter(projectsDir) {
     const { projectId, imageId } = req.params;
     const paths = PathService.getProjectPaths(projectId, projectsDir);
     const annotationPath = path.join(paths.annotations, `${imageId}.json`);
+    res.setHeader('Cache-Control', 'no-store');
 
     if (fs.existsSync(annotationPath)) {
+      const stat = fs.statSync(annotationPath);
+      res.setHeader('ETag', `W/"${stat.mtimeMs}"`);
       const data = fs.readFileSync(annotationPath);
       res.json(JSON.parse(data));
     } else {
+      res.setHeader('ETag', 'W/"0"');
       res.json([]);
     }
   });
@@ -348,7 +352,25 @@ function createProjectRouter(projectsDir) {
     const annotationPath = path.join(paths.annotations, `${imageId}.json`);
 
     try {
-      await fs.promises.writeFile(annotationPath, JSON.stringify(annotations, null, 2));
+      let currentEtag = 'W/"0"';
+      if (fs.existsSync(annotationPath)) {
+        const stat = await fs.promises.stat(annotationPath);
+        currentEtag = `W/"${stat.mtimeMs}"`;
+      }
+
+      const ifMatch = req.headers['if-match'];
+      if (ifMatch && ifMatch !== currentEtag) {
+        res.setHeader('ETag', currentEtag);
+        return res.status(409).json({ error: 'Conflict', etag: currentEtag });
+      }
+
+      await SafeFileOp.writeJsonAtomic(annotationPath, annotations);
+      const newStat = await fs.promises.stat(annotationPath).catch(() => null);
+      if (newStat) {
+        res.setHeader('ETag', `W/"${newStat.mtimeMs}"`);
+      } else {
+        res.setHeader('ETag', currentEtag);
+      }
       res.json({ message: 'Annotations saved successfully' });
     } catch (err) {
       logger.error(`Failed to save annotations for ${imageId}:`, err);

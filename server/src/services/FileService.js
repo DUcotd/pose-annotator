@@ -185,6 +185,26 @@ class SafeFileOp {
   static async writeJson(filePath, data) {
     await fs.writeFile(filePath, JSON.stringify(data, null, 2), 'utf8');
   }
+
+  static async writeFileAtomic(filePath, content, encoding = 'utf8') {
+    const tmpPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+    await fs.writeFile(tmpPath, content, encoding);
+    try {
+      await fs.unlink(filePath);
+    } catch (e) {
+      if (e && e.code !== 'ENOENT') throw e;
+    }
+    try {
+      await fs.rename(tmpPath, filePath);
+    } catch (e) {
+      try { await fs.unlink(tmpPath); } catch {}
+      throw e;
+    }
+  }
+
+  static async writeJsonAtomic(filePath, data) {
+    await this.writeFileAtomic(filePath, JSON.stringify(data, null, 2), 'utf8');
+  }
 }
 
 module.exports = SafeFileOp;
