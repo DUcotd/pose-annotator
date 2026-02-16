@@ -677,52 +677,14 @@ app.delete('/api/projects/:projectId/images/:imageId', async (req, res) => {
         }
 
         const files = fs.readdirSync(paths.uploads)
-            .filter(f => /\.(jpg|jpeg|png|gif|webp)$/i.test(f))
-            .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+            .filter(f => /\.(jpg|jpeg|png|gif|webp)$/i.test(f));
 
-        const renumberResults = [];
-        for (let i = 0; i < files.length; i++) {
-            const oldName = files[i];
-            const ext = path.extname(oldName);
-            const newName = String(i + 1).padStart(6, '0') + ext;
-
-            if (oldName === newName) continue;
-
-            const oldPath = path.join(paths.uploads, oldName);
-            const newPath = path.join(paths.uploads, newName);
-
-            fs.renameSync(oldPath, newPath);
-
-            const oldAnnPath = path.join(paths.annotations, `${oldName}.json`);
-            const newAnnPath = path.join(paths.annotations, `${newName}.json`);
-            if (fs.existsSync(oldAnnPath)) {
-                fs.renameSync(oldAnnPath, newAnnPath);
-            }
-
-            const oldThumbPath = path.join(paths.thumbnails, oldName);
-            const newThumbPath = path.join(paths.thumbnails, newName);
-            if (fs.existsSync(oldThumbPath)) {
-                fs.renameSync(oldThumbPath, newThumbPath);
-            }
-
-            renumberResults.push({ old: oldName, new: newName });
-        }
-
-        const configPath = path.join(paths.root, 'config.json');
-        let config = { classMapping: {} };
-        if (fs.existsSync(configPath)) {
-            config = JSON.parse(fs.readFileSync(configPath));
-        }
-        config.nextImageId = files.length + 1;
-        fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
-
-        console.log(`Deleted image ${imageId} and renumbered ${renumberResults.length} files in project ${projectId}`);
+        console.log(`Deleted image ${imageId} in project ${projectId}`);
 
         res.json({
             success: true,
-            message: `图片已删除，已重新编号 ${renumberResults.length} 个文件`,
+            message: '图片已删除',
             deletedImage: imageId,
-            renumberedCount: renumberResults.length,
             remainingCount: files.length
         });
     } catch (err) {

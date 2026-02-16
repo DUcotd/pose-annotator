@@ -392,45 +392,10 @@ function createProjectRouter(projectsDir) {
         ? fs.readdirSync(paths.uploads).filter(f => /\.(jpg|jpeg|png|gif|webp)$/i.test(f))
         : [];
       
-      remainingFiles.sort();
-      
-      const renamePromises = [];
-      for (let i = 0; i < remainingFiles.length; i++) {
-        const oldName = remainingFiles[i];
-        const ext = path.extname(oldName);
-        const newName = `${String(i + 1).padStart(6, '0')}${ext}`;
-        
-        if (oldName !== newName) {
-          const oldImagePath = path.join(paths.uploads, oldName);
-          const newImagePath = path.join(paths.uploads, newName);
-          const oldAnnotationPath = path.join(paths.annotations, `${path.basename(oldName, ext)}.json`);
-          const newAnnotationPath = path.join(paths.annotations, `${path.basename(newName, ext)}.json`);
-          const oldThumbnailPath = path.join(paths.thumbnails, oldName);
-          const newThumbnailPath = path.join(paths.thumbnails, newName);
-          
-          renamePromises.push((async () => {
-            if (fs.existsSync(oldImagePath)) {
-              await fs.promises.rename(oldImagePath, newImagePath);
-              logger.info(`[DeleteImage] Renamed image: ${oldName} -> ${newName}`);
-            }
-            if (fs.existsSync(oldAnnotationPath)) {
-              await fs.promises.rename(oldAnnotationPath, newAnnotationPath);
-              logger.info(`[DeleteImage] Renamed annotation: ${path.basename(oldName, ext)}.json -> ${path.basename(newName, ext)}.json`);
-            }
-            if (fs.existsSync(oldThumbnailPath)) {
-              await fs.promises.rename(oldThumbnailPath, newThumbnailPath);
-              logger.info(`[DeleteImage] Renamed thumbnail: ${oldName} -> ${newName}`);
-            }
-          })());
-        }
-      }
-      
-      await Promise.all(renamePromises);
-      
-      logger.info(`[DeleteImage] Image deleted and renumbered. Remaining images: ${remainingFiles.length}`);
+      logger.info(`[DeleteImage] Image deleted. Remaining images: ${remainingFiles.length}`);
       
       res.json({ 
-        message: '图片已删除并重新编号',
+        message: '图片已删除',
         remainingCount: remainingFiles.length
       });
     } catch (err) {

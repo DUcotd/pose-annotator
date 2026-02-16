@@ -340,12 +340,8 @@ export const ProjectProvider = ({ children }) => {
                                 : newImages[targetIndex].name;
                             console.log('Setting selectedImage to:', newImageName);
                             
-                            setSelectedImage(null);
-                            
-                            setTimeout(() => {
-                                setImages(newImages);
-                                setSelectedImage(newImageName);
-                            }, 0);
+                            setImages(newImages);
+                            setSelectedImage(newImageName);
                         } else {
                             setImages(newImages);
                             setView('gallery');

@@ -148,6 +148,7 @@ export function AnnotationEditor({ image, projectId, onBack }) {
         setAnnotations([]); // Clear old annotations immediately
         setMode('bbox');
         setSelectedId(null); // Reset selection on image change
+        setShowDeleteConfirm(false); // Ensure delete dialog is closed when image changes
 
         // Check if image is already loaded (from cache)
         if (imageRef.current && imageRef.current.complete) {
@@ -689,12 +690,27 @@ export function AnnotationEditor({ image, projectId, onBack }) {
     const handleDeleteCurrentImage = async () => {
         setIsDeletingImage(true);
         console.log('Deleting image:', image, 'at index:', currentIndex);
-        const result = await deleteImage(projectId, image, true, currentIndex);
-        console.log('Delete result:', result);
-        setIsDeletingImage(false);
         
-        if (result.success) {
-            setShowDeleteConfirm(false);
+        // First save current annotations before deleting
+        try {
+            await saveAnnotations(annotations);
+        } catch (err) {
+            console.warn('Failed to save annotations before delete:', err);
+        }
+        
+        try {
+            const result = await deleteImage(projectId, image, true, currentIndex);
+            console.log('Delete result:', result);
+            
+            if (result.success) {
+                setShowDeleteConfirm(false);
+            } else {
+                console.error('Delete failed:', result.message);
+            }
+        } catch (err) {
+            console.error('Delete error:', err);
+        } finally {
+            setIsDeletingImage(false);
         }
     };
 
