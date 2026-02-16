@@ -108,11 +108,12 @@ const Toggle = ({ checked, onChange, label, desc }) => (
 );
 
 export const DatasetExport = () => {
-    const { currentProject, projectConfig, configLoading, updateProjectConfig, exportProject, exportCollaboration, goBack } = useProject();
+    const { currentProject, projectConfig, configLoading, updateProjectConfig, exportProject, exportDatasetZip, exportCollaboration, goBack } = useProject();
     const [includeVisibility, setIncludeVisibility] = useState(true);
     const [customPath, setCustomPath] = useState('');
     const [numKeypoints, setNumKeypoints] = useState(17);
     const [isExporting, setIsExporting] = useState(false);
+    const [isZipExporting, setIsZipExporting] = useState(false);
     const [notification, setNotification] = useState(null);
     const [exportStats, setExportStats] = useState(null);
     const [isLoadingStats, setIsLoadingStats] = useState(true);
@@ -128,14 +129,13 @@ export const DatasetExport = () => {
     useEffect(() => {
         const fetchStats = async () => {
             try {
-                const res = await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(currentProject)}/images`);
+                const res = await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(currentProject)}/dataset/stats`);
                 const data = await res.json();
-                const annotated = data.filter(img => img.hasAnnotation).length;
                 setExportStats({
-                    totalImages: data.length,
-                    images: annotated,
-                    objects: '—',
-                    keypoints: '—'
+                    totalImages: data.total || 0,
+                    images: data.annotated || 0,
+                    bboxes: data.bboxes || 0,
+                    keypoints: data.keypoints || 0
                 });
             } catch (err) {
                 console.error('Failed to fetch stats:', err);
@@ -227,6 +227,38 @@ export const DatasetExport = () => {
     };
 
     const [isCollaborationExporting, setIsCollaborationExporting] = useState(false);
+
+    const handleZipExport = async () => {
+        if (!isRatioValid) return;
+        setIsZipExporting(true);
+        setNotification({ type: 'success', message: '正在导出ZIP数据集，请稍候...' });
+        const result = await exportDatasetZip(currentProject, {
+            includeVisibility,
+            customPath,
+            numKeypoints,
+            trainRatio: trainRatio / 100,
+            valRatio: valRatio / 100,
+            testRatio: testRatio / 100,
+            shuffle: shuffleData,
+            includeUnannotated
+        });
+
+        setIsZipExporting(false);
+        setNotification(null);
+
+        if (result.success) {
+            setExportResult({
+                ...result,
+                isZip: true
+            });
+            setShowExportModal(true);
+            if (result.stats) {
+                setExportStats(result.stats);
+            }
+        } else {
+            setNotification({ type: 'error', message: result.message || result.error || '导出失败' });
+        }
+    };
 
     const handleCollaborationExport = async () => {
         setIsCollaborationExporting(true);
@@ -383,17 +415,17 @@ export const DatasetExport = () => {
                     />
                     <StatCard
                         icon={Box}
-                        label="已标注"
-                        value={isLoadingStats ? <div className="skeleton-inline" /> : (exportStats?.images || 0)}
-                        subValue="将包含在数据集中"
+                        label="边界框"
+                        value={isLoadingStats ? <div className="skeleton-inline" /> : (exportStats?.bboxes || 0)}
+                        subValue="已标注的边界框"
                         color="34,197,94"
                         gradient="linear-gradient(135deg, rgba(34,197,94,0.2), rgba(74,222,128,0.1))"
                     />
                     <StatCard
                         icon={Target}
-                        label="标注目标"
-                        value={isLoadingStats ? <div className="skeleton-inline" /> : (exportStats?.totalImages ? Math.round(exportStats.images * 1.5) : '—')}
-                        subValue="预估边界框 + 关键点"
+                        label="关键点"
+                        value={isLoadingStats ? <div className="skeleton-inline" /> : (exportStats?.keypoints || 0)}
+                        subValue="已标注的关键点"
                         color="251,191,36"
                         gradient="linear-gradient(135deg, rgba(251,191,36,0.2), rgba(252,211,77,0.1))"
                     />
@@ -742,6 +774,39 @@ export const DatasetExport = () => {
                             </>
                         )}
                     </button>
+
+                    <button
+                        onClick={handleZipExport}
+                        disabled={isZipExporting || !isRatioValid}
+                        style={{
+                            width: '100%',
+                            height: '64px',
+                            fontSize: '1.15rem',
+                            fontWeight: 800,
+                            borderRadius: '20px',
+                            justifyContent: 'center',
+                            gap: '14px',
+                            marginTop: '1rem',
+                            background: isZipExporting || !isRatioValid
+                                ? 'rgba(255,255,255,0.05)'
+                                : 'linear-gradient(135deg, #3b82f6, #60a5fa)',
+                            border: 'none',
+                            color: isZipExporting || !isRatioValid ? 'var(--text-tertiary)' : 'white',
+                            cursor: isZipExporting || !isRatioValid ? 'not-allowed' : 'pointer',
+                            boxShadow: isRatioValid ? '0 8px 32px rgba(59,130,246,0.25)' : 'none',
+                            transition: 'all 0.3s ease'
+                        }}
+                    >
+                        {isZipExporting ? (
+                            <>
+                                <Loader2 size={22} className="spin" /> 正在导出ZIP数据集...
+                            </>
+                        ) : (
+                            <>
+                                <Download size={22} /> 导出为ZIP数据集
+                            </>
+                        )}
+                    </button>
                     <p style={{ textAlign: 'center', marginTop: '1rem', color: 'var(--text-tertiary)', fontSize: '13px' }}>
                         导出过程可能需要几秒钟，请稍候
                     </p>
@@ -810,8 +875,12 @@ export const DatasetExport = () => {
                         padding: '2.5rem',
                         maxWidth: '600px',
                         width: '90%',
-                        border: '2px solid rgba(34, 197, 94, 0.4)',
-                        boxShadow: '0 0 60px rgba(34, 197, 94, 0.3), 0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+                        border: exportResult?.isZip 
+                            ? '2px solid rgba(59, 130, 246, 0.4)'
+                            : '2px solid rgba(34, 197, 94, 0.4)',
+                        boxShadow: exportResult?.isZip 
+                            ? '0 0 60px rgba(59, 130, 246, 0.3), 0 25px 50px -12px rgba(0, 0, 0, 0.5)'
+                            : '0 0 60px rgba(34, 197, 94, 0.3), 0 25px 50px -12px rgba(0, 0, 0, 0.5)',
                         animation: 'scaleInBounce 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)'
                     }}
                     onClick={e => e.stopPropagation()}
@@ -821,22 +890,26 @@ export const DatasetExport = () => {
                                 width: '80px',
                                 height: '80px',
                                 borderRadius: '50%',
-                                background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.3), rgba(74, 222, 128, 0.2))',
+                                background: exportResult.isZip 
+                                    ? 'linear-gradient(135deg, rgba(59, 130, 246, 0.3), rgba(96, 165, 250, 0.2))'
+                                    : 'linear-gradient(135deg, rgba(34, 197, 94, 0.3), rgba(74, 222, 128, 0.2))',
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
-                                color: '#4ade80',
+                                color: exportResult.isZip ? '#60a5fa' : '#4ade80',
                                 marginBottom: '1.5rem',
                                 animation: 'pulseSuccess 2s ease-in-out infinite',
-                                border: '3px solid rgba(34, 197, 94, 0.5)'
+                                border: exportResult.isZip 
+                                    ? '3px solid rgba(59, 130, 246, 0.5)'
+                                    : '3px solid rgba(34, 197, 94, 0.5)'
                             }}>
                                 <CheckCircle size={40} strokeWidth={2.5} />
                             </div>
-                            <h3 style={{ margin: 0, fontSize: '2rem', fontWeight: 800, color: '#4ade80', textAlign: 'center', textShadow: '0 0 20px rgba(34, 197, 94, 0.5)' }}>
+                            <h3 style={{ margin: 0, fontSize: '2rem', fontWeight: 800, color: exportResult.isZip ? '#60a5fa' : '#4ade80', textAlign: 'center', textShadow: exportResult.isZip ? '0 0 20px rgba(59, 130, 246, 0.5)' : '0 0 20px rgba(34, 197, 94, 0.5)' }}>
                                 导出成功！
                             </h3>
                             <p style={{ margin: '8px 0 0 0', color: 'var(--text-secondary)', fontSize: '15px', textAlign: 'center' }}>
-                                YOLO Pose 数据集已成功生成
+                                {exportResult.isZip ? 'ZIP 数据集已成功生成' : 'YOLO Pose 数据集已成功生成'}
                             </p>
                         </div>
 
@@ -866,6 +939,24 @@ export const DatasetExport = () => {
                             </div>
                         )}
 
+                        {exportResult.isZip && exportResult.zipSize && (
+                            <div style={{
+                                background: 'rgba(59, 130, 246, 0.1)',
+                                borderRadius: '12px',
+                                padding: '12px 16px',
+                                marginBottom: '1rem',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '8px'
+                            }}>
+                                <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>ZIP 文件大小:</span>
+                                <span style={{ fontSize: '15px', fontWeight: 700, color: '#60a5fa' }}>
+                                    {(exportResult.zipSize / 1024 / 1024).toFixed(2)} MB
+                                </span>
+                            </div>
+                        )}
+
                         <div style={{
                             background: 'rgba(0, 0, 0, 0.3)',
                             borderRadius: '12px',
@@ -874,7 +965,9 @@ export const DatasetExport = () => {
                         }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
                                 <FolderOpen size={16} style={{ color: 'var(--text-tertiary)' }} />
-                                <span style={{ fontSize: '12px', color: 'var(--text-tertiary)', fontWeight: 600 }}>导出路径</span>
+                                <span style={{ fontSize: '12px', color: 'var(--text-tertiary)', fontWeight: 600 }}>
+                                    {exportResult.isZip ? 'ZIP 文件路径' : '导出路径'}
+                                </span>
                             </div>
                             <div style={{
                                 fontFamily: 'monospace',
@@ -900,7 +993,9 @@ export const DatasetExport = () => {
                         }}>
                             <Info size={18} style={{ color: '#60a5fa' }} />
                             <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
-                                训练时将自动使用此数据集路径
+                                {exportResult?.isZip 
+                                    ? '解压后将得到 dataset 文件夹，可直接用于 YOLO 训练'
+                                    : '训练时将自动使用此数据集路径'}
                             </span>
                         </div>
 
@@ -910,14 +1005,18 @@ export const DatasetExport = () => {
                                 width: '100%',
                                 padding: '16px',
                                 borderRadius: '14px',
-                                background: 'linear-gradient(135deg, #22c55e, #4ade80)',
+                                background: exportResult?.isZip 
+                                    ? 'linear-gradient(135deg, #3b82f6, #60a5fa)'
+                                    : 'linear-gradient(135deg, #22c55e, #4ade80)',
                                 border: 'none',
                                 color: 'white',
                                 fontSize: '16px',
                                 fontWeight: 700,
                                 cursor: 'pointer',
                                 transition: 'all 0.2s ease',
-                                boxShadow: '0 4px 20px rgba(34, 197, 94, 0.4)'
+                                boxShadow: exportResult?.isZip 
+                                    ? '0 4px 20px rgba(59, 130, 246, 0.4)'
+                                    : '0 4px 20px rgba(34, 197, 94, 0.4)'
                             }}
                         >
                             完成

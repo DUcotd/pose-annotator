@@ -350,6 +350,19 @@ function createTrainingRouter(projectsDir) {
     }
   });
 
+  router.post('/:projectId/export/yolo-zip', async (req, res) => {
+    const { projectId } = req.params;
+    const options = req.body;
+
+    try {
+      const result = await ExportService.exportToYoloZip(projectId, projectsDir, options);
+      res.json(result);
+    } catch (err) {
+      logger.error(`ZIP export failed for ${projectId}:`, err);
+      res.status(500).json({ error: 'ZIP export failed', details: err.message });
+    }
+  });
+
   router.get('/:projectId/train/logs/export', (req, res) => {
     const { projectId } = req.params;
     const { includeMetrics, includeConfig, includeTimestamps } = req.query;

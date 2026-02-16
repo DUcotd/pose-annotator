@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const archiver = require('archiver');
 const { imageSize: sizeOf } = require('image-size');
 const logger = require('../utils/logger');
 const SafeFileOp = require('./FileService');
@@ -289,6 +290,87 @@ ${namesYaml}`;
         kptShape: [FIXED_NUM_KEYPOINTS, kptShapeDim]
       }
     };
+  }
+
+  async exportToYoloZip(projectId, projectsDir, options = {}) {
+    try {
+      const exportResult = await this.exportToYolo(projectId, projectsDir, options);
+      
+      if (!exportResult.success) {
+        return exportResult;
+      }
+
+      const { customPath } = options;
+      const zipFileName = `${projectId}_dataset.zip`;
+      let zipFilePath;
+
+      if (customPath && customPath.trim() !== '') {
+        const trimmedPath = customPath.trim();
+        if (path.isAbsolute(trimmedPath)) {
+          zipFilePath = path.join(trimmedPath, zipFileName);
+        } else {
+          const projectRoot = PathService.findProjectRoot(projectId, projectsDir);
+          zipFilePath = path.join(projectRoot, trimmedPath, zipFileName);
+        }
+      } else {
+        const projectRoot = PathService.findProjectRoot(projectId, projectsDir);
+        zipFilePath = path.join(projectRoot, zipFileName);
+      }
+
+      const zipDir = path.dirname(zipFilePath);
+      if (!fs.existsSync(zipDir)) {
+        fs.mkdirSync(zipDir, { recursive: true });
+      }
+
+      return new Promise((resolve) => {
+        const output = fs.createWriteStream(zipFilePath);
+        const archive = archiver('zip', {
+          zlib: { level: 9 }
+        });
+
+        output.on('close', () => {
+          const zipSize = archive.pointer();
+          logger.info(`Dataset ZIP created: ${zipFilePath} (${zipSize} bytes)`);
+          
+          resolve({
+            success: true,
+            path: zipFilePath,
+            zipSize: zipSize,
+            stats: exportResult.stats,
+            message: `数据集已导出为ZIP文件: ${zipFilePath}`
+          });
+        });
+
+        output.on('error', (err) => {
+          logger.error('Output stream error:', err);
+          resolve({
+            success: false,
+            error: 'Failed to write ZIP file',
+            details: err.message
+          });
+        });
+
+        archive.on('error', (err) => {
+          logger.error('Archive error:', err);
+          resolve({
+            success: false,
+            error: 'Failed to create ZIP archive',
+            details: err.message
+          });
+        });
+
+        archive.pipe(output);
+        archive.directory(exportResult.path, 'dataset');
+        archive.finalize();
+      });
+    } catch (err) {
+      logger.error('exportToYoloZip error:', err);
+      return {
+        success: false,
+        error: 'Export failed',
+        details: err.message
+      };
+    }
   }
 }
 

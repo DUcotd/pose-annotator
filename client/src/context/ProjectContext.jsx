@@ -211,6 +211,28 @@ export const ProjectProvider = ({ children }) => {
         }
     };
 
+    const exportDatasetZip = async (projectId, options) => {
+        try {
+            const res = await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/export/yolo-zip`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(options)
+            });
+            const data = await res.json();
+            return {
+                success: data.success !== undefined ? data.success : res.ok,
+                message: data.message || (data.details ? `${data.error || 'ZIP export failed'}: ${data.details}` : data.error),
+                path: data.path,
+                zipSize: data.zipSize,
+                stats: data.stats,
+                error: data.error
+            };
+        } catch (err) {
+            console.error("Failed to export dataset as ZIP", err);
+            return { success: false, message: 'ZIP export failed due to network error' };
+        }
+    };
+
     const exportCollaboration = async (projectId) => {
         try {
             if (window.electronAPI) {
@@ -454,6 +476,7 @@ export const ProjectProvider = ({ children }) => {
         openSettings,
         refreshImages: () => fetchImages(currentProject),
         exportProject,
+        exportDatasetZip,
         exportCollaboration,
         importCollaboration,
         renumberProject,

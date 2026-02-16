@@ -1272,7 +1272,7 @@ app.get('/api/projects/:projectId/dataset/stats', (req, res) => {
     const paths = getProjectPaths(projectId);
 
     if (!fs.existsSync(paths.uploads)) {
-        return res.json({ total: 0, annotated: 0, unannotated: 0, totalSize: 0, samples: [] });
+        return res.json({ total: 0, annotated: 0, unannotated: 0, totalSize: 0, samples: [], bboxes: 0, keypoints: 0 });
     }
 
     fs.readdir(paths.uploads, (err, files) => {
@@ -1282,6 +1282,8 @@ app.get('/api/projects/:projectId/dataset/stats', (req, res) => {
         let annotatedCount = 0;
         let totalSize = 0;
         let samples = [];
+        let totalBboxes = 0;
+        let totalKeypoints = 0;
 
         images.forEach(imageFile => {
             const imagePath = path.join(paths.uploads, imageFile);
@@ -1296,7 +1298,11 @@ app.get('/api/projects/:projectId/dataset/stats', (req, res) => {
             if (fs.existsSync(annotationFile)) {
                 try {
                     const data = JSON.parse(fs.readFileSync(annotationFile));
-                    if (data.some(a => a.type === 'bbox' || a.type === 'keypoint')) {
+                    const bboxes = data.filter(a => a.type === 'bbox').length;
+                    const keypoints = data.filter(a => a.type === 'keypoint').length;
+                    totalBboxes += bboxes;
+                    totalKeypoints += keypoints;
+                    if (bboxes > 0 || keypoints > 0) {
                         isAnnotated = true;
                     }
                 } catch (e) { }
@@ -1316,7 +1322,9 @@ app.get('/api/projects/:projectId/dataset/stats', (req, res) => {
             unannotated: images.length - annotatedCount,
             totalSize: totalSize,
             samples: samples,
-            projectPath: paths.root
+            projectPath: paths.root,
+            bboxes: totalBboxes,
+            keypoints: totalKeypoints
         });
     });
 });

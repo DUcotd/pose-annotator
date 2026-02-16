@@ -25,11 +25,10 @@ export function AnnotationEditor({ image, projectId, onBack }) {
     const [isImageLoaded, setIsImageLoaded] = useState(false);
     const [imageDims, setImageDims] = useState({ width: 0, height: 0, naturalWidth: 0, naturalHeight: 0 });
     const [saveStatus, setSaveStatus] = useState('saved'); // 'saved' | 'saving' | 'error'
+    const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
     const [showGuides, setShowGuides] = useState(false);
     const [projectConfig, setProjectConfig] = useState({ classMapping: {} });
     const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
-    const [editingLabelId, setEditingLabelId] = useState(null); // ID of bbox being renamed
-    const [editLabelValue, setEditLabelValue] = useState("");
 
     // Enhanced Features State
     const [zoomLevel, setZoomLevel] = useState(1);
@@ -184,12 +183,16 @@ export function AnnotationEditor({ image, projectId, onBack }) {
     }, [projectId]);
 
     const saveConfig = (newConfig) => {
+        console.log('[AnnotationEditor] saveConfig called with:', newConfig);
         setProjectConfig(newConfig);
         fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/config`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(newConfig)
-        }).catch(err => console.error('Error saving config:', err));
+        })
+            .then(res => res.json())
+            .then(data => console.log('[AnnotationEditor] Config saved:', data))
+            .catch(err => console.error('[AnnotationEditor] Error saving config:', err));
     };
 
 
@@ -202,8 +205,12 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(currentAnnotations)
             });
-            if (response.ok) setSaveStatus('saved');
-            else setSaveStatus('error');
+            if (response.ok) {
+                setSaveStatus('saved');
+                setHasUnsavedChanges(false);
+            } else {
+                setSaveStatus('error');
+            }
         } catch (error) {
             setSaveStatus('error');
         }
@@ -212,12 +219,23 @@ export function AnnotationEditor({ image, projectId, onBack }) {
     // Auto-save logic with debounce and change detection
     useEffect(() => {
         if (!isLoaded) return;
-        // Only save if there are actual annotations to save
-        if (annotations.length === 0) return;
-        // Debounce to 3 seconds to reduce frequent file operations
+        setHasUnsavedChanges(true);
         const timer = setTimeout(() => saveAnnotations(annotations), 3000);
         return () => clearTimeout(timer);
     }, [annotations, isLoaded, saveAnnotations]);
+
+    // Page close/refresh protection
+    useEffect(() => {
+        const handleBeforeUnload = (e) => {
+            if (hasUnsavedChanges) {
+                e.preventDefault();
+                e.returnValue = '您有未保存的标注修改，确定要离开吗？';
+                return e.returnValue;
+            }
+        };
+        window.addEventListener('beforeunload', handleBeforeUnload);
+        return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+    }, [hasUnsavedChanges]);
 
     // Completion Handlers
     const handleCompleteAnnotation = async () => {
@@ -732,10 +750,8 @@ export function AnnotationEditor({ image, projectId, onBack }) {
     };
 
     const handleBackClick = async () => {
-        if (annotations.length > 0) {
-            setSaveStatus('saving');
-            await saveAnnotations(annotations);
-        }
+        setSaveStatus('saving');
+        await saveAnnotations(annotations);
         onBack();
     };
 
@@ -781,7 +797,26 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                 <div className="editor-header-right">
                     <div className={`save-status ${saveStatus}`}>
                         {saveStatus === 'saving' && '保存中...'}
-                        {saveStatus === 'error' && '保存失败!'}
+                        {saveStatus === 'error' && (
+                            <>
+                                保存失败!
+                                <button
+                                    onClick={() => saveAnnotations(annotations)}
+                                    style={{
+                                        marginLeft: '8px',
+                                        padding: '2px 8px',
+                                        background: 'rgba(239, 68, 68, 0.2)',
+                                        border: '1px solid rgba(239, 68, 68, 0.4)',
+                                        borderRadius: '4px',
+                                        color: '#f87171',
+                                        cursor: 'pointer',
+                                        fontSize: '12px'
+                                    }}
+                                >
+                                    重试
+                                </button>
+                            </>
+                        )}
                         {saveStatus === 'saved' && (
                             <>
                                 <Save size={14} /> 已保存
@@ -997,7 +1032,7 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                                                 border: '1px solid black',
                                                 borderBottom: 'none'
                                             }}>
-                                                {ann.label || projectConfig.classMapping[ann.classIndex] || `Class ${ann.classIndex ?? 0}`}
+                                                {projectConfig.classMapping[ann.classIndex] || `Class ${ann.classIndex ?? 0}`}
                                             </div>
                                             {isSelected && mode === 'select' && (
                                                 <>
@@ -1097,7 +1132,9 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                     </div>
 
                     <div className="editor-sidebar-body">
-                        {groups.map((group, idx) => (
+                        {groups.map((group, idx) => {
+                            const classDisplayName = projectConfig.classMapping[group.classIndex] || `Class ${group.classIndex ?? 0}`;
+                            return (
                             <div key={group.id} className={`layer-group ${selectedId === group.id ? 'selected' : ''}`}>
                                 <div
                                     onClick={() => { setSelectedId(group.id); setMode('select'); }}
@@ -1108,38 +1145,9 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                                             {expandedGroups[group.id] ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                                         </div>
                                         <Box size={14} color="var(--accent-primary)" />
-                                        {editingLabelId === group.id ? (
-                                            <input
-                                                autoFocus
-                                                className="input-inline"
-                                                style={{ fontSize: '13px', fontWeight: 600, width: '120px' }}
-                                                value={editLabelValue}
-                                                onChange={e => setEditLabelValue(e.target.value)}
-                                                onBlur={() => {
-                                                    setAnnotations(prev => prev.map(a => a.id === group.id ? { ...a, label: editLabelValue } : a));
-                                                    setEditingLabelId(null);
-                                                }}
-                                                onKeyDown={e => {
-                                                    if (e.key === 'Enter') {
-                                                        setAnnotations(prev => prev.map(a => a.id === group.id ? { ...a, label: editLabelValue } : a));
-                                                        setEditingLabelId(null);
-                                                    }
-                                                }}
-                                                onClick={e => e.stopPropagation()}
-                                            />
-                                        ) : (
-                                            <span
-                                                className="layer-group-name"
-                                                onDoubleClick={(e) => {
-                                                    e.stopPropagation();
-                                                    setEditingLabelId(group.id);
-                                                    setEditLabelValue(group.label || projectConfig.classMapping[group.classIndex] || `对象 ${idx + 1}`);
-                                                }}
-                                                title="双击重命名"
-                                            >
-                                                {group.label || projectConfig.classMapping[group.classIndex] || `对象 ${idx + 1}`}
-                                            </span>
-                                        )}
+                                        <span className="layer-group-name">
+                                            对象 {idx + 1}
+                                        </span>
                                     </div>
                                     <button onClick={(e) => { e.stopPropagation(); handleDelete(group.id); }} className="icon-btn trash-btn" title="删除">
                                         <Trash2 size={14} />
@@ -1159,6 +1167,10 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                                                 }}
                                                 className="input-inline"
                                             />
+                                        </div>
+                                        <div className="layer-child-meta" style={{ opacity: 0.7, fontSize: '12px' }}>
+                                            <span>类别名称:</span>
+                                            <span style={{ color: 'var(--accent-primary)', fontWeight: 500 }}>{classDisplayName}</span>
                                         </div>
 
                                         {group.children.length > 0 ? (
@@ -1199,7 +1211,8 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                                     </div>
                                 )}
                             </div>
-                        ))}
+                            );
+                        })}
 
                         {unassignedKeypoints.length > 0 && (
                             <div className="unassigned-box">
