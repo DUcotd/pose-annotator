@@ -1,13 +1,13 @@
 
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { Save, ArrowLeft, Trash2, Crosshair, Box, MousePointer2, ChevronDown, ChevronRight, ChevronLeft, Layers, ZoomIn, ZoomOut, Maximize, Tag, HelpCircle, Undo2, Redo2, RotateCcw, Grid3X3, Link, CheckCircle, Play, X, AlertTriangle, RefreshCw } from 'lucide-react';
+import { Save, ArrowLeft, Trash2, Crosshair, Box, MousePointer2, ChevronDown, ChevronRight, ChevronLeft, Layers, ZoomIn, ZoomOut, Maximize, Tag, HelpCircle, Undo2, Redo2, RotateCcw, Grid3X3, Link, CheckCircle, Play, X, AlertTriangle, RefreshCw, Wand2 } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { useProject } from '../context/ProjectContext';
 import { ClassInputModal } from './ClassInputModal';
 import { ClassManagerModal } from './ClassManagerModal';
 
 export function AnnotationEditor({ image, projectId, onBack }) {
-    const { images, openEditor, goToTraining, currentProject, exportProject, deleteImage } = useProject();
+    const { images, openEditor, goToTraining, currentProject, exportProject, deleteImage, predictSingleImage, getPredictionSettings } = useProject();
     const [annotations, setAnnotations] = useState([]);
     const [mode, setMode] = useState('bbox'); // 'bbox' | 'keypoint' | 'select'
     const [isDrawing, setIsDrawing] = useState(false);
@@ -47,6 +47,12 @@ export function AnnotationEditor({ image, projectId, onBack }) {
     // Delete Image State
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [isDeletingImage, setIsDeletingImage] = useState(false);
+
+    // Single Prediction State
+    const [isPredicting, setIsPredicting] = useState(false);
+    const [predictionModelPath, setPredictionModelPath] = useState('');
+    const [showPredictionError, setShowPredictionError] = useState(false);
+    const [predictionError, setPredictionError] = useState('');
 
     const imageRef = useRef(null);
     const containerRef = useRef(null);
@@ -181,6 +187,42 @@ export function AnnotationEditor({ image, projectId, onBack }) {
             .then(data => setProjectConfig(data || { classMapping: {} }))
             .catch(err => console.error('Error loading config:', err));
     }, [projectId]);
+
+    // Load prediction model path
+    useEffect(() => {
+        const loadModelPath = async () => {
+            const settings = await getPredictionSettings(projectId);
+            if (settings.modelPath) {
+                setPredictionModelPath(settings.modelPath);
+            }
+        };
+        loadModelPath();
+    }, [projectId, getPredictionSettings]);
+
+    // Handle single image prediction
+    const handleSinglePrediction = async () => {
+        if (!predictionModelPath) {
+            setPredictionError('请先在图库页面配置预标注模型');
+            setShowPredictionError(true);
+            return;
+        }
+
+        setIsPredicting(true);
+        try {
+            const result = await predictSingleImage(projectId, image, predictionModelPath, 0.25);
+            if (result.success && result.predictions) {
+                setAnnotations(result.predictions);
+                pushToHistory(result.predictions);
+            } else {
+                setPredictionError(result.error || '预标注失败');
+                setShowPredictionError(true);
+            }
+        } catch (err) {
+            setPredictionError('预标注失败：' + err.message);
+            setShowPredictionError(true);
+        }
+        setIsPredicting(false);
+    };
 
     const saveConfig = (newConfig) => {
         console.log('[AnnotationEditor] saveConfig called with:', newConfig);
@@ -931,6 +973,19 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                         style={{ color: 'var(--accent-primary)' }}
                     >
                         <Tag size={20} />
+                    </button>
+                    <div className="toolbar-divider"></div>
+                    <button 
+                        onClick={handleSinglePrediction}
+                        disabled={isPredicting || !predictionModelPath}
+                        title={predictionModelPath ? "模型预标注当前图片" : "请先在图库配置预标注模型"}
+                        className="tool-btn"
+                        style={{ 
+                            color: predictionModelPath ? '#a855f7' : 'inherit',
+                            opacity: predictionModelPath ? 1 : 0.4
+                        }}
+                    >
+                        {isPredicting ? <RefreshCw size={20} className="spin" /> : <Wand2 size={20} />}
                     </button>
                     <button 
                         onClick={() => setShowDeleteConfirm(true)}
@@ -1728,6 +1783,80 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                                         确认删除
                                     </>
                                 )}
+                            </button>
+                        </div>
+                    </div>
+                </div>,
+                document.body
+            )}
+
+            {showPredictionError && createPortal(
+                <div style={{
+                    position: 'fixed',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    background: 'rgba(0, 0, 0, 0.7)',
+                    backdropFilter: 'blur(8px)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    zIndex: 10000
+                }}
+                onClick={() => setShowPredictionError(false)}
+                >
+                    <div style={{
+                        background: 'linear-gradient(135deg, rgba(22, 27, 34, 0.98), rgba(13, 17, 23, 0.98))',
+                        borderRadius: '20px',
+                        padding: '2rem',
+                        maxWidth: '400px',
+                        width: '90%',
+                        border: '1px solid rgba(239, 68, 68, 0.3)',
+                        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)'
+                    }}
+                    onClick={e => e.stopPropagation()}
+                    >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '1.5rem' }}>
+                            <div style={{
+                                width: '48px',
+                                height: '48px',
+                                borderRadius: '14px',
+                                background: 'rgba(239, 68, 68, 0.15)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                color: '#ef4444'
+                            }}>
+                                <AlertTriangle size={24} />
+                            </div>
+                            <div>
+                                <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                                    预标注失败
+                                </h3>
+                            </div>
+                        </div>
+
+                        <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem', fontSize: '14px', lineHeight: 1.6 }}>
+                            {predictionError}
+                        </p>
+
+                        <div style={{ display: 'flex', gap: '12px' }}>
+                            <button
+                                onClick={() => setShowPredictionError(false)}
+                                style={{
+                                    flex: 1,
+                                    padding: '12px',
+                                    borderRadius: '12px',
+                                    border: 'none',
+                                    background: 'rgba(255, 255, 255, 0.1)',
+                                    color: 'var(--text-primary)',
+                                    fontSize: '0.9rem',
+                                    fontWeight: 600,
+                                    cursor: 'pointer'
+                                }}
+                            >
+                                关闭
                             </button>
                         </div>
                     </div>

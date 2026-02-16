@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from 'react';
-import { ChevronLeft, ChevronRight, Image as ImageIcon, CheckCircle, RefreshCw, FolderOpen, Clock, Trash2, X, AlertTriangle } from 'lucide-react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { ChevronLeft, ChevronRight, Image as ImageIcon, CheckCircle, RefreshCw, FolderOpen, Clock, Trash2, X, AlertTriangle, Settings, Wand2, Play, Pause, Check, AlertCircle } from 'lucide-react';
 import { ImageUpload } from './ImageUpload';
 import { ImageDiscovery } from './ImageDiscovery';
 import { ImportHistory } from './ImportHistory';
@@ -287,6 +287,126 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
     const [loadingStats, setLoadingStats] = useState(false);
     const { deleteImage } = useProject();
 
+    const [showModelSettings, setShowModelSettings] = useState(false);
+    const [showPreannotateDialog, setShowPreannotateDialog] = useState(false);
+    const [modelPath, setModelPath] = useState('');
+    const [preannotateRange, setPreannotateRange] = useState('unannotated');
+    const [confidenceThreshold, setConfidenceThreshold] = useState(0.5);
+    const [preannotating, setPreannotating] = useState(false);
+    const [preannotateProgress, setPreannotateProgress] = useState({ current: 0, total: 0, currentImage: '' });
+    const [preannotateResult, setPreannotateResult] = useState(null);
+    const [showPreannotateProgress, setShowPreannotateProgress] = useState(false);
+    const [showPreannotateResult, setShowPreannotateResult] = useState(false);
+    const cancelPreannotateRef = useRef(false);
+    const [showModelToast, setShowModelToast] = useState(false);
+
+    useEffect(() => {
+        fetchModelConfig();
+    }, [projectId]);
+
+    const fetchModelConfig = async () => {
+        try {
+            const resp = await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/prediction-settings`);
+            if (resp.ok) {
+                const data = await resp.json();
+                setModelPath(data.modelPath || '');
+            }
+        } catch (e) {
+            console.error('Failed to fetch model config:', e);
+        }
+    };
+
+    const handleSelectModel = async () => {
+        try {
+            const resp = await fetch('http://localhost:5000/api/utils/select-file', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    filters: [{ name: 'PyTorch Model', extensions: ['pt'] }]
+                })
+            });
+            const data = await resp.json();
+            if (data.path) {
+                const saveResp = await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/prediction-settings`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ modelPath: data.path })
+                });
+                if (saveResp.ok) {
+                    setModelPath(data.path);
+                    setShowModelToast(true);
+                    setTimeout(() => setShowModelToast(false), 3000);
+                }
+            }
+        } catch (e) {
+            console.error('Failed to select model:', e);
+        }
+    };
+
+    const handleStartPreannotate = async () => {
+        if (!modelPath) return;
+
+        setPreannotating(true);
+        setPreannotateProgress({ current: 0, total: 0, currentImage: '' });
+        setShowPreannotateDialog(false);
+        setShowPreannotateProgress(true);
+        cancelPreannotateRef.current = false;
+
+        let targetImages = [];
+        if (preannotateRange === 'all') {
+            targetImages = images.map(img => typeof img === 'string' ? img : img.name);
+        } else if (preannotateRange === 'unannotated') {
+            targetImages = images.filter(img => typeof img === 'string' ? true : !img.hasAnnotation)
+                .map(img => typeof img === 'string' ? img : img.name);
+        } else if (preannotateRange === 'selected') {
+            if (selectedImage) {
+                targetImages = [selectedImage];
+            }
+        }
+
+        if (targetImages.length === 0) {
+            setPreannotating(false);
+            setShowPreannotateProgress(false);
+            return;
+        }
+
+        let successCount = 0;
+        let failedCount = 0;
+
+        try {
+            const resp = await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/predict`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    modelPath: modelPath,
+                    images: targetImages,
+                    confidenceThreshold: confidenceThreshold,
+                    mode: preannotateRange
+                })
+            });
+
+            if (resp.ok) {
+                const result = await resp.json();
+                successCount = result.processedImages || targetImages.length;
+                failedCount = targetImages.length - successCount;
+            } else {
+                failedCount = targetImages.length;
+            }
+        } catch (e) {
+            failedCount = targetImages.length;
+        }
+
+        setPreannotating(false);
+        setShowPreannotateProgress(false);
+        setPreannotateResult({ successCount, failedCount, cancelled: cancelPreannotateRef.current });
+        setShowPreannotateResult(true);
+        onUpload();
+    };
+
+    const handleCancelPreannotate = () => {
+        cancelPreannotateRef.current = true;
+    };
+
     const handleDeleteImage = async (imageId) => {
         const result = await deleteImage(projectId, imageId);
         if (result.success) {
@@ -416,6 +536,41 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
                         }}
                     >
                         <Clock size={16} />
+                    </button>
+                    <button
+                        onClick={() => setShowModelSettings(true)}
+                        className="icon-btn hover-card"
+                        title="预标注模型设置"
+                        style={{
+                            background: modelPath ? 'rgba(16, 185, 129, 0.1)' : 'rgba(255,255,255,0.03)',
+                            padding: '8px',
+                            borderRadius: '10px',
+                            border: modelPath ? '1px solid rgba(16, 185, 129, 0.2)' : '1px solid rgba(255,255,255,0.05)',
+                            color: modelPath ? '#10b981' : 'var(--text-secondary)'
+                        }}
+                    >
+                        <Settings size={16} />
+                    </button>
+                    <button
+                        onClick={() => setShowPreannotateDialog(true)}
+                        disabled={!modelPath}
+                        className="icon-btn hover-card"
+                        title={!modelPath ? '请先配置预标注模型' : '模型预标注'}
+                        style={{
+                            background: modelPath ? 'rgba(139, 92, 246, 0.1)' : 'rgba(255,255,255,0.02)',
+                            padding: '8px 12px',
+                            borderRadius: '10px',
+                            border: modelPath ? '1px solid rgba(139, 92, 246, 0.2)' : '1px solid rgba(255,255,255,0.05)',
+                            color: modelPath ? '#8b5cf6' : 'var(--text-tertiary)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            cursor: modelPath ? 'pointer' : 'not-allowed',
+                            opacity: modelPath ? 1 : 0.5
+                        }}
+                    >
+                        <Wand2 size={16} />
+                        <span style={{ fontSize: '13px', fontWeight: 600 }}>预标注</span>
                     </button>
                 </div>
                 <div style={{ position: 'relative', flex: 1, maxWidth: '320px' }}>
@@ -647,6 +802,653 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
                         </div>
                     </div>
                 </div>
+            )}
+
+            {showModelSettings && createPortal(
+                <div style={{
+                    position: 'fixed',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    background: 'rgba(0, 0, 0, 0.7)',
+                    backdropFilter: 'blur(8px)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    zIndex: 10000
+                }}
+                onClick={() => setShowModelSettings(false)}
+                >
+                    <div style={{
+                        background: 'linear-gradient(135deg, rgba(22, 27, 34, 0.98), rgba(13, 17, 23, 0.98))',
+                        borderRadius: '20px',
+                        padding: '2rem',
+                        maxWidth: '500px',
+                        width: '90%',
+                        border: '1px solid rgba(255, 255, 255, 0.1)',
+                        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)'
+                    }}
+                    onClick={e => e.stopPropagation()}
+                    >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '1.5rem' }}>
+                            <div style={{
+                                width: '48px',
+                                height: '48px',
+                                borderRadius: '14px',
+                                background: 'rgba(16, 185, 129, 0.15)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                color: '#10b981'
+                            }}>
+                                <Settings size={24} />
+                            </div>
+                            <div>
+                                <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                                    预标注模型设置
+                                </h3>
+                                <p style={{ margin: '4px 0 0 0', color: 'var(--text-secondary)', fontSize: '13px' }}>
+                                    选择 YOLO 姿态估计模型文件 (.pt)
+                                </p>
+                            </div>
+                        </div>
+
+                        <div style={{
+                            padding: '16px',
+                            background: 'rgba(255, 255, 255, 0.02)',
+                            borderRadius: '12px',
+                            border: '1px solid rgba(255, 255, 255, 0.08)',
+                            marginBottom: '1.5rem'
+                        }}>
+                            <div style={{ color: 'var(--text-tertiary)', fontSize: '0.8rem', marginBottom: '8px', fontWeight: 600 }}>
+                                当前模型路径
+                            </div>
+                            {modelPath ? (
+                                <div style={{
+                                    color: 'var(--text-primary)',
+                                    fontWeight: 500,
+                                    fontSize: '0.9rem',
+                                    wordBreak: 'break-all',
+                                    padding: '10px 12px',
+                                    background: 'rgba(16, 185, 129, 0.1)',
+                                    borderRadius: '8px',
+                                    border: '1px solid rgba(16, 185, 129, 0.2)'
+                                }}>
+                                    {modelPath}
+                                </div>
+                            ) : (
+                                <div style={{
+                                    color: 'var(--text-tertiary)',
+                                    fontSize: '0.9rem',
+                                    padding: '10px 12px',
+                                    background: 'rgba(255, 255, 255, 0.03)',
+                                    borderRadius: '8px',
+                                    border: '1px dashed rgba(255, 255, 255, 0.1)'
+                                }}>
+                                    未配置模型
+                                </div>
+                            )}
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '12px' }}>
+                            <button
+                                onClick={() => setShowModelSettings(false)}
+                                style={{
+                                    flex: 1,
+                                    padding: '12px',
+                                    borderRadius: '12px',
+                                    background: 'rgba(255, 255, 255, 0.05)',
+                                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                                    color: 'var(--text-primary)',
+                                    fontSize: '14px',
+                                    fontWeight: 600,
+                                    cursor: 'pointer'
+                                }}
+                            >
+                                关闭
+                            </button>
+                            <button
+                                onClick={handleSelectModel}
+                                style={{
+                                    flex: 1,
+                                    padding: '12px',
+                                    borderRadius: '12px',
+                                    background: 'linear-gradient(135deg, #10b981, #059669)',
+                                    border: 'none',
+                                    color: 'white',
+                                    fontSize: '14px',
+                                    fontWeight: 600,
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: '8px'
+                                }}
+                            >
+                                <FolderOpen size={16} />
+                                选择模型文件
+                            </button>
+                        </div>
+                    </div>
+                </div>,
+                document.body
+            )}
+
+            {showPreannotateDialog && createPortal(
+                <div style={{
+                    position: 'fixed',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    background: 'rgba(0, 0, 0, 0.7)',
+                    backdropFilter: 'blur(8px)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    zIndex: 10000
+                }}
+                onClick={() => setShowPreannotateDialog(false)}
+                >
+                    <div style={{
+                        background: 'linear-gradient(135deg, rgba(22, 27, 34, 0.98), rgba(13, 17, 23, 0.98))',
+                        borderRadius: '20px',
+                        padding: '2rem',
+                        maxWidth: '450px',
+                        width: '90%',
+                        border: '1px solid rgba(139, 92, 246, 0.2)',
+                        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)'
+                    }}
+                    onClick={e => e.stopPropagation()}
+                    >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '1.5rem' }}>
+                            <div style={{
+                                width: '48px',
+                                height: '48px',
+                                borderRadius: '14px',
+                                background: 'rgba(139, 92, 246, 0.15)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                color: '#8b5cf6'
+                            }}>
+                                <Wand2 size={24} />
+                            </div>
+                            <div>
+                                <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                                    模型预标注
+                                </h3>
+                                <p style={{ margin: '4px 0 0 0', color: 'var(--text-secondary)', fontSize: '13px' }}>
+                                    选择预标注范围和参数
+                                </p>
+                            </div>
+                        </div>
+
+                        <div style={{ marginBottom: '1.5rem' }}>
+                            <div style={{ color: 'var(--text-tertiary)', fontSize: '0.8rem', marginBottom: '10px', fontWeight: 600 }}>
+                                预标注范围
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                <label style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '12px',
+                                    padding: '12px 14px',
+                                    background: preannotateRange === 'all' ? 'rgba(139, 92, 246, 0.1)' : 'rgba(255, 255, 255, 0.02)',
+                                    border: preannotateRange === 'all' ? '1px solid rgba(139, 92, 246, 0.3)' : '1px solid rgba(255, 255, 255, 0.08)',
+                                    borderRadius: '10px',
+                                    cursor: 'pointer',
+                                    transition: 'all 0.2s'
+                                }}>
+                                    <input
+                                        type="radio"
+                                        name="preannotateRange"
+                                        value="all"
+                                        checked={preannotateRange === 'all'}
+                                        onChange={() => setPreannotateRange('all')}
+                                        style={{ accentColor: '#8b5cf6' }}
+                                    />
+                                    <span style={{ color: preannotateRange === 'all' ? '#8b5cf6' : 'var(--text-primary)', fontWeight: 500 }}>
+                                        全部图片 ({filtered.length} 张)
+                                    </span>
+                                </label>
+                                <label style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '12px',
+                                    padding: '12px 14px',
+                                    background: preannotateRange === 'unannotated' ? 'rgba(139, 92, 246, 0.1)' : 'rgba(255, 255, 255, 0.02)',
+                                    border: preannotateRange === 'unannotated' ? '1px solid rgba(139, 92, 246, 0.3)' : '1px solid rgba(255, 255, 255, 0.08)',
+                                    borderRadius: '10px',
+                                    cursor: 'pointer',
+                                    transition: 'all 0.2s'
+                                }}>
+                                    <input
+                                        type="radio"
+                                        name="preannotateRange"
+                                        value="unannotated"
+                                        checked={preannotateRange === 'unannotated'}
+                                        onChange={() => setPreannotateRange('unannotated')}
+                                        style={{ accentColor: '#8b5cf6' }}
+                                    />
+                                    <span style={{ color: preannotateRange === 'unannotated' ? '#8b5cf6' : 'var(--text-primary)', fontWeight: 500 }}>
+                                        仅未标注图片 ({filtered.filter(img => typeof img === 'string' ? true : !img.hasAnnotation).length} 张)
+                                    </span>
+                                </label>
+                                <label style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '12px',
+                                    padding: '12px 14px',
+                                    background: preannotateRange === 'selected' ? 'rgba(139, 92, 246, 0.1)' : 'rgba(255, 255, 255, 0.02)',
+                                    border: preannotateRange === 'selected' ? '1px solid rgba(139, 92, 246, 0.3)' : '1px solid rgba(255, 255, 255, 0.08)',
+                                    borderRadius: '10px',
+                                    cursor: selectedImage ? 'pointer' : 'not-allowed',
+                                    transition: 'all 0.2s',
+                                    opacity: selectedImage ? 1 : 0.5
+                                }}>
+                                    <input
+                                        type="radio"
+                                        name="preannotateRange"
+                                        value="selected"
+                                        checked={preannotateRange === 'selected'}
+                                        onChange={() => selectedImage && setPreannotateRange('selected')}
+                                        disabled={!selectedImage}
+                                        style={{ accentColor: '#8b5cf6' }}
+                                    />
+                                    <span style={{ color: preannotateRange === 'selected' ? '#8b5cf6' : 'var(--text-primary)', fontWeight: 500 }}>
+                                        当前选中图片 {selectedImage ? `(1 张)` : '(未选中)'}
+                                    </span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div style={{ marginBottom: '1.5rem' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                                <span style={{ color: 'var(--text-tertiary)', fontSize: '0.8rem', fontWeight: 600 }}>
+                                    置信度阈值
+                                </span>
+                                <span style={{ color: '#8b5cf6', fontSize: '0.9rem', fontWeight: 600 }}>
+                                    {confidenceThreshold.toFixed(2)}
+                                </span>
+                            </div>
+                            <input
+                                type="range"
+                                min="0.1"
+                                max="0.9"
+                                step="0.05"
+                                value={confidenceThreshold}
+                                onChange={(e) => setConfidenceThreshold(parseFloat(e.target.value))}
+                                style={{
+                                    width: '100%',
+                                    height: '6px',
+                                    borderRadius: '3px',
+                                    background: 'rgba(255, 255, 255, 0.1)',
+                                    outline: 'none',
+                                    accentColor: '#8b5cf6'
+                                }}
+                            />
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px' }}>
+                                <span style={{ color: 'var(--text-tertiary)', fontSize: '11px' }}>0.1 (宽松)</span>
+                                <span style={{ color: 'var(--text-tertiary)', fontSize: '11px' }}>0.9 (严格)</span>
+                            </div>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '12px' }}>
+                            <button
+                                onClick={() => setShowPreannotateDialog(false)}
+                                style={{
+                                    flex: 1,
+                                    padding: '12px',
+                                    borderRadius: '12px',
+                                    background: 'rgba(255, 255, 255, 0.05)',
+                                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                                    color: 'var(--text-primary)',
+                                    fontSize: '14px',
+                                    fontWeight: 600,
+                                    cursor: 'pointer'
+                                }}
+                            >
+                                取消
+                            </button>
+                            <button
+                                onClick={handleStartPreannotate}
+                                style={{
+                                    flex: 1,
+                                    padding: '12px',
+                                    borderRadius: '12px',
+                                    background: 'linear-gradient(135deg, #8b5cf6, #7c3aed)',
+                                    border: 'none',
+                                    color: 'white',
+                                    fontSize: '14px',
+                                    fontWeight: 600,
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: '8px'
+                                }}
+                            >
+                                <Play size={16} />
+                                开始预标注
+                            </button>
+                        </div>
+                    </div>
+                </div>,
+                document.body
+            )}
+
+            {showPreannotateProgress && createPortal(
+                <div style={{
+                    position: 'fixed',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    background: 'rgba(0, 0, 0, 0.8)',
+                    backdropFilter: 'blur(8px)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    zIndex: 10000
+                }}>
+                    <div style={{
+                        background: 'linear-gradient(135deg, rgba(22, 27, 34, 0.98), rgba(13, 17, 23, 0.98))',
+                        borderRadius: '20px',
+                        padding: '2rem',
+                        maxWidth: '450px',
+                        width: '90%',
+                        border: '1px solid rgba(139, 92, 246, 0.2)',
+                        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)'
+                    }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '1.5rem' }}>
+                            <div style={{
+                                width: '48px',
+                                height: '48px',
+                                borderRadius: '14px',
+                                background: 'rgba(139, 92, 246, 0.15)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                color: '#8b5cf6'
+                            }}>
+                                <RefreshCw size={24} className="animate-spin" />
+                            </div>
+                            <div>
+                                <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                                    正在预标注
+                                </h3>
+                                <p style={{ margin: '4px 0 0 0', color: 'var(--text-secondary)', fontSize: '13px' }}>
+                                    请稍候，正在处理图片...
+                                </p>
+                            </div>
+                        </div>
+
+                        <div style={{ marginBottom: '1rem' }}>
+                            <div style={{
+                                width: '100%',
+                                height: '8px',
+                                background: 'rgba(255, 255, 255, 0.1)',
+                                borderRadius: '4px',
+                                overflow: 'hidden'
+                            }}>
+                                <div style={{
+                                    width: `${preannotateProgress.total > 0 ? (preannotateProgress.current / preannotateProgress.total) * 100 : 0}%`,
+                                    height: '100%',
+                                    background: 'linear-gradient(90deg, #8b5cf6, #a78bfa)',
+                                    transition: 'width 0.3s ease'
+                                }} />
+                            </div>
+                        </div>
+
+                        <div style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            marginBottom: '1rem'
+                        }}>
+                            <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+                                进度: {preannotateProgress.current} / {preannotateProgress.total}
+                            </span>
+                            <span style={{ color: '#8b5cf6', fontSize: '0.9rem', fontWeight: 600 }}>
+                                {preannotateProgress.total > 0 ? Math.round((preannotateProgress.current / preannotateProgress.total) * 100) : 0}%
+                            </span>
+                        </div>
+
+                        {preannotateProgress.currentImage && (
+                            <div style={{
+                                padding: '12px 14px',
+                                background: 'rgba(255, 255, 255, 0.02)',
+                                borderRadius: '10px',
+                                border: '1px solid rgba(255, 255, 255, 0.08)',
+                                marginBottom: '1.5rem'
+                            }}>
+                                <div style={{ color: 'var(--text-tertiary)', fontSize: '0.75rem', marginBottom: '4px' }}>
+                                    当前处理
+                                </div>
+                                <div style={{
+                                    color: 'var(--text-primary)',
+                                    fontSize: '0.9rem',
+                                    fontWeight: 500,
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    whiteSpace: 'nowrap'
+                                }}>
+                                    {preannotateProgress.currentImage}
+                                </div>
+                            </div>
+                        )}
+
+                        <button
+                            onClick={handleCancelPreannotate}
+                            style={{
+                                width: '100%',
+                                padding: '12px',
+                                borderRadius: '12px',
+                                background: 'rgba(239, 68, 68, 0.1)',
+                                border: '1px solid rgba(239, 68, 68, 0.3)',
+                                color: '#ef4444',
+                                fontSize: '14px',
+                                fontWeight: 600,
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '8px'
+                            }}
+                        >
+                            <X size={16} />
+                            取消预标注
+                        </button>
+                    </div>
+                </div>,
+                document.body
+            )}
+
+            {showPreannotateResult && preannotateResult && createPortal(
+                <div style={{
+                    position: 'fixed',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    background: 'rgba(0, 0, 0, 0.7)',
+                    backdropFilter: 'blur(8px)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    zIndex: 10000
+                }}
+                onClick={() => setShowPreannotateResult(false)}
+                >
+                    <div style={{
+                        background: 'linear-gradient(135deg, rgba(22, 27, 34, 0.98), rgba(13, 17, 23, 0.98))',
+                        borderRadius: '20px',
+                        padding: '2rem',
+                        maxWidth: '400px',
+                        width: '90%',
+                        border: preannotateResult.cancelled 
+                            ? '1px solid rgba(245, 158, 11, 0.3)' 
+                            : preannotateResult.failedCount > 0 
+                                ? '1px solid rgba(245, 158, 11, 0.3)' 
+                                : '1px solid rgba(16, 185, 129, 0.3)',
+                        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)'
+                    }}
+                    onClick={e => e.stopPropagation()}
+                    >
+                        <div style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
+                            <div style={{
+                                width: '64px',
+                                height: '64px',
+                                borderRadius: '50%',
+                                background: preannotateResult.cancelled 
+                                    ? 'rgba(245, 158, 11, 0.15)' 
+                                    : preannotateResult.failedCount > 0 
+                                        ? 'rgba(245, 158, 11, 0.15)' 
+                                        : 'rgba(16, 185, 129, 0.15)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                margin: '0 auto 16px auto'
+                            }}>
+                                {preannotateResult.cancelled ? (
+                                    <Pause size={28} color="#f59e0b" />
+                                ) : preannotateResult.failedCount > 0 ? (
+                                    <AlertCircle size={28} color="#f59e0b" />
+                                ) : (
+                                    <CheckCircle size={28} color="#10b981" />
+                                )}
+                            </div>
+                            <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                                {preannotateResult.cancelled 
+                                    ? '预标注已取消' 
+                                    : preannotateResult.failedCount > 0 
+                                        ? '预标注完成（部分失败）' 
+                                        : '预标注完成'}
+                            </h3>
+                        </div>
+
+                        <div style={{
+                            display: 'grid',
+                            gridTemplateColumns: preannotateResult.failedCount > 0 ? '1fr 1fr' : '1fr',
+                            gap: '12px',
+                            marginBottom: '1.5rem'
+                        }}>
+                            <div style={{
+                                padding: '16px',
+                                background: 'rgba(16, 185, 129, 0.1)',
+                                borderRadius: '12px',
+                                border: '1px solid rgba(16, 185, 129, 0.2)',
+                                textAlign: 'center'
+                            }}>
+                                <div style={{ color: '#10b981', fontSize: '1.5rem', fontWeight: 700 }}>
+                                    {preannotateResult.successCount}
+                                </div>
+                                <div style={{ color: '#10b981', fontSize: '0.8rem', fontWeight: 500 }}>
+                                    成功
+                                </div>
+                            </div>
+                            {preannotateResult.failedCount > 0 && (
+                                <div style={{
+                                    padding: '16px',
+                                    background: 'rgba(239, 68, 68, 0.1)',
+                                    borderRadius: '12px',
+                                    border: '1px solid rgba(239, 68, 68, 0.2)',
+                                    textAlign: 'center'
+                                }}>
+                                    <div style={{ color: '#ef4444', fontSize: '1.5rem', fontWeight: 700 }}>
+                                        {preannotateResult.failedCount}
+                                    </div>
+                                    <div style={{ color: '#ef4444', fontSize: '0.8rem', fontWeight: 500 }}>
+                                        失败
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '12px' }}>
+                            <button
+                                onClick={() => setShowPreannotateResult(false)}
+                                style={{
+                                    flex: 1,
+                                    padding: '12px',
+                                    borderRadius: '12px',
+                                    background: 'rgba(255, 255, 255, 0.05)',
+                                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                                    color: 'var(--text-primary)',
+                                    fontSize: '14px',
+                                    fontWeight: 600,
+                                    cursor: 'pointer'
+                                }}
+                            >
+                                关闭
+                            </button>
+                            <button
+                                onClick={() => {
+                                    setShowPreannotateResult(false);
+                                    onUpload();
+                                }}
+                                style={{
+                                    flex: 1,
+                                    padding: '12px',
+                                    borderRadius: '12px',
+                                    background: 'linear-gradient(135deg, #4da1ff, #2188ff)',
+                                    border: 'none',
+                                    color: 'white',
+                                    fontSize: '14px',
+                                    fontWeight: 600,
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: '8px'
+                                }}
+                            >
+                                <RefreshCw size={16} />
+                                刷新图库
+                            </button>
+                        </div>
+                    </div>
+                </div>,
+                document.body
+            )}
+
+            {showModelToast && createPortal(
+                <div style={{
+                    position: 'fixed',
+                    bottom: '24px',
+                    right: '24px',
+                    zIndex: 10001,
+                    animation: 'slideInRight 0.3s ease-out'
+                }}>
+                    <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '12px',
+                        padding: '14px 20px',
+                        background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.95), rgba(5, 150, 105, 0.95))',
+                        borderRadius: '14px',
+                        boxShadow: '0 10px 40px rgba(16, 185, 129, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.1)',
+                        color: 'white'
+                    }}>
+                        <CheckCircle size={20} />
+                        <span style={{ fontWeight: 600, fontSize: '14px' }}>模型已选择成功</span>
+                    </div>
+                    <style>{`
+                        @keyframes slideInRight {
+                            from {
+                                opacity: 0;
+                                transform: translateX(100px);
+                            }
+                            to {
+                                opacity: 1;
+                                transform: translateX(0);
+                            }
+                        }
+                    `}</style>
+                </div>,
+                document.body
             )}
         </div>
     );

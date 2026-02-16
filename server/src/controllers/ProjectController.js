@@ -13,6 +13,7 @@ const projectRegistry = require('../services/ProjectRegistryService');
 const projectValidator = require('../utils/ProjectValidator');
 const { extractZipAsync } = require('../utils/zipUtils');
 const RenumberService = require('../services/RenumberService');
+const PredictionService = require('../services/PredictionService');
 
 function createProjectRouter(projectsDir) {
   const router = express.Router();
@@ -410,7 +411,7 @@ function createProjectRouter(projectsDir) {
     const paths = PathService.getProjectPaths(projectId, projectsDir);
 
     if (!fs.existsSync(paths.uploads)) {
-      return res.json({ total: 0, annotated: 0, unannotated: 0, samples: [] });
+      return res.json({ total: 0, annotated: 0, unannotated: 0, totalSize: 0, samples: [], bboxes: 0, keypoints: 0 });
     }
 
     fs.readdir(paths.uploads, (err, files) => {
@@ -420,6 +421,8 @@ function createProjectRouter(projectsDir) {
       let annotatedCount = 0;
       let totalSize = 0;
       let samples = [];
+      let totalBboxes = 0;
+      let totalKeypoints = 0;
 
       images.forEach(imageFile => {
         const imagePath = path.join(paths.root, 'uploads', imageFile);
@@ -434,9 +437,12 @@ function createProjectRouter(projectsDir) {
         if (fs.existsSync(annotationFile)) {
           try {
             const data = JSON.parse(fs.readFileSync(annotationFile));
-            if (data.some(a => a.type === 'bbox' || a.type === 'keypoint')) {
-              isAnnotated = true;
-            }
+            const annotations = Array.isArray(data) ? data : (Array.isArray(data?.annotations) ? data.annotations : []);
+            const bboxes = annotations.filter(a => a?.type === 'bbox').length;
+            const keypoints = annotations.filter(a => a?.type === 'keypoint').length;
+            totalBboxes += bboxes;
+            totalKeypoints += keypoints;
+            if (bboxes > 0 || keypoints > 0) isAnnotated = true;
           } catch (e) { }
         }
 
@@ -453,7 +459,9 @@ function createProjectRouter(projectsDir) {
         annotated: annotatedCount,
         unannotated: images.length - annotatedCount,
         totalSize: totalSize,
-        samples: samples
+        samples: samples,
+        bboxes: totalBboxes,
+        keypoints: totalKeypoints
       });
     });
   });
@@ -731,6 +739,174 @@ function createProjectRouter(projectsDir) {
         details: err.message,
         stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
       });
+    }
+  });
+
+  router.post('/:projectId/predict', async (req, res) => {
+    const { projectId } = req.params;
+    const { modelPath, images, confidenceThreshold, mode, device, imgsz } = req.body;
+
+    try {
+      const result = await PredictionService.runPredictionOnImages(projectId, {
+        modelPath,
+        images,
+        confidenceThreshold: confidenceThreshold || 0.25,
+        mode: mode || 'all',
+        device,
+        imgsz,
+        projectsDir
+      });
+
+      res.json({
+        success: true,
+        message: '预标注任务已启动',
+        taskId: `${projectId}-${Date.now()}`
+      });
+    } catch (err) {
+      logger.error(`Prediction failed for ${projectId}:`, err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  router.get('/:projectId/predict/status', (req, res) => {
+    const { projectId } = req.params;
+    const status = PredictionService.getStatus(projectId);
+
+    res.json({
+      isRunning: status.status === 'running',
+      progress: status.progress ? parseFloat(status.progress.percentage) : 0,
+      current: status.progress ? status.progress.processed : 0,
+      total: status.progress ? status.progress.total : 0,
+      message: status.progress ? status.progress.currentImage : '',
+      results: status.metrics || [],
+      logs: status.logs || [],
+      status: status.status
+    });
+  });
+
+  router.post('/:projectId/predict/cancel', async (req, res) => {
+    const { projectId } = req.params;
+
+    try {
+      await PredictionService.cancelPrediction(projectId);
+      res.json({ success: true, message: '预标注任务已取消' });
+    } catch (err) {
+      logger.error(`Failed to cancel prediction for ${projectId}:`, err);
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  router.post('/:projectId/predict/validate-model', async (req, res) => {
+    const { projectId } = req.params;
+    const { modelPath } = req.body;
+
+    try {
+      const result = await PredictionService.validateModel(modelPath);
+      res.json({
+        valid: result.valid,
+        error: result.error || null,
+        info: result.valid ? {
+          path: result.path,
+          size: result.size,
+          format: result.format
+        } : null
+      });
+    } catch (err) {
+      logger.error(`Model validation failed for ${projectId}:`, err);
+      res.status(500).json({ valid: false, error: err.message });
+    }
+  });
+
+  router.post('/:projectId/predict/single', async (req, res) => {
+    const { projectId } = req.params;
+    const { imageName, modelPath, confidenceThreshold = 0.25 } = req.body;
+
+    if (!imageName) {
+      return res.status(400).json({ error: '缺少图片名称' });
+    }
+
+    if (!modelPath) {
+      return res.status(400).json({ error: '缺少模型路径' });
+    }
+
+    try {
+      const result = await PredictionService.runPredictionOnImages(projectId, {
+        modelPath,
+        images: [imageName],
+        confidenceThreshold,
+        mode: 'all',
+        projectsDir
+      });
+
+      const paths = PathService.getProjectPaths(projectId, projectsDir);
+      const annotationPath = path.join(paths.annotations, `${imageName}.json`);
+
+      let predictions = [];
+      if (fs.existsSync(annotationPath)) {
+        predictions = JSON.parse(fs.readFileSync(annotationPath, 'utf8'));
+      }
+
+      res.json({
+        success: true,
+        predictions,
+        message: `预标注完成: ${imageName}`
+      });
+    } catch (err) {
+      logger.error(`Single prediction failed for ${projectId}/${imageName}:`, err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  router.post('/:projectId/prediction-settings', async (req, res) => {
+    const { projectId } = req.params;
+    const { modelPath, confidenceThreshold } = req.body;
+
+    try {
+      await PathService.ensureProjectDirs(projectId, projectsDir);
+      const settingsPath = PathService.getConfigPath(projectId, projectsDir).replace('config.json', 'prediction-settings.json');
+
+      const existingSettings = fs.existsSync(settingsPath)
+        ? JSON.parse(fs.readFileSync(settingsPath, 'utf8'))
+        : {};
+
+      const newSettings = {
+        ...existingSettings,
+        modelPath,
+        confidenceThreshold,
+        lastUpdated: new Date().toISOString()
+      };
+
+      fs.writeFileSync(settingsPath, JSON.stringify(newSettings, null, 2));
+      res.json({ success: true });
+    } catch (err) {
+      logger.error(`Failed to save prediction settings for ${projectId}:`, err);
+      res.status(500).json({ error: '保存预标注设置失败' });
+    }
+  });
+
+  router.get('/:projectId/prediction-settings', (req, res) => {
+    const { projectId } = req.params;
+
+    try {
+      const settingsPath = PathService.getConfigPath(projectId, projectsDir).replace('config.json', 'prediction-settings.json');
+
+      if (fs.existsSync(settingsPath)) {
+        const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+        res.json({
+          modelPath: settings.modelPath || '',
+          confidenceThreshold: settings.confidenceThreshold || 0.25,
+          lastPredictionTime: settings.lastUpdated || null
+        });
+      } else {
+        res.json({
+          modelPath: '',
+          confidenceThreshold: 0.25,
+          lastPredictionTime: null
+        });
+      }
+    } catch (err) {
+      logger.error(`Failed to get prediction settings for ${projectId}:`, err);
+      res.status(500).json({ error: '获取预标注设置失败' });
     }
   });
 

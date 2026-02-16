@@ -454,6 +454,101 @@ export const ProjectProvider = ({ children }) => {
         }
     };
 
+    const getPredictionSettings = async (projectId) => {
+        try {
+            const res = await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/prediction-settings`);
+            const data = await res.json();
+            return data;
+        } catch (err) {
+            console.error("Failed to get prediction settings", err);
+            return { modelPath: '', confidenceThreshold: 0.5, lastPredictionTime: null };
+        }
+    };
+
+    const savePredictionSettings = async (projectId, settings) => {
+        try {
+            const res = await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/prediction-settings`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(settings)
+            });
+            const data = await res.json();
+            return { success: res.ok, message: data.message || data.error, data };
+        } catch (err) {
+            console.error("Failed to save prediction settings", err);
+            return { success: false, message: '保存失败：网络错误' };
+        }
+    };
+
+    const runPrediction = async (projectId, options) => {
+        try {
+            const res = await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/predict`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(options)
+            });
+            const data = await res.json();
+            return { success: res.ok, taskId: data.taskId, message: data.message || data.error };
+        } catch (err) {
+            console.error("Failed to run prediction", err);
+            return { success: false, message: '预标注失败：网络错误' };
+        }
+    };
+
+    const getPredictionStatus = async (projectId) => {
+        try {
+            const res = await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/predict/status`);
+            const data = await res.json();
+            return data;
+        } catch (err) {
+            console.error("Failed to get prediction status", err);
+            return { isRunning: false, progress: 0, current: 0, total: 0, message: '' };
+        }
+    };
+
+    const cancelPrediction = async (projectId) => {
+        try {
+            const res = await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/predict/cancel`, {
+                method: 'POST'
+            });
+            const data = await res.json();
+            return { success: res.ok, message: data.message || data.error };
+        } catch (err) {
+            console.error("Failed to cancel prediction", err);
+            return { success: false, message: '取消失败：网络错误' };
+        }
+    };
+
+    const validateModel = async (projectId, modelPath) => {
+        try {
+            const res = await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/predict/validate-model`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ modelPath })
+            });
+            const data = await res.json();
+            return { success: res.ok, ...data };
+        } catch (err) {
+            console.error("Failed to validate model", err);
+            return { success: false, error: '验证失败：网络错误' };
+        }
+    };
+
+    const predictSingleImage = async (projectId, imageName, modelPath, confidenceThreshold = 0.25) => {
+        try {
+            const res = await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/predict/single`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ imageName, modelPath, confidenceThreshold })
+            });
+            const data = await res.json();
+            return { success: res.ok, ...data };
+        } catch (err) {
+            console.error("Failed to predict single image", err);
+            return { success: false, error: '预标注失败：网络错误' };
+        }
+    };
+
     useEffect(() => {
         fetchProjects();
     }, [fetchProjects]);
@@ -487,7 +582,14 @@ export const ProjectProvider = ({ children }) => {
         getImportHistory,
         projectConfig,
         configLoading,
-        updateProjectConfig
+        updateProjectConfig,
+        getPredictionSettings,
+        savePredictionSettings,
+        runPrediction,
+        getPredictionStatus,
+        cancelPrediction,
+        validateModel,
+        predictSingleImage
     };
 
     return (

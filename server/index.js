@@ -7,11 +7,20 @@ const settings = require('./src/config/settings');
 const logger = require('./src/utils/logger');
 
 const PROJECTS_DIR = (function() {
+  const config = settings.load();
+  if (config.projectsDir && fs.existsSync(config.projectsDir)) {
+    logger.info(`[Config] Using projectsDir from settings: ${config.projectsDir}`);
+    return config.projectsDir;
+  }
+  
   if (process.versions?.electron) {
     const { app } = require('electron');
     const exePath = app.getPath('exe');
     const installDir = path.dirname(exePath);
-    return path.join(installDir, 'projects');
+    const electronProjectsDir = path.join(installDir, 'projects');
+    if (fs.existsSync(electronProjectsDir)) {
+      return electronProjectsDir;
+    }
   }
   return path.join(__dirname, 'projects');
 })();
