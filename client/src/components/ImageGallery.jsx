@@ -620,135 +620,148 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
     return (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflowY: 'auto', overflowX: 'hidden' }} className="custom-scrollbar">
             {/* Search & Info Bar */}
-            <div style={{
-                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                marginBottom: '2rem', gap: '1.5rem', flexWrap: 'wrap', flexShrink: 0
-            }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <div style={{
-                        background: 'rgba(77, 161, 255, 0.1)',
-                        padding: '8px 12px',
-                        borderRadius: '12px',
-                        color: '#4da1ff',
+            <div style={{ marginBottom: '1.75rem' }}>
+                <div
+                    className="glass-panel"
+                    style={{
                         display: 'flex',
+                        justifyContent: 'space-between',
                         alignItems: 'center',
-                        gap: '8px',
-                        border: '1px solid rgba(77, 161, 255, 0.2)'
-                    }}>
-                        <ImageIcon size={16} />
-                        <span style={{ fontWeight: 700 }}>{filtered.length}</span>
-                    </div>
-                    <button
-                        onClick={() => {
-                            setShowStats(true);
-                            fetchStats();
-                        }}
-                        className="icon-btn hover-card"
-                        title="查看项目详情"
-                        style={{
-                            background: 'rgba(255, 255, 255, 0.05)',
-                            padding: '8px',
-                            borderRadius: '10px',
-                            border: '1px solid rgba(255, 255, 255, 0.1)',
-                            color: 'var(--text-secondary)'
-                        }}
-                    >
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
-                    </button>
-                    <button
-                        onClick={onUpload}
-                        className="icon-btn hover-card"
-                        title="刷新图库"
-                        style={{
-                            background: 'rgba(255,255,255,0.03)',
-                            padding: '8px',
-                            borderRadius: '10px',
-                            border: '1px solid rgba(255,255,255,0.05)'
-                        }}
-                    >
-                        <RefreshCw size={16} />
-                    </button>
-                    <button
-                        onClick={() => setShowDiscovery(true)}
-                        className="icon-btn hover-card"
-                        title="从文件夹导入"
-                        style={{
-                            background: 'rgba(77, 161, 255, 0.1)',
-                            padding: '8px',
-                            borderRadius: '10px',
-                            border: '1px solid rgba(77, 161, 255, 0.2)',
-                            color: '#4da1ff'
-                        }}
-                    >
-                        <FolderOpen size={16} />
-                    </button>
-                    <button
-                        onClick={() => setShowHistory(true)}
-                        className="icon-btn hover-card"
-                        title="导入历史"
-                        style={{
-                            background: 'rgba(255,255,255,0.03)',
-                            padding: '8px',
-                            borderRadius: '10px',
-                            border: '1px solid rgba(255,255,255,0.05)'
-                        }}
-                    >
-                        <Clock size={16} />
-                    </button>
-                    <button
-                        onClick={() => setShowModelSettings(true)}
-                        className="icon-btn hover-card"
-                        title="预标注模型设置"
-                        style={{
-                            background: modelPath ? 'rgba(16, 185, 129, 0.1)' : 'rgba(255,255,255,0.03)',
-                            padding: '8px',
-                            borderRadius: '10px',
-                            border: modelPath ? '1px solid rgba(16, 185, 129, 0.2)' : '1px solid rgba(255,255,255,0.05)',
-                            color: modelPath ? '#10b981' : 'var(--text-secondary)'
-                        }}
-                    >
-                        <Settings size={16} />
-                    </button>
-                    <button
-                        onClick={() => setShowPreannotateDialog(true)}
-                        disabled={!modelPath}
-                        className="icon-btn hover-card"
-                        title={!modelPath ? '请先配置预标注模型' : '模型预标注'}
-                        style={{
-                            background: modelPath ? 'rgba(139, 92, 246, 0.1)' : 'rgba(255,255,255,0.02)',
+                        gap: '1.5rem',
+                        flexWrap: 'wrap',
+                        flexShrink: 0,
+                        padding: '0.9rem 1.1rem',
+                        borderRadius: '16px',
+                        borderColor: 'rgba(255,255,255,0.12)',
+                        boxShadow: '0 12px 30px rgba(0,0,0,0.45)'
+                    }}
+                >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                        <div style={{
+                            background: 'rgba(77, 161, 255, 0.14)',
                             padding: '8px 12px',
-                            borderRadius: '10px',
-                            border: modelPath ? '1px solid rgba(139, 92, 246, 0.2)' : '1px solid rgba(255,255,255,0.05)',
-                            color: modelPath ? '#8b5cf6' : 'var(--text-tertiary)',
+                            borderRadius: '999px',
+                            color: '#4da1ff',
                             display: 'flex',
                             alignItems: 'center',
-                            gap: '6px',
-                            cursor: modelPath ? 'pointer' : 'not-allowed',
-                            opacity: modelPath ? 1 : 0.5
-                        }}
-                    >
-                        <Wand2 size={16} />
-                        <span style={{ fontSize: '13px', fontWeight: 600 }}>预标注</span>
-                    </button>
-                </div>
-                <div style={{ position: 'relative', flex: 1, maxWidth: '320px' }}>
-                    <input
-                        type="text"
-                        placeholder="搜索图片名称..."
-                        value={search}
-                        onChange={(e) => setSearch(e.target.value)}
-                        className="input-modern"
-                        style={{
-                            height: '46px',
-                            paddingLeft: '44px',
-                            fontSize: '0.95rem',
-                            background: 'rgba(0, 0, 0, 0.2)',
-                            borderColor: 'var(--border-subtle)',
-                            borderRadius: '12px'
-                        }}
-                    />
-                    <div style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-tertiary)', pointerEvents: 'none' }}>
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                            gap: '8px',
+                            border: '1px solid rgba(77, 161, 255, 0.35)',
+                            fontSize: '13px',
+                            fontWeight: 600
+                        }}>
+                            <ImageIcon size={16} />
+                            <span>共 {filtered.length} 张图片</span>
+                        </div>
+                        <button
+                            onClick={() => {
+                                setShowStats(true);
+                                fetchStats();
+                            }}
+                            className="icon-btn hover-card"
+                            title="查看项目详情"
+                            style={{
+                                background: 'rgba(255, 255, 255, 0.04)',
+                                padding: '8px',
+                                borderRadius: '10px',
+                                border: '1px solid rgba(255, 255, 255, 0.12)',
+                                color: 'var(--text-secondary)'
+                            }}
+                        >
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+                        </button>
+                        <button
+                            onClick={onUpload}
+                            className="icon-btn hover-card"
+                            title="刷新图库"
+                            style={{
+                                background: 'rgba(255,255,255,0.03)',
+                                padding: '8px',
+                                borderRadius: '10px',
+                                border: '1px solid rgba(255,255,255,0.08)'
+                            }}
+                        >
+                            <RefreshCw size={16} />
+                        </button>
+                        <button
+                            onClick={() => setShowDiscovery(true)}
+                            className="icon-btn hover-card"
+                            title="从文件夹导入"
+                            style={{
+                                background: 'rgba(77, 161, 255, 0.12)',
+                                padding: '8px',
+                                borderRadius: '10px',
+                                border: '1px solid rgba(77, 161, 255, 0.3)',
+                                color: '#4da1ff'
+                            }}
+                        >
+                            <FolderOpen size={16} />
+                        </button>
+                        <button
+                            onClick={() => setShowHistory(true)}
+                            className="icon-btn hover-card"
+                            title="导入历史"
+                            style={{
+                                background: 'rgba(255,255,255,0.03)',
+                                padding: '8px',
+                                borderRadius: '10px',
+                                border: '1px solid rgba(255,255,255,0.08)'
+                            }}
+                        >
+                            <Clock size={16} />
+                        </button>
+                        <button
+                            onClick={() => setShowModelSettings(true)}
+                            className="icon-btn hover-card"
+                            title="预标注模型设置"
+                            style={{
+                                background: modelPath ? 'rgba(16, 185, 129, 0.14)' : 'rgba(255,255,255,0.03)',
+                                padding: '8px',
+                                borderRadius: '10px',
+                                border: modelPath ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(255,255,255,0.08)',
+                                color: modelPath ? '#10b981' : 'var(--text-secondary)'
+                            }}
+                        >
+                            <Settings size={16} />
+                        </button>
+                        <button
+                            onClick={() => setShowPreannotateDialog(true)}
+                            disabled={!modelPath}
+                            className="icon-btn hover-card"
+                            title={!modelPath ? '请先配置预标注模型' : '模型预标注'}
+                            style={{
+                                background: modelPath ? 'rgba(139, 92, 246, 0.14)' : 'rgba(255,255,255,0.02)',
+                                padding: '8px 12px',
+                                borderRadius: '10px',
+                                border: modelPath ? '1px solid rgba(139, 92, 246, 0.3)' : '1px solid rgba(255,255,255,0.08)',
+                                color: modelPath ? '#8b5cf6' : 'var(--text-tertiary)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                cursor: modelPath ? 'pointer' : 'not-allowed',
+                                opacity: modelPath ? 1 : 0.5
+                            }}
+                        >
+                            <Wand2 size={16} />
+                            <span style={{ fontSize: '13px', fontWeight: 600 }}>预标注</span>
+                        </button>
+                    </div>
+                    <div style={{ position: 'relative', flex: 1, maxWidth: '320px' }}>
+                        <input
+                            type="text"
+                            placeholder="搜索图片名称..."
+                            value={search}
+                            onChange={(e) => setSearch(e.target.value)}
+                            className="input-modern"
+                            style={{
+                                height: '46px',
+                                paddingLeft: '44px',
+                                fontSize: '0.95rem',
+                                borderRadius: '14px'
+                            }}
+                        />
+                        <div style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-tertiary)', pointerEvents: 'none' }}>
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                        </div>
                     </div>
                 </div>
             </div>

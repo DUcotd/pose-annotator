@@ -292,40 +292,72 @@ export const Settings = ({ onBack }) => {
 
     const InfoCard = ({ icon: Icon, title, children, color = '99,102,241' }) => (
         <div style={{
-            background: 'rgba(0,0,0,0.2)',
+            background: 'rgba(0,0,0,0.25)',
             borderRadius: '16px',
             padding: '1.25rem',
-            border: '1px solid rgba(255,255,255,0.06)',
+            border: '1px solid rgba(255,255,255,0.08)',
             display: 'flex',
-            gap: '1rem'
-        }}>
+            gap: '1rem',
+            transition: 'all 0.2s ease',
+            backdropFilter: 'blur(10px)',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+        }}
+        onMouseEnter={(e) => {
+            e.currentTarget.style.background = 'rgba(0,0,0,0.3)';
+            e.currentTarget.style.borderColor = 'rgba(255,255,255,0.12)';
+            e.currentTarget.style.transform = 'translateY(-2px)';
+            e.currentTarget.style.boxShadow = '0 8px 20px rgba(0,0,0,0.15)';
+        }}
+        onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'rgba(0,0,0,0.25)';
+            e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)';
+            e.currentTarget.style.transform = 'translateY(0)';
+            e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)';
+        }}
+        >
             <div style={{
-                width: '40px',
-                height: '40px',
+                width: '44px',
+                height: '44px',
                 borderRadius: '12px',
-                background: `rgba(${color}, 0.15)`,
+                background: `linear-gradient(135deg, rgba(${color}, 0.2), rgba(${color}, 0.1))`,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 color: `rgb(${color})`,
-                flexShrink: 0
+                flexShrink: 0,
+                boxShadow: `0 4px 12px rgba(${color}, 0.15)`
             }}>
                 <Icon size={20} />
             </div>
-            <div>
-                <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '6px' }}>{title}</div>
-                <div style={{ fontSize: '13px', color: 'var(--text-tertiary)', lineHeight: 1.5 }}>{children}</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ 
+                    fontSize: '14px', 
+                    fontWeight: 600, 
+                    color: 'var(--text-primary)', 
+                    marginBottom: '8px',
+                    lineHeight: 1.3
+                }}>
+                    {title}
+                </div>
+                <div style={{ 
+                    fontSize: '13px', 
+                    color: 'var(--text-tertiary)', 
+                    lineHeight: 1.6 
+                }}>
+                    {children}
+                </div>
             </div>
         </div>
     );
 
     const renderPythonConfig = () => (
         <div style={{
-            background: 'rgba(255,255,255,0.02)',
-            borderRadius: '24px',
+            background: 'rgba(255,255,255,0.03)',
+            borderRadius: '20px',
             padding: '2rem',
-            border: '1px solid rgba(255,255,255,0.06)',
-            marginBottom: '1.5rem'
+            border: '1px solid rgba(255,255,255,0.08)',
+            backdropFilter: 'blur(10px)',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.2)'
         }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '1.5rem' }}>
                 <Terminal size={20} style={{ color: 'rgb(251,191,36)' }} />
@@ -374,13 +406,27 @@ export const Settings = ({ onBack }) => {
                         style={{
                             flex: 1,
                             height: '52px',
-                            padding: '0 16px',
+                            padding: '0 18px',
                             fontSize: '14px',
-                            background: 'rgba(0,0,0,0.3)',
-                            border: `1px solid ${validationResult?.valid === true ? 'rgba(34,197,94,0.4)' : validationResult?.valid === false ? 'rgba(239,68,68,0.4)' : 'rgba(255,255,255,0.1)'}`,
+                            background: 'rgba(0,0,0,0.4)',
+                            border: `1px solid ${validationResult?.valid === true ? 'rgba(34,197,94,0.5)' : validationResult?.valid === false ? 'rgba(239,68,68,0.5)' : 'rgba(255,255,255,0.12)'}`,
                             borderRadius: '14px',
                             color: 'var(--text-primary)',
-                            outline: 'none'
+                            outline: 'none',
+                            transition: 'all 0.2s ease',
+                            backdropFilter: 'blur(10px)'
+                        }}
+                        onFocus={(e) => {
+                            if (!validationResult) {
+                                e.currentTarget.style.borderColor = 'rgba(99,102,241,0.5)';
+                                e.currentTarget.style.background = 'rgba(0,0,0,0.5)';
+                            }
+                        }}
+                        onBlur={(e) => {
+                            if (!validationResult) {
+                                e.currentTarget.style.borderColor = 'rgba(255,255,255,0.12)';
+                                e.currentTarget.style.background = 'rgba(0,0,0,0.4)';
+                            }
                         }}
                     />
                     <button
@@ -388,16 +434,30 @@ export const Settings = ({ onBack }) => {
                         style={{
                             width: '52px',
                             height: '52px',
-                            background: 'rgba(255,255,255,0.06)',
-                            border: '1px solid rgba(255,255,255,0.1)',
+                            background: 'rgba(255,255,255,0.08)',
+                            border: '1px solid rgba(255,255,255,0.12)',
                             borderRadius: '14px',
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
                             color: 'var(--text-secondary)',
-                            cursor: 'pointer'
+                            cursor: 'pointer',
+                            transition: 'all 0.2s ease',
+                            backdropFilter: 'blur(10px)'
                         }}
                         title="浏览文件"
+                        onMouseEnter={(e) => {
+                            e.currentTarget.style.background = 'rgba(255,255,255,0.12)';
+                            e.currentTarget.style.borderColor = 'rgba(255,255,255,0.18)';
+                            e.currentTarget.style.color = 'var(--text-primary)';
+                            e.currentTarget.style.transform = 'scale(1.05)';
+                        }}
+                        onMouseLeave={(e) => {
+                            e.currentTarget.style.background = 'rgba(255,255,255,0.08)';
+                            e.currentTarget.style.borderColor = 'rgba(255,255,255,0.12)';
+                            e.currentTarget.style.color = 'var(--text-secondary)';
+                            e.currentTarget.style.transform = 'scale(1)';
+                        }}
                     >
                         <FolderOpen size={20} />
                     </button>
@@ -407,16 +467,33 @@ export const Settings = ({ onBack }) => {
                         style={{
                             width: '52px',
                             height: '52px',
-                            background: isValidating ? 'rgba(255,255,255,0.1)' : 'rgba(99,102,241,0.2)',
-                            border: '1px solid rgba(255,255,255,0.1)',
+                            background: isValidating ? 'rgba(255,255,255,0.1)' : 'rgba(99,102,241,0.25)',
+                            border: `1px solid ${isValidating ? 'rgba(255,255,255,0.1)' : 'rgba(99,102,241,0.4)'}`,
                             borderRadius: '14px',
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
                             color: isValidating ? 'var(--text-tertiary)' : 'rgb(99,102,241)',
-                            cursor: isValidating || !pythonPath.trim() ? 'not-allowed' : 'pointer'
+                            cursor: isValidating || !pythonPath.trim() ? 'not-allowed' : 'pointer',
+                            transition: 'all 0.2s ease',
+                            backdropFilter: 'blur(10px)',
+                            boxShadow: isValidating ? 'none' : '0 4px 12px rgba(99,102,241,0.2)'
                         }}
                         title="验证路径"
+                        onMouseEnter={(e) => {
+                            if (!isValidating && pythonPath.trim()) {
+                                e.currentTarget.style.background = 'rgba(99,102,241,0.35)';
+                                e.currentTarget.style.borderColor = 'rgba(99,102,241,0.5)';
+                                e.currentTarget.style.transform = 'scale(1.05)';
+                            }
+                        }}
+                        onMouseLeave={(e) => {
+                            if (!isValidating && pythonPath.trim()) {
+                                e.currentTarget.style.background = 'rgba(99,102,241,0.25)';
+                                e.currentTarget.style.borderColor = 'rgba(99,102,241,0.4)';
+                                e.currentTarget.style.transform = 'scale(1)';
+                            }
+                        }}
                     >
                         {isValidating ? <RefreshCw size={20} className="spin" /> : <CheckCircle size={20} />}
                     </button>
@@ -683,7 +760,21 @@ export const Settings = ({ onBack }) => {
                     justifyContent: 'center',
                     gap: '10px',
                     cursor: isSaving ? 'not-allowed' : 'pointer',
-                    boxShadow: isSaving ? 'none' : '0 8px 24px rgba(99,102,241,0.25)'
+                    boxShadow: isSaving ? 'none' : '0 8px 24px rgba(99,102,241,0.3)',
+                    transition: 'all 0.2s ease',
+                    backdropFilter: 'blur(10px)'
+                }}
+                onMouseEnter={(e) => {
+                    if (!isSaving) {
+                        e.currentTarget.style.transform = 'translateY(-2px)';
+                        e.currentTarget.style.boxShadow = '0 12px 32px rgba(99,102,241,0.35)';
+                    }
+                }}
+                onMouseLeave={(e) => {
+                    if (!isSaving) {
+                        e.currentTarget.style.transform = 'translateY(0)';
+                        e.currentTarget.style.boxShadow = '0 8px 24px rgba(99,102,241,0.3)';
+                    }
                 }}
             >
                 {isSaving ? (
@@ -714,11 +805,12 @@ export const Settings = ({ onBack }) => {
 
     const renderProjectsDir = () => (
         <div style={{
-            background: 'rgba(255,255,255,0.02)',
-            borderRadius: '24px',
+            background: 'rgba(255,255,255,0.03)',
+            borderRadius: '20px',
             padding: '2rem',
-            border: '1px solid rgba(255,255,255,0.06)',
-            marginBottom: '1.5rem'
+            border: '1px solid rgba(255,255,255,0.08)',
+            backdropFilter: 'blur(10px)',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.2)'
         }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '1.5rem' }}>
                 <Database size={20} style={{ color: 'rgb(77,161,255)' }} />
@@ -747,13 +839,23 @@ export const Settings = ({ onBack }) => {
                         style={{
                             flex: 1,
                             height: '52px',
-                            padding: '0 16px',
+                            padding: '0 18px',
                             fontSize: '14px',
-                            background: 'rgba(0,0,0,0.3)',
-                            border: '1px solid rgba(255,255,255,0.1)',
+                            background: 'rgba(0,0,0,0.4)',
+                            border: '1px solid rgba(255,255,255,0.12)',
                             borderRadius: '14px',
                             color: 'var(--text-primary)',
-                            outline: 'none'
+                            outline: 'none',
+                            transition: 'all 0.2s ease',
+                            backdropFilter: 'blur(10px)'
+                        }}
+                        onFocus={(e) => {
+                            e.currentTarget.style.borderColor = 'rgba(77,161,255,0.5)';
+                            e.currentTarget.style.background = 'rgba(0,0,0,0.5)';
+                        }}
+                        onBlur={(e) => {
+                            e.currentTarget.style.borderColor = 'rgba(255,255,255,0.12)';
+                            e.currentTarget.style.background = 'rgba(0,0,0,0.4)';
                         }}
                     />
                     <button
@@ -761,16 +863,30 @@ export const Settings = ({ onBack }) => {
                         style={{
                             width: '52px',
                             height: '52px',
-                            background: 'rgba(255,255,255,0.06)',
-                            border: '1px solid rgba(255,255,255,0.1)',
+                            background: 'rgba(255,255,255,0.08)',
+                            border: '1px solid rgba(255,255,255,0.12)',
                             borderRadius: '14px',
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
                             color: 'var(--text-secondary)',
-                            cursor: 'pointer'
+                            cursor: 'pointer',
+                            transition: 'all 0.2s ease',
+                            backdropFilter: 'blur(10px)'
                         }}
                         title="浏览文件夹"
+                        onMouseEnter={(e) => {
+                            e.currentTarget.style.background = 'rgba(255,255,255,0.12)';
+                            e.currentTarget.style.borderColor = 'rgba(255,255,255,0.18)';
+                            e.currentTarget.style.color = 'var(--text-primary)';
+                            e.currentTarget.style.transform = 'scale(1.05)';
+                        }}
+                        onMouseLeave={(e) => {
+                            e.currentTarget.style.background = 'rgba(255,255,255,0.08)';
+                            e.currentTarget.style.borderColor = 'rgba(255,255,255,0.12)';
+                            e.currentTarget.style.color = 'var(--text-secondary)';
+                            e.currentTarget.style.transform = 'scale(1)';
+                        }}
                     >
                         <FolderOpen size={20} />
                     </button>
@@ -793,7 +909,22 @@ export const Settings = ({ onBack }) => {
                             alignItems: 'center',
                             justifyContent: 'center',
                             gap: '8px',
-                            cursor: isSavingDir ? 'not-allowed' : 'pointer'
+                            cursor: isSavingDir ? 'not-allowed' : 'pointer',
+                            transition: 'all 0.2s ease',
+                            backdropFilter: 'blur(10px)',
+                            boxShadow: isSavingDir ? 'none' : '0 4px 16px rgba(77,161,255,0.25)'
+                        }}
+                        onMouseEnter={(e) => {
+                            if (!isSavingDir) {
+                                e.currentTarget.style.transform = 'translateY(-2px)';
+                                e.currentTarget.style.boxShadow = '0 8px 24px rgba(77,161,255,0.3)';
+                            }
+                        }}
+                        onMouseLeave={(e) => {
+                            if (!isSavingDir) {
+                                e.currentTarget.style.transform = 'translateY(0)';
+                                e.currentTarget.style.boxShadow = '0 4px 16px rgba(77,161,255,0.25)';
+                            }
                         }}
                     >
                         {isSavingDir ? <RefreshCw size={16} className="spin" /> : <Save size={16} />}
@@ -812,7 +943,23 @@ export const Settings = ({ onBack }) => {
                                 color: '#f87171',
                                 fontSize: '14px',
                                 fontWeight: 600,
-                                cursor: isSavingDir ? 'not-allowed' : 'pointer'
+                                cursor: isSavingDir ? 'not-allowed' : 'pointer',
+                                transition: 'all 0.2s ease',
+                                backdropFilter: 'blur(10px)'
+                            }}
+                            onMouseEnter={(e) => {
+                                if (!isSavingDir) {
+                                    e.currentTarget.style.background = 'rgba(239,68,68,0.15)';
+                                    e.currentTarget.style.borderColor = 'rgba(239,68,68,0.4)';
+                                    e.currentTarget.style.transform = 'translateY(-2px)';
+                                }
+                            }}
+                            onMouseLeave={(e) => {
+                                if (!isSavingDir) {
+                                    e.currentTarget.style.background = 'rgba(239,68,68,0.1)';
+                                    e.currentTarget.style.borderColor = 'rgba(239,68,68,0.3)';
+                                    e.currentTarget.style.transform = 'translateY(0)';
+                                }
                             }}
                         >
                             恢复默认
@@ -839,11 +986,12 @@ export const Settings = ({ onBack }) => {
 
     const renderEnvironments = () => (
         <div style={{
-            background: 'rgba(255,255,255,0.02)',
-            borderRadius: '24px',
+            background: 'rgba(255,255,255,0.03)',
+            borderRadius: '20px',
             padding: '2rem',
-            border: '1px solid rgba(255,255,255,0.06)',
-            marginBottom: '1.5rem'
+            border: '1px solid rgba(255,255,255,0.08)',
+            backdropFilter: 'blur(10px)',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.2)'
         }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -1092,11 +1240,12 @@ export const Settings = ({ onBack }) => {
 
         return (
             <div style={{
-                background: 'rgba(255,255,255,0.02)',
-                borderRadius: '24px',
+                background: 'rgba(255,255,255,0.03)',
+                borderRadius: '20px',
                 padding: '2rem',
-                border: '1px solid rgba(255,255,255,0.06)',
-                marginBottom: '1.5rem'
+                border: '1px solid rgba(255,255,255,0.08)',
+                backdropFilter: 'blur(10px)',
+                boxShadow: '0 8px 32px rgba(0,0,0,0.2)'
             }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '1.5rem' }}>
                     <Cpu size={20} style={{ color: 'rgb(139,92,246)' }} />
@@ -1381,8 +1530,14 @@ export const Settings = ({ onBack }) => {
             background: 'linear-gradient(135deg, rgba(13,17,23,0.98) 0%, rgba(22,27,34,0.98) 100%)',
             overflow: 'auto'
         }}>
-            <div style={{ maxWidth: '800px', margin: '0 auto', padding: '2rem' }}>
-                <div style={{ marginBottom: '2.5rem' }}>
+            <div style={{ 
+                maxWidth: '900px', 
+                margin: '0 auto', 
+                padding: 'clamp(1.5rem, 4vw, 2.5rem) clamp(1rem, 3vw, 2rem)',
+                minHeight: '100vh'
+            }}>
+                {/* Header Section */}
+                <div style={{ marginBottom: '2rem' }}>
                     <button
                         onClick={onBack}
                         style={{
@@ -1396,51 +1551,81 @@ export const Settings = ({ onBack }) => {
                             justifyContent: 'center',
                             color: 'var(--text-secondary)',
                             cursor: 'pointer',
-                            marginBottom: '1rem'
+                            marginBottom: '1.25rem',
+                            transition: 'all 0.2s ease',
+                            backdropFilter: 'blur(10px)'
+                        }}
+                        onMouseEnter={(e) => {
+                            e.currentTarget.style.background = 'rgba(255,255,255,0.08)';
+                            e.currentTarget.style.borderColor = 'rgba(255,255,255,0.15)';
+                        }}
+                        onMouseLeave={(e) => {
+                            e.currentTarget.style.background = 'rgba(255,255,255,0.05)';
+                            e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)';
                         }}
                     >
                         <ArrowLeft size={20} />
                     </button>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
                         <div style={{
-                            width: '48px',
-                            height: '48px',
-                            borderRadius: '14px',
-                            background: 'linear-gradient(135deg, rgba(99,102,241,0.2), rgba(139,92,246,0.1))',
+                            width: '56px',
+                            height: '56px',
+                            borderRadius: '16px',
+                            background: 'linear-gradient(135deg, rgba(99,102,241,0.25), rgba(139,92,246,0.15))',
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            color: '#818cf8'
+                            color: '#818cf8',
+                            boxShadow: '0 8px 24px rgba(99,102,241,0.15)',
+                            flexShrink: 0
                         }}>
-                            <SettingsIcon size={24} />
+                            <SettingsIcon size={28} />
                         </div>
-                        <div>
-                            <h2 style={{ fontSize: '1.75rem', fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>
+                        <div style={{ flex: 1, minWidth: '200px' }}>
+                            <h2 style={{ 
+                                fontSize: 'clamp(1.5rem, 4vw, 1.875rem)', 
+                                fontWeight: 800, 
+                                margin: 0, 
+                                color: 'var(--text-primary)',
+                                lineHeight: 1.2
+                            }}>
                                 全局设置
                             </h2>
-                            <p style={{ fontSize: '14px', color: 'var(--text-tertiary)', margin: '4px 0 0 0' }}>
+                            <p style={{ 
+                                fontSize: '14px', 
+                                color: 'var(--text-tertiary)', 
+                                margin: '8px 0 0 0',
+                                lineHeight: 1.5
+                            }}>
                                 配置 Python 环境和其他系统选项
                             </p>
                         </div>
                     </div>
                 </div>
 
+                {/* Tab Navigation */}
                 <div style={{
                     display: 'flex',
-                    gap: '8px',
+                    gap: '10px',
                     marginBottom: '2rem',
-                    background: 'rgba(0,0,0,0.2)',
-                    padding: '6px',
-                    borderRadius: '14px'
+                    background: 'rgba(0,0,0,0.25)',
+                    padding: '8px',
+                    borderRadius: '16px',
+                    border: '1px solid rgba(255,255,255,0.06)',
+                    backdropFilter: 'blur(10px)'
                 }}>
                     <button
                         onClick={() => setActiveTab('python')}
                         style={{
                             flex: 1,
-                            padding: '12px 20px',
-                            background: activeTab === 'python' ? 'rgba(99,102,241,0.15)' : 'transparent',
-                            border: activeTab === 'python' ? '1px solid rgba(99,102,241,0.3)' : '1px solid transparent',
-                            borderRadius: '10px',
+                            padding: '14px 24px',
+                            background: activeTab === 'python' 
+                                ? 'linear-gradient(135deg, rgba(99,102,241,0.2), rgba(139,92,246,0.15))' 
+                                : 'transparent',
+                            border: activeTab === 'python' 
+                                ? '1px solid rgba(99,102,241,0.4)' 
+                                : '1px solid transparent',
+                            borderRadius: '12px',
                             color: activeTab === 'python' ? '#818cf8' : 'var(--text-secondary)',
                             fontSize: '14px',
                             fontWeight: 600,
@@ -1448,21 +1633,39 @@ export const Settings = ({ onBack }) => {
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            gap: '8px',
-                            transition: 'all 0.2s'
+                            gap: '10px',
+                            transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+                            position: 'relative',
+                            overflow: 'hidden'
+                        }}
+                        onMouseEnter={(e) => {
+                            if (activeTab !== 'python') {
+                                e.currentTarget.style.background = 'rgba(255,255,255,0.03)';
+                                e.currentTarget.style.color = 'var(--text-primary)';
+                            }
+                        }}
+                        onMouseLeave={(e) => {
+                            if (activeTab !== 'python') {
+                                e.currentTarget.style.background = 'transparent';
+                                e.currentTarget.style.color = 'var(--text-secondary)';
+                            }
                         }}
                     >
-                        <Terminal size={16} />
-                        Python 配置
+                        <Terminal size={18} />
+                        <span>Python 配置</span>
                     </button>
                     <button
                         onClick={() => setActiveTab('environments')}
                         style={{
                             flex: 1,
-                            padding: '12px 20px',
-                            background: activeTab === 'environments' ? 'rgba(99,102,241,0.15)' : 'transparent',
-                            border: activeTab === 'environments' ? '1px solid rgba(99,102,241,0.3)' : '1px solid transparent',
-                            borderRadius: '10px',
+                            padding: '14px 24px',
+                            background: activeTab === 'environments' 
+                                ? 'linear-gradient(135deg, rgba(99,102,241,0.2), rgba(139,92,246,0.15))' 
+                                : 'transparent',
+                            border: activeTab === 'environments' 
+                                ? '1px solid rgba(99,102,241,0.4)' 
+                                : '1px solid transparent',
+                            borderRadius: '12px',
                             color: activeTab === 'environments' ? '#818cf8' : 'var(--text-secondary)',
                             fontSize: '14px',
                             fontWeight: 600,
@@ -1470,51 +1673,79 @@ export const Settings = ({ onBack }) => {
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            gap: '8px',
-                            transition: 'all 0.2s'
+                            gap: '10px',
+                            transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)'
+                        }}
+                        onMouseEnter={(e) => {
+                            if (activeTab !== 'environments') {
+                                e.currentTarget.style.background = 'rgba(255,255,255,0.03)';
+                                e.currentTarget.style.color = 'var(--text-primary)';
+                            }
+                        }}
+                        onMouseLeave={(e) => {
+                            if (activeTab !== 'environments') {
+                                e.currentTarget.style.background = 'transparent';
+                                e.currentTarget.style.color = 'var(--text-secondary)';
+                            }
                         }}
                     >
-                        <Box size={16} />
-                        Python 环境
+                        <Box size={18} />
+                        <span>Python 环境</span>
                     </button>
                 </div>
 
-                {activeTab === 'python' && (
-                    <>
-                        {renderPythonConfig()}
-                        {renderProjectsDir()}
-                    </>
-                )}
+                {/* Content Area */}
+                <div style={{ 
+                    display: 'flex', 
+                    flexDirection: 'column', 
+                    gap: '1.5rem',
+                    marginBottom: '2rem'
+                }}>
+                    {activeTab === 'python' && (
+                        <>
+                            {renderPythonConfig()}
+                            {renderProjectsDir()}
+                        </>
+                    )}
 
-                {activeTab === 'environments' && (
-                    <>
-                        {renderEnvironments()}
-                        {renderCompatibilityMatrix()}
-                    </>
-                )}
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                    <InfoCard icon={Info} title="配置优先级" color="99,102,241">
-                        系统使用以下优先级选择 Python 路径：<br />
-                        1. 用户配置路径 (最高优先级)<br />
-                        2. 硬编码备选路径<br />
-                        3. Conda 回退机制 (最低优先级)
-                    </InfoCard>
-
-                    <InfoCard icon={Cpu} title="路径示例 (Windows)" color="34,197,94">
-                        常见 Python 路径：<br />
-                        • Anaconda: <code style={{ color: '#4ade80' }}>D:\Anaconda3\python.exe</code><br />
-                        • Miniconda: <code style={{ color: '#4ade80' }}>D:\miniconda3\python.exe</code><br />
-                        • Conda 环境: <code style={{ color: '#4ade80' }}>D:\miniconda3\envs\yolo\python.exe</code>
-                    </InfoCard>
-
-                    <InfoCard icon={AlertTriangle} title="故障排除" color="251,191,36">
-                        如果训练失败，请确保：<br />
-                        • Python 路径指向正确的 python.exe<br />
-                        • 已安装 ultralytics: <code style={{ color: '#fbbf24' }}>pip install ultralytics</code><br />
-                        • 已安装 torch: <code style={{ color: '#fbbf24' }}>pip install torch</code>
-                    </InfoCard>
+                    {activeTab === 'environments' && (
+                        <>
+                            {renderEnvironments()}
+                            {renderCompatibilityMatrix()}
+                        </>
+                    )}
                 </div>
+
+                {/* Info Cards Section */}
+                {activeTab === 'python' && (
+                    <div style={{ 
+                        display: 'grid', 
+                        gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+                        gap: '1rem',
+                        marginTop: '1rem'
+                    }}>
+                        <InfoCard icon={Info} title="配置优先级" color="99,102,241">
+                            系统使用以下优先级选择 Python 路径：<br />
+                            1. 用户配置路径 (最高优先级)<br />
+                            2. 硬编码备选路径<br />
+                            3. Conda 回退机制 (最低优先级)
+                        </InfoCard>
+
+                        <InfoCard icon={Cpu} title="路径示例 (Windows)" color="34,197,94">
+                            常见 Python 路径：<br />
+                            • Anaconda: <code style={{ color: '#4ade80' }}>D:\Anaconda3\python.exe</code><br />
+                            • Miniconda: <code style={{ color: '#4ade80' }}>D:\miniconda3\python.exe</code><br />
+                            • Conda 环境: <code style={{ color: '#4ade80' }}>D:\miniconda3\envs\yolo\python.exe</code>
+                        </InfoCard>
+
+                        <InfoCard icon={AlertTriangle} title="故障排除" color="251,191,36">
+                            如果训练失败，请确保：<br />
+                            • Python 路径指向正确的 python.exe<br />
+                            • 已安装 ultralytics: <code style={{ color: '#fbbf24' }}>pip install ultralytics</code><br />
+                            • 已安装 torch: <code style={{ color: '#fbbf24' }}>pip install torch</code>
+                        </InfoCard>
+                    </div>
+                )}
 
             </div>
 

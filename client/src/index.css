@@ -1172,6 +1172,30 @@ button {
   color: var(--accent-primary);
 }
 
+/* Gallery primary nav state */
+.nav-btn-gallery.active {
+  background:
+    radial-gradient(circle at 0% 0%, rgba(88, 166, 255, 0.35), transparent 55%),
+    linear-gradient(120deg, rgba(24, 119, 242, 0.96), rgba(37, 99, 235, 0.98));
+  box-shadow:
+    0 0 0 1px rgba(88, 166, 255, 0.7),
+    0 12px 30px rgba(0, 0, 0, 0.7),
+    0 0 30px rgba(37, 99, 235, 0.6);
+  border-radius: 14px;
+}
+
+.nav-btn-gallery.active::before {
+  opacity: 0;
+}
+
+.nav-btn-gallery.active svg {
+  color: #e5f0ff;
+}
+
+.nav-btn-gallery.active span {
+  color: #ffffff;
+}
+
 .nav-btn.active::after {
   content: '';
   position: absolute;
@@ -1197,6 +1221,28 @@ button {
     opacity: 0.8;
     box-shadow: 0 0 8px var(--accent-primary), 0 0 16px rgba(88, 166, 255, 0.2);
   }
+}
+
+/* Export nav golden accent */
+.nav-btn-export.active {
+  background: linear-gradient(90deg, rgba(252, 211, 77, 0.16) 0%, rgba(21, 24, 35, 0.95) 45%, rgba(21, 24, 35, 0.95) 100%);
+  border: 1px solid rgba(252, 211, 77, 0.9);
+  box-shadow:
+    0 0 0 1px rgba(250, 204, 21, 0.35),
+    0 10px 26px rgba(0, 0, 0, 0.7),
+    0 0 24px rgba(251, 191, 36, 0.4);
+}
+
+.nav-btn-export.active::after {
+  width: 4px;
+  background: linear-gradient(180deg, #facc15, #f97316);
+  box-shadow:
+    0 0 16px rgba(250, 204, 21, 0.9),
+    0 0 32px rgba(251, 191, 36, 0.6);
+}
+
+.nav-btn-export.active svg {
+  color: #facc15;
 }
 
 .nav-btn-back {
@@ -1356,6 +1402,53 @@ button {
   flex: 1;
   overflow-y: auto;
   padding-bottom: 2rem;
+}
+
+/* ========================================
+   DATASET EXPORT LAYOUT
+   ======================================== */
+
+.export-layout-grid {
+  display: grid;
+  grid-template-columns: 1.4fr 1.3fr 1.3fr;
+  gap: 1.5rem;
+  align-items: flex-start;
+}
+
+.export-layout-data,
+.export-layout-split,
+.export-layout-settings,
+.export-layout-collab {
+  min-width: 0;
+}
+
+.export-layout-collab {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 1280px) {
+  .export-layout-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .export-layout-settings {
+    grid-column: 2 / 3;
+  }
+
+  .export-layout-collab {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 900px) {
+  .export-layout-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .export-layout-settings,
+  .export-layout-collab {
+    grid-column: auto;
+  }
 }
 
 .upload-section {

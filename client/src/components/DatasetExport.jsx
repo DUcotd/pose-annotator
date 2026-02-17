@@ -459,69 +459,72 @@ export const DatasetExport = () => {
                 )}
 
                 {/* Main Content Grid */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))', gap: '1.5rem' }}>
+                <div className="export-layout-grid">
 
                     {/* Data Options */}
-                    <SectionCard icon={Database} title="数据配置" color="99,102,241">
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                            <Toggle
-                                checked={includeVisibility}
-                                onChange={(e) => {
-                                    setIncludeVisibility(e.target.checked);
-                                    saveSettings({ includeVisibility: e.target.checked });
-                                }}
-                                label="包含可见性标志 (v=2)"
-                                desc="在标签文件中包含关键点可见性信息"
-                            />
-                            <Toggle
-                                checked={includeUnannotated}
-                                onChange={(e) => {
-                                    setIncludeUnannotated(e.target.checked);
-                                    saveSettings({ includeUnannotated: e.target.checked });
-                                }}
-                                label="包含未标注数据"
-                                desc="为未标注图片生成空标签文件"
-                            />
-                        </div>
-
-                        <div style={{ marginTop: '1.5rem', paddingTop: '1.5rem', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '1rem' }}>
-                                <Target size={18} style={{ color: 'rgb(168,85,247)' }} />
-                                <span style={{ fontSize: '14px', fontWeight: 600 }}>关键点数量</span>
-                            </div>
-                            <div style={{ display: 'flex', gap: '16px', alignItems: 'center', background: 'rgba(0,0,0,0.2)', padding: '1.25rem', borderRadius: '16px' }}>
-                                <input
-                                    type="number"
-                                    min="1"
-                                    max="100"
-                                    value={numKeypoints}
+                    <div className="export-layout-data">
+                        <SectionCard icon={Database} title="数据配置" color="99,102,241">
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                                <Toggle
+                                    checked={includeVisibility}
                                     onChange={(e) => {
-                                        const val = parseInt(e.target.value) || 17;
-                                        setNumKeypoints(val);
-                                        saveSettings({ numKeypoints: val });
+                                        setIncludeVisibility(e.target.checked);
+                                        saveSettings({ includeVisibility: e.target.checked });
                                     }}
-                                    style={{
-                                        width: '90px',
-                                        height: '52px',
-                                        textAlign: 'center',
-                                        background: 'rgba(255,255,255,0.06)',
-                                        fontWeight: 800,
-                                        fontSize: '1.25rem',
-                                        borderRadius: '12px',
-                                        border: '1px solid rgba(255,255,255,0.1)',
-                                        color: 'white',
-                                        outline: 'none'
-                                    }}
+                                    label="包含可见性标志 (v=2)"
+                                    desc="在标签文件中包含关键点可见性信息"
                                 />
-                                <div>
-                                    <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>COCO 标准关键点</div>
-                                    <div style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>默认为 17 点（COCO 格式）</div>
+                                <Toggle
+                                    checked={includeUnannotated}
+                                    onChange={(e) => {
+                                        setIncludeUnannotated(e.target.checked);
+                                        saveSettings({ includeUnannotated: e.target.checked });
+                                    }}
+                                    label="包含未标注数据"
+                                    desc="为未标注图片生成空标签文件"
+                                />
+                            </div>
+
+                            <div style={{ marginTop: '1.5rem', paddingTop: '1.5rem', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '1rem' }}>
+                                    <Target size={18} style={{ color: 'rgb(168,85,247)' }} />
+                                    <span style={{ fontSize: '14px', fontWeight: 600 }}>关键点数量</span>
+                                </div>
+                                <div style={{ display: 'flex', gap: '16px', alignItems: 'center', background: 'rgba(0,0,0,0.2)', padding: '1.25rem', borderRadius: '16px' }}>
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        max="100"
+                                        value={numKeypoints}
+                                        onChange={(e) => {
+                                            const val = parseInt(e.target.value) || 17;
+                                            setNumKeypoints(val);
+                                            saveSettings({ numKeypoints: val });
+                                        }}
+                                        style={{
+                                            width: '90px',
+                                            height: '52px',
+                                            textAlign: 'center',
+                                            background: 'rgba(255,255,255,0.06)',
+                                            fontWeight: 800,
+                                            fontSize: '1.25rem',
+                                            borderRadius: '12px',
+                                            border: '1px solid rgba(255,255,255,0.1)',
+                                            color: 'white',
+                                            outline: 'none'
+                                        }}
+                                    />
+                                    <div>
+                                        <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>COCO 标准关键点</div>
+                                        <div style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>默认为 17 点（COCO 格式）</div>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-                    </SectionCard>
+                        </SectionCard>
+                    </div>
 
                     {/* Dataset Split */}
+                    <div className="export-layout-split">
                     <SectionCard icon={Layout} title="数据集划分" color="251,191,36">
                         <div style={{ background: 'rgba(0,0,0,0.2)', padding: '1.5rem', borderRadius: '20px', border: '1px solid rgba(255,255,255,0.04)' }}>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', marginBottom: '1.5rem' }}>
@@ -618,126 +621,131 @@ export const DatasetExport = () => {
                             )}
                         </div>
                     </SectionCard>
+                    </div>
 
                     {/* Export Options */}
-                    <SectionCard icon={Download} title="导出设置" color="34,197,94">
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                            <Toggle
-                                checked={shuffleData}
-                                onChange={(e) => {
-                                    setShuffleData(e.target.checked);
-                                    saveSettings({ shuffle: e.target.checked });
-                                }}
-                                label="随机打乱数据"
-                                desc="使用 Fisher-Yates 算法确保分布均匀"
-                            />
+                    <div className="export-layout-settings">
+                        <SectionCard icon={Download} title="导出设置" color="34,197,94">
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                <Toggle
+                                    checked={shuffleData}
+                                    onChange={(e) => {
+                                        setShuffleData(e.target.checked);
+                                        saveSettings({ shuffle: e.target.checked });
+                                    }}
+                                    label="随机打乱数据"
+                                    desc="使用 Fisher-Yates 算法确保分布均匀"
+                                />
 
-                            <div>
-                                <div style={{ fontSize: '13px', fontWeight: 600, marginBottom: '10px', color: 'var(--text-secondary)' }}>
-                                    自定义导出路径
-                                </div>
-                                <div style={{ display: 'flex', gap: '12px' }}>
-                                    <input
-                                        type="text"
-                                        placeholder="默认导出至项目根目录"
-                                        value={customPath}
-                                        readOnly
-                                        style={{
-                                            flex: 1,
-                                            height: '52px',
-                                            padding: '0 18px',
-                                            fontSize: '13px',
-                                            background: 'rgba(0,0,0,0.25)',
-                                            border: '1px solid rgba(255,255,255,0.1)',
-                                            borderRadius: '14px',
-                                            color: 'var(--text-secondary)',
-                                            outline: 'none'
-                                        }}
-                                    />
-                                    <button
-                                        onClick={handleSelectFolder}
-                                        style={{
-                                            width: '52px',
-                                            height: '52px',
-                                            padding: 0,
-                                            borderRadius: '14px',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                            background: 'rgba(255,255,255,0.06)',
-                                            border: '1px solid rgba(255,255,255,0.1)',
-                                            color: 'var(--text-secondary)',
-                                            cursor: 'pointer',
-                                            transition: 'all 0.2s ease'
-                                        }}
-                                        title="选择保存位置"
-                                    >
-                                        <FolderOpen size={20} />
-                                    </button>
+                                <div>
+                                    <div style={{ fontSize: '13px', fontWeight: 600, marginBottom: '10px', color: 'var(--text-secondary)' }}>
+                                        自定义导出路径
+                                    </div>
+                                    <div style={{ display: 'flex', gap: '12px' }}>
+                                        <input
+                                            type="text"
+                                            placeholder="默认导出至项目根目录"
+                                            value={customPath}
+                                            readOnly
+                                            style={{
+                                                flex: 1,
+                                                height: '52px',
+                                                padding: '0 18px',
+                                                fontSize: '13px',
+                                                background: 'rgba(0,0,0,0.25)',
+                                                border: '1px solid rgba(255,255,255,0.1)',
+                                                borderRadius: '14px',
+                                                color: 'var(--text-secondary)',
+                                                outline: 'none'
+                                            }}
+                                        />
+                                        <button
+                                            onClick={handleSelectFolder}
+                                            style={{
+                                                width: '52px',
+                                                height: '52px',
+                                                padding: 0,
+                                                borderRadius: '14px',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                background: 'rgba(255,255,255,0.06)',
+                                                border: '1px solid rgba(255,255,255,0.1)',
+                                                color: 'var(--text-secondary)',
+                                                cursor: 'pointer',
+                                                transition: 'all 0.2s ease'
+                                            }}
+                                            title="选择保存位置"
+                                        >
+                                            <FolderOpen size={20} />
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-                    </SectionCard>
+                        </SectionCard>
+                    </div>
 
                     {/* Collaboration */}
-                    <SectionCard icon={Share2} title="项目协作" color="77,161,255">
-                        <div style={{
-                            background: 'rgba(0,0,0,0.2)',
-                            padding: '1.5rem',
-                            borderRadius: '18px',
-                            border: '1px solid rgba(255,255,255,0.04)'
-                        }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
-                                <div style={{
-                                    width: '44px',
-                                    height: '44px',
-                                    borderRadius: '12px',
-                                    background: 'linear-gradient(135deg, rgba(77,161,255,0.2), rgba(96,165,250,0.1))',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    color: '#60a5fa'
-                                }}>
-                                    <Share2 size={20} />
+                    <div className="export-layout-collab">
+                        <SectionCard icon={Share2} title="项目协作" color="77,161,255">
+                            <div style={{
+                                background: 'rgba(0,0,0,0.2)',
+                                padding: '1.5rem',
+                                borderRadius: '18px',
+                                border: '1px solid rgba(255,255,255,0.04)'
+                            }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
+                                    <div style={{
+                                        width: '44px',
+                                        height: '44px',
+                                        borderRadius: '12px',
+                                        background: 'linear-gradient(135deg, rgba(77,161,255,0.2), rgba(96,165,250,0.1))',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        color: '#60a5fa'
+                                    }}>
+                                        <Share2 size={20} />
+                                    </div>
+                                    <div>
+                                        <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)' }}>导出协作包 (ZIP)</div>
+                                        <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '2px' }}>打包项目数据，方便分享给他人</div>
+                                    </div>
                                 </div>
-                                <div>
-                                    <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)' }}>导出协作包 (ZIP)</div>
-                                    <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '2px' }}>打包项目数据，方便分享给他人</div>
-                                </div>
-                            </div>
-                            <button
-                                onClick={handleCollaborationExport}
-                                disabled={isCollaborationExporting}
-                                style={{
-                                    width: '100%',
-                                    height: '48px',
-                                    borderRadius: '12px',
-                                    background: isCollaborationExporting ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.04)',
-                                    border: '1px solid rgba(255,255,255,0.1)',
-                                    color: isCollaborationExporting ? 'var(--text-tertiary)' : 'var(--text-primary)',
-                                    fontSize: '14px',
-                                    fontWeight: 600,
-                                    cursor: isCollaborationExporting ? 'not-allowed' : 'pointer',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    gap: '8px',
-                                    transition: 'all 0.2s ease'
-                                }}
-                            >
-                                {isCollaborationExporting ? (
-                                    <>
-                                        <Loader2 size={16} className="spin" /> 正在导出...
-                                    </>
-                                ) : (
-                                    <>
-                                        <Share2 size={16} /> 开始导出
-                                    </>
-                                )}
-                            </button>
+                                <button
+                                    onClick={handleCollaborationExport}
+                                    disabled={isCollaborationExporting}
+                                    style={{
+                                        width: '100%',
+                                        height: '48px',
+                                        borderRadius: '12px',
+                                        background: isCollaborationExporting ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.04)',
+                                        border: '1px solid rgba(255,255,255,0.1)',
+                                        color: isCollaborationExporting ? 'var(--text-tertiary)' : 'var(--text-primary)',
+                                        fontSize: '14px',
+                                        fontWeight: 600,
+                                        cursor: isCollaborationExporting ? 'not-allowed' : 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        gap: '8px',
+                                        transition: 'all 0.2s ease'
+                                    }}
+                                >
+                                    {isCollaborationExporting ? (
+                                        <>
+                                            <Loader2 size={16} className="spin" /> 正在导出...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Share2 size={16} /> 开始导出
+                                        </>
+                                    )}
+                                </button>
 
-                        </div>
-                    </SectionCard>
+                            </div>
+                        </SectionCard>
+                    </div>
 
                 </div>
 
