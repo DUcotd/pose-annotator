@@ -800,6 +800,8 @@ function createProjectRouter(projectsDir) {
       current: status.progress ? status.progress.processed : 0,
       total: status.progress ? status.progress.total : 0,
       message: status.progress ? status.progress.currentImage : '',
+      successCount: status.progress ? status.progress.successCount : 0,
+      failedCount: status.progress ? status.progress.failedCount : 0,
       results: status.metrics || [],
       logs: status.logs || [],
       status: status.status

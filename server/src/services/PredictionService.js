@@ -409,6 +409,15 @@ class PredictionService {
       throw new Error('图片列表不能为空');
     }
 
+    // 获取项目的实际存储路径
+    const PathService = require('./PathService');
+    const projectRoot = PathService.findProjectRoot(projectId, projectsDir);
+    // 使用项目根目录的父目录作为 projectsDir，这样 Python 脚本可以正确构建路径
+    const actualProjectsDir = path.dirname(projectRoot);
+    
+    logger.debug(`[Prediction] Project ${projectId} root: ${projectRoot}`);
+    logger.debug(`[Prediction] Using projectsDir: ${actualProjectsDir}`);
+
     const { cmd: pythonCmd } = await this.getPythonCommand();
     const args = this.buildArgs(options);
 
@@ -436,7 +445,7 @@ class PredictionService {
         PYTHONUTF8: '1',
         PREDICTION_IMAGES: JSON.stringify(images),
         PREDICTION_PROJECT_ID: projectId,
-        PREDICTION_PROJECTS_DIR: projectsDir || ''
+        PREDICTION_PROJECTS_DIR: actualProjectsDir
       }
     });
 
@@ -448,6 +457,11 @@ class PredictionService {
       msg: `预标注进程已启动，PID: ${child.pid}，共 ${images.length} 张图片`,
       time: Date.now()
     });
+    
+    // 记录启动命令和参数用于调试
+    logger.debug(`[Prediction] Command: ${pythonCmd} ${args.join(' ')}`);
+    logger.debug(`[Prediction] Images count: ${images.length}, first image: ${images[0] || 'N/A'}`);
+    logger.debug(`[Prediction] PREDICTION_IMAGES env: ${JSON.stringify(images).substring(0, 200)}...`);
 
     let jsonBuffer = '';
 
@@ -548,6 +562,10 @@ class PredictionService {
 
     return new Promise((resolve, reject) => {
       child.on('close', async (code) => {
+        // 等待一小段时间确保所有输出都被捕获
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        // 处理剩余的 stdout buffer
         const leftover = (jsonBuffer || '').trim();
         if (leftover && leftover.startsWith(JSON_LOG_PREFIX)) {
           try {
@@ -559,6 +577,44 @@ class PredictionService {
             logger.warn(`Failed to parse flushed JSON log: ${e.message}, line: ${leftover.substring(0, 100)}`);
           }
         }
+        
+        // 处理剩余的 stderr buffer
+        if (stderrBuffer && stderrBuffer.trim()) {
+          const remainingLines = stderrBuffer.split('\n');
+          remainingLines.forEach(line => {
+            const trimmed = line.trim();
+            if (trimmed) {
+              // 检查是否是错误信息
+              if (trimmed.includes('ERROR:') || trimmed.includes('TRACEBACK:') || trimmed.toLowerCase().includes('error')) {
+                this.processes.addLog(projectId, {
+                  type: 'stderr',
+                  msg: '🔴 ' + trimmed,
+                  time: Date.now()
+                });
+                this.processes.addErrorLog(projectId, trimmed);
+              } else if (trimmed.includes('DEBUG:')) {
+                this.processes.addLog(projectId, {
+                  type: 'stderr',
+                  msg: '🔍 ' + trimmed,
+                  time: Date.now()
+                });
+                this.processes.addErrorLog(projectId, trimmed);
+              } else if (trimmed) {
+                this.processes.addLog(projectId, {
+                  type: 'stderr',
+                  msg: trimmed,
+                  time: Date.now()
+                });
+                this.processes.addErrorLog(projectId, trimmed);
+              }
+            }
+          });
+        }
+        
+        // 记录进程退出信息用于调试
+        logger.debug(`[Prediction] Process ${child.pid} exited with code ${code} for project ${projectId}`);
+        logger.debug(`[Prediction] Final stderrBuffer length: ${stderrBuffer ? stderrBuffer.length : 0}`);
+        logger.debug(`[Prediction] Final jsonBuffer length: ${jsonBuffer ? jsonBuffer.length : 0}`);
 
         const pending = this.pendingSaves.get(projectId);
         if (pending && pending.size > 0) {
@@ -568,18 +624,33 @@ class PredictionService {
         const state = this.predictionStates.get(projectId);
 
         if (code === 0) {
+          // 在删除predictionState之前，将统计信息保存到processState中
+          const processedImages = state ? state.processedImages : 0;
+          const totalImages = state ? state.totalImages : 0;
+          
+          // 保存最终统计信息到processState，这样即使predictionState被删除也能获取
+          const processState = this.processes.get(projectId);
+          if (processState) {
+            processState.finalStats = {
+              processedImages,
+              totalImages,
+              successCount: processedImages,
+              failedCount: Math.max(0, totalImages - processedImages)
+            };
+          }
+          
           this.processes.setStatus(projectId, 'completed');
           this.processes.addLog(projectId, {
             type: 'system',
-            msg: `✅ 预标注完成！共处理 ${state ? state.processedImages : 0} 张图片`,
+            msg: `✅ 预标注完成！共处理 ${processedImages} 张图片`,
             time: Date.now()
           });
           logger.info(`Prediction completed for project ${projectId}`);
           this.pendingSaves.delete(projectId);
           resolve({
             success: true,
-            processedImages: state ? state.processedImages : 0,
-            totalImages: state ? state.totalImages : 0
+            processedImages,
+            totalImages
           });
         } else {
           this.processes.setStatus(projectId, 'failed');
@@ -588,6 +659,45 @@ class PredictionService {
             msg: `❌ 预标注失败！进程退出码: ${code}`,
             time: Date.now()
           });
+          
+          // 获取并显示详细的错误日志
+          const errorLogs = this.processes.getErrorLogs(projectId) || [];
+          const recentErrors = errorLogs.slice(-20);
+          
+          if (recentErrors.length > 0) {
+            this.processes.addLog(projectId, {
+              type: 'error',
+              msg: `📋 错误详情:\n${recentErrors.join('\n')}`,
+              time: Date.now()
+            });
+            
+            // 尝试分类错误并给出建议
+            const allErrorText = recentErrors.join('\n').toLowerCase();
+            const classified = this.classifyError(allErrorText);
+            if (classified.type !== 'unknown') {
+              this.processes.addLog(projectId, {
+                type: 'error',
+                msg: `${classified.icon} ${classified.title}: ${classified.rawError}`,
+                errorType: classified.type,
+                time: Date.now()
+              });
+              
+              if (classified.suggestions && classified.suggestions.length > 0) {
+                this.processes.addLog(projectId, {
+                  type: 'suggestion',
+                  msg: `💡 解决建议:\n${classified.suggestions.map((s, i) => `   ${i + 1}. ${s}`).join('\n')}`,
+                  time: Date.now()
+                });
+              }
+            }
+          } else {
+            this.processes.addLog(projectId, {
+              type: 'error',
+              msg: `⚠️ 未捕获到具体错误信息，请检查:\n1. 模型文件是否存在且格式正确\n2. Python环境是否配置正确（需要安装 ultralytics）\n3. 图片文件是否存在且格式支持\n4. 检查系统日志获取更多信息`,
+              time: Date.now()
+            });
+          }
+          
           logger.error(`Prediction failed for project ${projectId} with code ${code}`);
           this.pendingSaves.delete(projectId);
           reject(new Error(`预标注进程异常退出，代码: ${code}`));
@@ -617,6 +727,7 @@ class PredictionService {
 
     if (data.event === 'progress') {
       state.currentImage = data.image;
+      // 更新进度信息，但不增加processedImages（因为图片还在处理中）
       this.processes.addLog(projectId, {
         type: 'progress',
         msg: `处理图片: ${data.image} (${data.index + 1}/${data.total})`,
@@ -673,6 +784,7 @@ class PredictionService {
         });
       }
 
+      // 记录图片完成事件，无论是否有标注都算成功处理
       this.processes.addMetric(projectId, {
         event: 'image_complete',
         image: data.image,
@@ -680,6 +792,7 @@ class PredictionService {
         total: state.totalImages,
         progress: (state.processedImages / state.totalImages * 100).toFixed(1),
         annotationsCount: annotations ? annotations.length : 0,
+        processed: true, // 标记为已处理
         time: Date.now()
       });
     }
@@ -780,12 +893,82 @@ class PredictionService {
       endTime: processState.endTime
     };
 
+    // 如果任务已完成且predictionState已被删除，使用保存的finalStats
+    if (processState.status === 'completed' && processState.finalStats) {
+      response.progress = {
+        total: processState.finalStats.totalImages,
+        processed: processState.finalStats.processedImages,
+        percentage: processState.finalStats.totalImages > 0 
+          ? (processState.finalStats.processedImages / processState.finalStats.totalImages * 100).toFixed(1)
+          : '0',
+        currentImage: null,
+        successCount: processState.finalStats.successCount,
+        failedCount: processState.finalStats.failedCount
+      };
+      return response;
+    }
+
     if (predictionState) {
+      // 统计成功和失败的数量
+      let successCount = 0;
+      let failedCount = 0;
+      
+      // 如果任务已完成，优先使用processedImages作为成功数（最可靠）
+      if (processState.status === 'completed') {
+        successCount = predictionState.processedImages || 0;
+        failedCount = Math.max(0, predictionState.totalImages - successCount);
+      } else {
+        // 任务进行中时，从metrics和logs中统计
+        
+        // 从metrics中统计 - 所有image_complete事件都算成功处理
+        if (processState.metrics && Array.isArray(processState.metrics)) {
+          processState.metrics.forEach(metric => {
+            if (metric.event === 'image_complete') {
+              // 所有完成的事件都算成功，无论是否有标注
+              successCount++;
+            }
+          });
+        }
+        
+        // 从logs中统计错误数量
+        if (processState.logs && Array.isArray(processState.logs)) {
+          processState.logs.forEach(log => {
+            if (log.type === 'error' && log.msg && log.msg.includes('出错')) {
+              failedCount++;
+            }
+          });
+        }
+        
+        // 如果metrics中没有数据，从logs中统计成功数
+        if (successCount === 0 && processState.logs) {
+          processState.logs.forEach(log => {
+            if (log.type === 'success' || (log.msg && log.msg.includes('检测到') && log.msg.includes('个标注'))) {
+              successCount++;
+            } else if (log.type === 'info' && log.msg && log.msg.includes('未检测到目标')) {
+              // 未检测到目标也算成功处理（图片已处理，只是没有检测到目标）
+              successCount++;
+            }
+          });
+        }
+        
+        // 如果还是没有统计到，使用processedImages作为成功数
+        if (successCount === 0) {
+          successCount = predictionState.processedImages || 0;
+        }
+        
+        // 计算失败数（如果还没有统计到）
+        if (failedCount === 0 && successCount > 0) {
+          failedCount = Math.max(0, predictionState.totalImages - successCount);
+        }
+      }
+      
       response.progress = {
         total: predictionState.totalImages,
         processed: predictionState.processedImages,
         percentage: (predictionState.processedImages / predictionState.totalImages * 100).toFixed(1),
-        currentImage: predictionState.currentImage
+        currentImage: predictionState.currentImage,
+        successCount: successCount,
+        failedCount: failedCount
       };
     }
 

@@ -176,11 +176,11 @@ class PathService {
   }
 
   getNextFileIndex(uploadsDir) {
-    if (!fs.existsSync(uploadsDir)) return 0;
+    if (!fs.existsSync(uploadsDir)) return 1; // 从1开始，而不是0
     
     try {
       const files = fs.readdirSync(uploadsDir);
-      let maxIndex = -1;
+      let maxIndex = 0; // 初始化为0，这样如果没有文件或文件编号都小于1时，返回1
       
       files.forEach(f => {
         const match = f.match(/^(\d{6})\./);
@@ -190,10 +190,11 @@ class PathService {
         }
       });
       
+      // 返回最大值+1，确保从1开始
       return maxIndex + 1;
     } catch (e) {
       logger.error('Failed to get next file index:', e);
-      return 0;
+      return 1; // 错误时也返回1，而不是0
     }
   }
 

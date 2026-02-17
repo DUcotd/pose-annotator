@@ -298,6 +298,9 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
     const [showPreannotateProgress, setShowPreannotateProgress] = useState(false);
     const [showPreannotateResult, setShowPreannotateResult] = useState(false);
     const cancelPreannotateRef = useRef(false);
+    const pollIntervalRef = useRef(null);
+    const checkCancelIntervalRef = useRef(null);
+    const timeoutRef = useRef(null);
     const [showModelToast, setShowModelToast] = useState(false);
 
     useEffect(() => {
@@ -336,6 +339,7 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
                     setModelPath(data.path);
                     setShowModelToast(true);
                     setTimeout(() => setShowModelToast(false), 3000);
+                    setShowModelSettings(false); // 自动关闭对话框
                 }
             }
         } catch (e) {
@@ -345,12 +349,6 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
 
     const handleStartPreannotate = async () => {
         if (!modelPath) return;
-
-        setPreannotating(true);
-        setPreannotateProgress({ current: 0, total: 0, currentImage: '' });
-        setShowPreannotateDialog(false);
-        setShowPreannotateProgress(true);
-        cancelPreannotateRef.current = false;
 
         let targetImages = [];
         if (preannotateRange === 'all') {
@@ -365,14 +363,16 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
         }
 
         if (targetImages.length === 0) {
-            setPreannotating(false);
-            setShowPreannotateProgress(false);
             return;
         }
 
-        let successCount = 0;
-        let failedCount = 0;
+        setPreannotating(true);
+        setPreannotateProgress({ current: 0, total: targetImages.length, currentImage: '正在启动预标注任务...' });
+        setShowPreannotateDialog(false);
+        setShowPreannotateProgress(true);
+        cancelPreannotateRef.current = false;
 
+        // 启动预标注任务
         try {
             const resp = await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/predict`, {
                 method: 'POST',
@@ -385,27 +385,185 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
                 })
             });
 
-            if (resp.ok) {
-                const result = await resp.json();
-                successCount = result.processedImages || targetImages.length;
-                failedCount = targetImages.length - successCount;
-            } else {
-                failedCount = targetImages.length;
+            if (!resp.ok) {
+                throw new Error('预标注任务启动失败');
             }
-        } catch (e) {
-            failedCount = targetImages.length;
-        }
 
-        setPreannotating(false);
-        setShowPreannotateProgress(false);
-        setPreannotateResult({ successCount, failedCount, cancelled: cancelPreannotateRef.current });
-        setShowPreannotateResult(true);
-        onUpload();
+            // 清理之前的轮询（如果有）
+            if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+            if (checkCancelIntervalRef.current) clearInterval(checkCancelIntervalRef.current);
+            if (timeoutRef.current) clearTimeout(timeoutRef.current);
+
+            // 立即执行一次状态查询，然后开始轮询
+            const checkStatus = async () => {
+                try {
+                    const statusResp = await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/predict/status`);
+                    if (statusResp.ok) {
+                        const status = await statusResp.json();
+                        
+                        // 更新进度 - 确保total不为0
+                        const total = status.total || targetImages.length;
+                        const current = status.current || 0;
+                        
+                        setPreannotateProgress({
+                            current: current,
+                            total: total,
+                            currentImage: status.message || '正在处理...'
+                        });
+
+                        // 检查任务是否完成
+                        if (status.status === 'completed' || status.status === 'failed' || status.status === 'stopped') {
+                            // 清理所有定时器
+                            if (pollIntervalRef.current) {
+                                clearInterval(pollIntervalRef.current);
+                                pollIntervalRef.current = null;
+                            }
+                            if (checkCancelIntervalRef.current) {
+                                clearInterval(checkCancelIntervalRef.current);
+                                checkCancelIntervalRef.current = null;
+                            }
+                            if (timeoutRef.current) {
+                                clearTimeout(timeoutRef.current);
+                                timeoutRef.current = null;
+                            }
+                            
+                            setPreannotating(false);
+                            setShowPreannotateProgress(false);
+                            
+                            // 使用后端返回的统计信息
+                            let successCount = status.successCount || 0;
+                            let failedCount = status.failedCount || 0;
+                            
+                            // 如果任务已完成，确保统计信息正确
+                            if (status.status === 'completed') {
+                                // 如果后端返回的successCount为0但实际有处理图片，使用current作为成功数
+                                if (successCount === 0 && current > 0) {
+                                    successCount = current;
+                                    failedCount = Math.max(0, total - successCount);
+                                }
+                                // 确保成功数不超过总数
+                                if (successCount > total) {
+                                    successCount = total;
+                                    failedCount = 0;
+                                }
+                                // 如果成功数 + 失败数不等于总数，重新计算失败数
+                                if (successCount + failedCount !== total && successCount > 0) {
+                                    failedCount = Math.max(0, total - successCount);
+                                }
+                            }
+                            
+                            setPreannotateResult({ 
+                                successCount, 
+                                failedCount, 
+                                cancelled: status.status === 'stopped' || cancelPreannotateRef.current 
+                            });
+                            setShowPreannotateResult(true);
+                            onUpload();
+                            return true; // 任务已完成，停止轮询
+                        }
+                    }
+                } catch (e) {
+                    console.error('Failed to poll prediction status:', e);
+                }
+                return false; // 任务未完成，继续轮询
+            };
+
+            // 立即执行一次
+            checkStatus();
+
+            // 开始轮询进度
+            pollIntervalRef.current = setInterval(async () => {
+                const completed = await checkStatus();
+                if (completed) {
+                    if (pollIntervalRef.current) {
+                        clearInterval(pollIntervalRef.current);
+                        pollIntervalRef.current = null;
+                    }
+                }
+            }, 300); // 每300ms轮询一次，更频繁的更新
+
+            // 如果用户取消，停止轮询
+            checkCancelIntervalRef.current = setInterval(() => {
+                if (cancelPreannotateRef.current) {
+                    // 清理所有定时器
+                    if (pollIntervalRef.current) {
+                        clearInterval(pollIntervalRef.current);
+                        pollIntervalRef.current = null;
+                    }
+                    if (checkCancelIntervalRef.current) {
+                        clearInterval(checkCancelIntervalRef.current);
+                        checkCancelIntervalRef.current = null;
+                    }
+                    if (timeoutRef.current) {
+                        clearTimeout(timeoutRef.current);
+                        timeoutRef.current = null;
+                    }
+                    // 调用取消API
+                    fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/predict/cancel`, {
+                        method: 'POST'
+                    }).catch(e => console.error('Failed to cancel prediction:', e));
+                }
+            }, 100);
+
+            // 设置超时，防止无限轮询（最多5分钟）
+            timeoutRef.current = setTimeout(() => {
+                // 清理所有定时器
+                if (pollIntervalRef.current) {
+                    clearInterval(pollIntervalRef.current);
+                    pollIntervalRef.current = null;
+                }
+                if (checkCancelIntervalRef.current) {
+                    clearInterval(checkCancelIntervalRef.current);
+                    checkCancelIntervalRef.current = null;
+                }
+                setPreannotating(false);
+                setShowPreannotateProgress(false);
+                setPreannotateResult({ 
+                    successCount: 0, 
+                    failedCount: targetImages.length, 
+                    cancelled: false 
+                });
+                setShowPreannotateResult(true);
+            }, 5 * 60 * 1000);
+
+        } catch (e) {
+            console.error('Failed to start prediction:', e);
+            setPreannotating(false);
+            setShowPreannotateProgress(false);
+            setPreannotateResult({ 
+                successCount: 0, 
+                failedCount: targetImages.length, 
+                cancelled: false 
+            });
+            setShowPreannotateResult(true);
+        }
     };
 
     const handleCancelPreannotate = () => {
         cancelPreannotateRef.current = true;
+        // 清理所有定时器
+        if (pollIntervalRef.current) {
+            clearInterval(pollIntervalRef.current);
+            pollIntervalRef.current = null;
+        }
+        if (checkCancelIntervalRef.current) {
+            clearInterval(checkCancelIntervalRef.current);
+            checkCancelIntervalRef.current = null;
+        }
+        if (timeoutRef.current) {
+            clearTimeout(timeoutRef.current);
+            timeoutRef.current = null;
+        }
     };
+
+    // 组件卸载时清理定时器
+    useEffect(() => {
+        return () => {
+            if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+            if (checkCancelIntervalRef.current) clearInterval(checkCancelIntervalRef.current);
+            if (timeoutRef.current) clearTimeout(timeoutRef.current);
+        };
+    }, []);
 
     const handleDeleteImage = async (imageId) => {
         const result = await deleteImage(projectId, imageId);

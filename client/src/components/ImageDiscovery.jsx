@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from 'react';
-import { FolderOpen, Search, Check, X, Copy, Move, ChevronLeft, AlertCircle, Image as ImageIcon, Clock, HardDrive, CheckCircle, XCircle } from 'lucide-react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { FolderOpen, Search, Check, X, Copy, Move, ChevronLeft, AlertCircle, Image as ImageIcon, Clock, HardDrive, CheckCircle, XCircle, ArrowUp } from 'lucide-react';
 import { useProject } from '../context/ProjectContext';
 
 const formatSize = (bytes) => {
@@ -147,6 +147,8 @@ export const ImageDiscovery = ({ projectId, onClose, onImportComplete }) => {
     const [importProgress, setImportProgress] = useState({ done: 0, total: 0 });
     const [importResult, setImportResult] = useState(null);
     const [error, setError] = useState('');
+    const scrollContainerRef = useRef(null);
+    const [showScrollTop, setShowScrollTop] = useState(false);
 
     const handleSelectFolder = async () => {
         const result = await selectFolder();
@@ -256,6 +258,27 @@ export const ImageDiscovery = ({ projectId, onClose, onImportComplete }) => {
         }
     };
 
+    const scrollToTop = () => {
+        if (scrollContainerRef.current) {
+            scrollContainerRef.current.scrollTo({
+                top: 0,
+                behavior: 'smooth'
+            });
+        }
+    };
+
+    useEffect(() => {
+        const container = scrollContainerRef.current;
+        if (!container) return;
+
+        const handleScroll = () => {
+            setShowScrollTop(container.scrollTop > 300);
+        };
+
+        container.addEventListener('scroll', handleScroll);
+        return () => container.removeEventListener('scroll', handleScroll);
+    }, [step]);
+
     return (
         <div style={{
             position: 'fixed',
@@ -278,7 +301,8 @@ export const ImageDiscovery = ({ projectId, onClose, onImportComplete }) => {
                 boxShadow: '0 25px 50px rgba(0, 0, 0, 0.5)',
                 display: 'flex',
                 flexDirection: 'column',
-                overflow: 'hidden'
+                overflow: 'hidden',
+                position: 'relative'
             }}>
                 <div style={{
                     padding: '24px 28px',
@@ -348,11 +372,16 @@ export const ImageDiscovery = ({ projectId, onClose, onImportComplete }) => {
                     </button>
                 </div>
 
-                <div style={{
-                    flex: 1,
-                    overflow: 'auto',
-                    padding: '24px 28px'
-                }} className="custom-scrollbar">
+                <div 
+                    ref={scrollContainerRef}
+                    style={{
+                        flex: 1,
+                        overflow: 'auto',
+                        padding: '24px 28px',
+                        paddingBottom: step === 'preview' ? '180px' : '24px'
+                    }} 
+                    className="custom-scrollbar"
+                >
                     {error && (
                         <div style={{
                             marginBottom: '20px',
@@ -611,13 +640,23 @@ export const ImageDiscovery = ({ projectId, onClose, onImportComplete }) => {
                                 ))}
                             </div>
 
+                            {/* 固定底部操作栏 */}
                             <div style={{
-                                padding: '20px',
-                                background: 'rgba(255, 255, 255, 0.02)',
-                                borderRadius: '16px',
-                                border: '1px solid rgba(255, 255, 255, 0.08)'
+                                position: 'absolute',
+                                bottom: 0,
+                                left: 0,
+                                right: 0,
+                                padding: '20px 28px',
+                                background: 'linear-gradient(to top, rgba(13, 17, 23, 0.98), rgba(13, 17, 23, 0.95))',
+                                backdropFilter: 'blur(20px)',
+                                borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+                                zIndex: 100,
+                                boxShadow: '0 -4px 20px rgba(0, 0, 0, 0.3)',
+                                borderRadius: '0 0 24px 24px'
                             }}>
                                 <div style={{
+                                    maxWidth: '1000px',
+                                    margin: '0 auto',
                                     display: 'flex',
                                     alignItems: 'center',
                                     justifyContent: 'space-between',
@@ -708,7 +747,7 @@ export const ImageDiscovery = ({ projectId, onClose, onImportComplete }) => {
                                 </div>
                                 
                                 {importing && (
-                                    <div style={{ marginTop: '16px' }}>
+                                    <div style={{ marginTop: '16px', maxWidth: '1000px', margin: '16px auto 0 auto' }}>
                                         <div style={{
                                             width: '100%',
                                             height: '6px',
@@ -799,6 +838,43 @@ export const ImageDiscovery = ({ projectId, onClose, onImportComplete }) => {
                     )}
                 </div>
             </div>
+            
+            {/* 回到顶部浮动按钮 */}
+            {step === 'preview' && showScrollTop && (
+                <button
+                    onClick={scrollToTop}
+                    style={{
+                        position: 'fixed',
+                        bottom: '140px',
+                        right: 'max(calc((100vw - 1000px) / 2 + 40px), 40px)',
+                        width: '48px',
+                        height: '48px',
+                        borderRadius: '50%',
+                        background: 'linear-gradient(135deg, rgba(77, 161, 255, 0.9), rgba(33, 136, 255, 0.9))',
+                        backdropFilter: 'blur(10px)',
+                        border: '1px solid rgba(255, 255, 255, 0.2)',
+                        boxShadow: '0 8px 24px rgba(77, 161, 255, 0.4)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        cursor: 'pointer',
+                        zIndex: 1001,
+                        transition: 'all 0.3s ease',
+                        color: 'white'
+                    }}
+                    onMouseEnter={(e) => {
+                        e.currentTarget.style.transform = 'scale(1.1)';
+                        e.currentTarget.style.boxShadow = '0 12px 32px rgba(77, 161, 255, 0.5)';
+                    }}
+                    onMouseLeave={(e) => {
+                        e.currentTarget.style.transform = 'scale(1)';
+                        e.currentTarget.style.boxShadow = '0 8px 24px rgba(77, 161, 255, 0.4)';
+                    }}
+                    title="回到顶部"
+                >
+                    <ArrowUp size={20} />
+                </button>
+            )}
             
             <style>{`
                 @keyframes spin {

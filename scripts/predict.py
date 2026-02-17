@@ -6,18 +6,31 @@ if sys.platform == 'win32':
     sys.stdout.reconfigure(encoding='utf-8')
     sys.stderr.reconfigure(encoding='utf-8')
 
-import json
-import time
-import signal
-import psutil
-import datetime
-import numpy as np
-import torch
-from pathlib import Path
+try:
+    import json
+    import time
+    import signal
+    import psutil
+    import datetime
+    import numpy as np
+    import torch
+    from pathlib import Path
 
-os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+    os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
-from ultralytics import YOLO
+    from ultralytics import YOLO
+except ImportError as e:
+    print(f"ERROR: Failed to import required module: {e}", file=sys.stderr, flush=True)
+    import traceback
+    print(f"TRACEBACK:\n{traceback.format_exc()}", file=sys.stderr, flush=True)
+    sys.stderr.flush()
+    sys.exit(1)
+except Exception as e:
+    print(f"ERROR: Unexpected error during imports: {e}", file=sys.stderr, flush=True)
+    import traceback
+    print(f"TRACEBACK:\n{traceback.format_exc()}", file=sys.stderr, flush=True)
+    sys.stderr.flush()
+    sys.exit(1)
 
 
 class PredictionLogger:
@@ -266,7 +279,10 @@ def run_prediction(args):
     prediction_logger.info(f"Using device: {device}")
 
     if not os.path.exists(args.model):
-        prediction_logger.error("", f"Model file not found: {args.model}")
+        error_msg = f"Model file not found: {args.model}"
+        print(f"ERROR: {error_msg}", file=sys.stderr, flush=True)
+        sys.stderr.flush()
+        prediction_logger.error("", error_msg)
         prediction_logger.complete(0, 0, 1)
         sys.exit(1)
 
@@ -276,14 +292,36 @@ def run_prediction(args):
         model = YOLO(args.model)
         model.to(device)
     except Exception as e:
-        prediction_logger.error("", f"Failed to load model: {str(e)}")
+        import traceback
+        error_msg = f"Failed to load model: {str(e)}"
+        traceback_str = traceback.format_exc()
+        print(f"ERROR: {error_msg}", file=sys.stderr, flush=True)
+        print(f"TRACEBACK:\n{traceback_str}", file=sys.stderr, flush=True)
+        sys.stderr.flush()
+        prediction_logger.error("", error_msg)
         prediction_logger.complete(0, 0, 1)
         sys.exit(1)
 
-    image_paths = parse_images_arg(args.images)
+    try:
+        image_paths = parse_images_arg(args.images)
+    except Exception as e:
+        import traceback
+        error_msg = f"Failed to parse images argument: {str(e)}"
+        traceback_str = traceback.format_exc()
+        print(f"ERROR: {error_msg}", file=sys.stderr, flush=True)
+        print(f"TRACEBACK:\n{traceback_str}", file=sys.stderr, flush=True)
+        print(f"DEBUG: args.images = {args.images[:200] if args.images else 'None'}", file=sys.stderr, flush=True)
+        sys.stderr.flush()
+        prediction_logger.error("", error_msg)
+        prediction_logger.complete(0, 0, 1)
+        sys.exit(1)
 
     if not image_paths:
-        prediction_logger.error("", "No images provided")
+        error_msg = "No images provided"
+        print(f"ERROR: {error_msg}", file=sys.stderr, flush=True)
+        print(f"DEBUG: Parsed image_paths = {image_paths}", file=sys.stderr, flush=True)
+        sys.stderr.flush()
+        prediction_logger.error("", error_msg)
         prediction_logger.complete(0, 0, 1)
         sys.exit(1)
 
@@ -293,23 +331,77 @@ def run_prediction(args):
     if projects_dir and project_id:
         uploads_dir = os.path.join(projects_dir, project_id, 'uploads')
         full_paths = []
+        
+        # 检查uploads目录是否存在
+        if not os.path.exists(uploads_dir):
+            print(f"WARNING: uploads directory does not exist: {uploads_dir}", file=sys.stderr, flush=True)
+            # 尝试创建目录
+            try:
+                os.makedirs(uploads_dir, exist_ok=True)
+                print(f"INFO: Created uploads directory: {uploads_dir}", file=sys.stderr, flush=True)
+            except Exception as e:
+                print(f"ERROR: Failed to create uploads directory: {e}", file=sys.stderr, flush=True)
+        
+        # 列出uploads目录中的文件用于调试
+        if os.path.exists(uploads_dir):
+            try:
+                files_in_uploads = os.listdir(uploads_dir)
+                print(f"DEBUG: Found {len(files_in_uploads)} files in uploads_dir", file=sys.stderr, flush=True)
+                if files_in_uploads:
+                    print(f"DEBUG: Sample files: {files_in_uploads[:5]}", file=sys.stderr, flush=True)
+            except Exception as e:
+                print(f"DEBUG: Failed to list uploads_dir: {e}", file=sys.stderr, flush=True)
+        
+        print(f"DEBUG: Looking for {len(image_paths)} images", file=sys.stderr, flush=True)
+        print(f"DEBUG: Image names: {image_paths[:5] if len(image_paths) > 0 else '[]'}", file=sys.stderr, flush=True)
+        
         for img in image_paths:
-            if os.path.isabs(img) and os.path.exists(img):
-                full_paths.append(img)
+            img_str = img if isinstance(img, str) else str(img)
+            print(f"DEBUG: Processing image: {img_str}", file=sys.stderr, flush=True)
+            
+            if os.path.isabs(img_str) and os.path.exists(img_str):
+                print(f"DEBUG: Found absolute path: {img_str}", file=sys.stderr, flush=True)
+                full_paths.append(img_str)
             else:
-                full_path = os.path.join(uploads_dir, img if isinstance(img, str) else str(img))
+                full_path = os.path.join(uploads_dir, img_str)
+                print(f"DEBUG: Checking: {full_path}", file=sys.stderr, flush=True)
+                
                 if os.path.exists(full_path):
+                    print(f"DEBUG: Found: {full_path}", file=sys.stderr, flush=True)
                     full_paths.append(full_path)
                 else:
+                    # 尝试不同的扩展名
+                    found = False
                     for ext in ['.jpg', '.jpeg', '.png', '.bmp', '.webp', '.JPG', '.JPEG', '.PNG', '.BMP', '.WEBP']:
                         test_path = full_path.rsplit('.', 1)[0] + ext if '.' in full_path else full_path + ext
                         if os.path.exists(test_path):
+                            print(f"DEBUG: Found with extension {ext}: {test_path}", file=sys.stderr, flush=True)
                             full_paths.append(test_path)
+                            found = True
                             break
+                    
+                    if not found:
+                        print(f"WARNING: Image not found: {img_str} (checked {full_path} and variants)", file=sys.stderr, flush=True)
+        
         image_paths = full_paths
+        print(f"DEBUG: Resolved {len(image_paths)} image paths", file=sys.stderr, flush=True)
 
     if not image_paths:
-        prediction_logger.error("", "No valid image paths found")
+        error_msg = "No valid image paths found"
+        print(f"ERROR: {error_msg}", file=sys.stderr, flush=True)
+        print(f"DEBUG: projects_dir = {projects_dir}, project_id = {project_id}", file=sys.stderr, flush=True)
+        uploads_dir_path = os.path.join(projects_dir, project_id, 'uploads') if (projects_dir and project_id) else 'N/A'
+        print(f"DEBUG: uploads_dir = {uploads_dir_path}", file=sys.stderr, flush=True)
+        if projects_dir and project_id:
+            uploads_dir_full = os.path.join(projects_dir, project_id, 'uploads')
+            exists = os.path.exists(uploads_dir_full)
+            print(f"DEBUG: uploads_dir exists = {exists}", file=sys.stderr, flush=True)
+            if exists:
+                files = os.listdir(uploads_dir_full)
+                print(f"DEBUG: files in uploads_dir = {files[:10]}", file=sys.stderr, flush=True)
+        print(f"DEBUG: Original image_paths before path resolution = {image_paths}", file=sys.stderr, flush=True)
+        sys.stderr.flush()
+        prediction_logger.error("", error_msg)
         prediction_logger.complete(0, 0, 1)
         sys.exit(1)
 
@@ -408,7 +500,12 @@ if __name__ == "__main__":
         args.images = os.environ.get('PREDICTION_IMAGES', '')
 
     if not args.images:
-        prediction_logger.error("", "No images provided via --images or PREDICTION_IMAGES env")
+        error_msg = "No images provided via --images or PREDICTION_IMAGES env"
+        print(f"ERROR: {error_msg}", file=sys.stderr, flush=True)
+        env_value = os.environ.get('PREDICTION_IMAGES', 'NOT SET')
+        print(f"DEBUG: PREDICTION_IMAGES env = {env_value[:500] if len(str(env_value)) > 500 else env_value}", file=sys.stderr, flush=True)
+        sys.stderr.flush()
+        prediction_logger.error("", error_msg)
         prediction_logger.complete(0, 0, 1)
         sys.exit(1)
 
