@@ -1,10 +1,11 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { ChevronLeft, ChevronRight, Image as ImageIcon, CheckCircle, RefreshCw, FolderOpen, Clock, Trash2, X, AlertTriangle, Settings, Wand2, Play, Pause, Check, AlertCircle } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Image as ImageIcon, CheckCircle, RefreshCw, FolderOpen, Clock, Trash2, X, AlertTriangle, Settings, Wand2, Play, Pause, Check, AlertCircle, Filter } from 'lucide-react';
 import { ImageUpload } from './ImageUpload';
 import { ImageDiscovery } from './ImageDiscovery';
 import { ImportHistory } from './ImportHistory';
 import { useProject } from '../context/ProjectContext';
 import { createPortal } from 'react-dom';
+import { filterImagesAdvanced } from '../utils/galleryFilters';
 
 const PAGE_SIZE = 60;
 
@@ -279,13 +280,25 @@ const ThumbnailCard = ({ imageObj, projectId, index, onSelectImage, isSelected, 
 
 export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, selectedImage }) => {
     const [page, setPage] = useState(0);
-    const [search, setSearch] = useState('');
+    const [filtersOpen, setFiltersOpen] = useState(false);
+    const filterButtonRef = useRef(null);
+    const [filterPanelPos, setFilterPanelPos] = useState(null);
     const [showDiscovery, setShowDiscovery] = useState(false);
     const [showHistory, setShowHistory] = useState(false);
     const [showStats, setShowStats] = useState(false);
     const [stats, setStats] = useState(null);
     const [loadingStats, setLoadingStats] = useState(false);
-    const { deleteImage } = useProject();
+    const { deleteImage, galleryFilters, setGalleryFilters } = useProject();
+    const search = galleryFilters?.search ?? '';
+    const annotatedFilter = galleryFilters?.annotated ?? 'all';
+    const keypointsMin = galleryFilters?.keypointsMin ?? '';
+    const keypointsMax = galleryFilters?.keypointsMax ?? '';
+    const bboxesMin = galleryFilters?.bboxesMin ?? '';
+    const bboxesMax = galleryFilters?.bboxesMax ?? '';
+
+    const updateGalleryFilters = (patch) => {
+        setGalleryFilters(prev => ({ ...(prev || {}), ...patch }));
+    };
 
     const [showModelSettings, setShowModelSettings] = useState(false);
     const [showPreannotateDialog, setShowPreannotateDialog] = useState(false);
@@ -593,15 +606,69 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
         return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
     };
 
+    const hasKeypointCount = useMemo(() => {
+        return images.some(img => typeof img !== 'string' && Number.isFinite(img?.keypointCount));
+    }, [images]);
+
+    const hasBboxCount = useMemo(() => {
+        return images.some(img => typeof img !== 'string' && Number.isFinite(img?.bboxCount));
+    }, [images]);
+
+    const wantsKeypointFilter = useMemo(() => {
+        return String(keypointsMin).trim() !== '' || String(keypointsMax).trim() !== '';
+    }, [keypointsMax, keypointsMin]);
+
+    const wantsBboxFilter = useMemo(() => {
+        return String(bboxesMin).trim() !== '' || String(bboxesMax).trim() !== '';
+    }, [bboxesMax, bboxesMin]);
+
+    const computeFilterPanelPos = () => {
+        const el = filterButtonRef.current;
+        if (!el) return null;
+        const rect = el.getBoundingClientRect();
+        const width = 340;
+        const margin = 12;
+        const estimatedHeight = 360;
+        const preferTop = rect.bottom + 8;
+        const top = (window.innerHeight - preferTop < estimatedHeight)
+            ? Math.max(margin, rect.top - 8 - estimatedHeight)
+            : preferTop;
+        const left = Math.max(
+            margin,
+            Math.min(rect.right - width, window.innerWidth - width - margin)
+        );
+        return { top, left, width };
+    };
+
+    useEffect(() => {
+        if (!filtersOpen) return;
+
+        const update = () => {
+            const pos = computeFilterPanelPos();
+            if (pos) setFilterPanelPos(pos);
+        };
+
+        update();
+        window.addEventListener('resize', update);
+        window.addEventListener('scroll', update, true);
+        return () => {
+            window.removeEventListener('resize', update);
+            window.removeEventListener('scroll', update, true);
+        };
+    }, [filtersOpen]);
+
+    const activeFiltersCount = useMemo(() => {
+        let n = 0;
+        if (annotatedFilter !== 'all') n += 1;
+        if (wantsKeypointFilter) n += 1;
+        if (wantsBboxFilter) n += 1;
+        return n;
+    }, [annotatedFilter, wantsBboxFilter, wantsKeypointFilter]);
+
     // Filter images by search
     const filtered = useMemo(() => {
-        if (!search.trim()) return images;
-        const q = search.toLowerCase();
-        return images.filter(img => {
-            const name = typeof img === 'string' ? img : img.name;
-            return name.toLowerCase().includes(q);
-        });
-    }, [images, search]);
+        return filterImagesAdvanced(images, { search, annotated: annotatedFilter, keypointsMin, keypointsMax, bboxesMin, bboxesMax });
+    }, [annotatedFilter, bboxesMax, bboxesMin, images, keypointsMax, keypointsMin, search]);
 
     const displayList = useMemo(() => {
         const list = [...filtered];
@@ -615,7 +682,7 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
     const pageItems = displayList.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
     // Reset page when images or search changes
-    React.useEffect(() => { setPage(0); }, [images, search]);
+    React.useEffect(() => { setPage(0); }, [annotatedFilter, bboxesMax, bboxesMin, images, keypointsMax, keypointsMin, search]);
 
     return (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflowY: 'auto', overflowX: 'hidden' }} className="custom-scrollbar">
@@ -750,7 +817,7 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
                             type="text"
                             placeholder="搜索图片名称..."
                             value={search}
-                            onChange={(e) => setSearch(e.target.value)}
+                            onChange={(e) => updateGalleryFilters({ search: e.target.value })}
                             className="input-modern"
                             style={{
                                 height: '46px',
@@ -763,8 +830,223 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
                         </div>
                     </div>
+                    <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                        <button
+                            onClick={() => {
+                                if (filtersOpen) {
+                                    setFiltersOpen(false);
+                                    setFilterPanelPos(null);
+                                    return;
+                                }
+                                const pos = computeFilterPanelPos();
+                                if (pos) setFilterPanelPos(pos);
+                                setFiltersOpen(true);
+                            }}
+                            ref={filterButtonRef}
+                            className="icon-btn hover-card"
+                            title="筛选"
+                            style={{
+                                position: 'relative',
+                                background: activeFiltersCount > 0 ? 'rgba(77, 161, 255, 0.12)' : 'rgba(255,255,255,0.03)',
+                                padding: '8px 12px',
+                                borderRadius: '10px',
+                                border: activeFiltersCount > 0 ? '1px solid rgba(77, 161, 255, 0.3)' : '1px solid rgba(255,255,255,0.08)',
+                                color: activeFiltersCount > 0 ? '#4da1ff' : 'var(--text-secondary)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '6px'
+                            }}
+                        >
+                            <Filter size={16} />
+                            <span style={{ fontSize: '13px', fontWeight: 700 }}>筛选</span>
+                            {activeFiltersCount > 0 && (
+                                <span style={{
+                                    marginLeft: '2px',
+                                    background: 'rgba(77, 161, 255, 0.18)',
+                                    border: '1px solid rgba(77, 161, 255, 0.35)',
+                                    color: '#4da1ff',
+                                    padding: '2px 8px',
+                                    borderRadius: '999px',
+                                    fontSize: '12px',
+                                    fontWeight: 800
+                                }}>
+                                    {activeFiltersCount}
+                                </span>
+                            )}
+                        </button>
+                    </div>
                 </div>
             </div>
+
+            {filtersOpen && filterPanelPos && createPortal(
+                <div
+                    style={{ position: 'fixed', inset: 0, zIndex: 10000 }}
+                    onMouseDown={() => { setFiltersOpen(false); setFilterPanelPos(null); }}
+                >
+                    <div style={{ position: 'absolute', inset: 0 }} />
+                    <div
+                        className="glass-panel"
+                        style={{
+                            position: 'fixed',
+                            top: filterPanelPos.top,
+                            left: filterPanelPos.left,
+                            width: `${filterPanelPos.width}px`,
+                            maxWidth: 'calc(100vw - 24px)',
+                            padding: '12px',
+                            borderRadius: '14px',
+                            background: 'rgba(22, 27, 34, 0.92)',
+                            border: '1px solid rgba(255,255,255,0.12)',
+                            boxShadow: '0 18px 40px rgba(0,0,0,0.55)',
+                            backdropFilter: 'blur(12px)'
+                        }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                    >
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', marginBottom: '10px' }}>
+                            <div style={{ color: 'var(--text-primary)', fontWeight: 900, fontSize: '13px', letterSpacing: '0.02em' }}>筛选条件</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <button
+                                    className="icon-btn hover-card"
+                                    onClick={() => {
+                                        updateGalleryFilters({
+                                            annotated: 'all',
+                                            keypointsMin: '',
+                                            keypointsMax: '',
+                                            bboxesMin: '',
+                                            bboxesMax: ''
+                                        });
+                                    }}
+                                    title="清空筛选"
+                                    style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '8px' }}
+                                >
+                                    <RefreshCw size={16} />
+                                </button>
+                                <button
+                                    className="icon-btn hover-card"
+                                    onClick={() => setFiltersOpen(false)}
+                                    title="关闭"
+                                    style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '8px' }}
+                                >
+                                    <X size={16} />
+                                </button>
+                            </div>
+                        </div>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+                                <div style={{ color: 'var(--text-tertiary)', fontSize: '12px', fontWeight: 800 }}>是否标注</div>
+                                <div style={{ display: 'flex', gap: '6px' }}>
+                                    <button
+                                        onClick={() => updateGalleryFilters({ annotated: 'all' })}
+                                        className={`icon-btn ${annotatedFilter === 'all' ? 'active' : ''}`}
+                                        style={{ padding: '8px 10px', borderRadius: '10px' }}
+                                    >
+                                        <span style={{ fontSize: '12px', fontWeight: 800 }}>全部</span>
+                                    </button>
+                                    <button
+                                        onClick={() => updateGalleryFilters({ annotated: 'annotated' })}
+                                        className={`icon-btn ${annotatedFilter === 'annotated' ? 'active' : ''}`}
+                                        style={{ padding: '8px 10px', borderRadius: '10px' }}
+                                    >
+                                        <span style={{ fontSize: '12px', fontWeight: 800 }}>已标注</span>
+                                    </button>
+                                    <button
+                                        onClick={() => updateGalleryFilters({ annotated: 'unannotated' })}
+                                        className={`icon-btn ${annotatedFilter === 'unannotated' ? 'active' : ''}`}
+                                        style={{ padding: '8px 10px', borderRadius: '10px' }}
+                                    >
+                                        <span style={{ fontSize: '12px', fontWeight: 800 }}>未标注</span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+                                <div style={{ color: 'var(--text-tertiary)', fontSize: '12px', fontWeight: 800 }}>关键点数量</div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        placeholder="最少"
+                                        value={keypointsMin}
+                                        onChange={(e) => updateGalleryFilters({ keypointsMin: e.target.value })}
+                                        className="input-modern"
+                                        style={{ height: '40px', width: '90px', borderRadius: '12px', padding: '0 10px', fontSize: '0.9rem' }}
+                                    />
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        placeholder="最多"
+                                        value={keypointsMax}
+                                        onChange={(e) => updateGalleryFilters({ keypointsMax: e.target.value })}
+                                        className="input-modern"
+                                        style={{ height: '40px', width: '90px', borderRadius: '12px', padding: '0 10px', fontSize: '0.9rem' }}
+                                    />
+                                </div>
+                            </div>
+
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+                                <div style={{ color: 'var(--text-tertiary)', fontSize: '12px', fontWeight: 800 }}>BBox 数量</div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        placeholder="最少"
+                                        value={bboxesMin}
+                                        onChange={(e) => updateGalleryFilters({ bboxesMin: e.target.value })}
+                                        className="input-modern"
+                                        style={{ height: '40px', width: '90px', borderRadius: '12px', padding: '0 10px', fontSize: '0.9rem' }}
+                                    />
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        placeholder="最多"
+                                        value={bboxesMax}
+                                        onChange={(e) => updateGalleryFilters({ bboxesMax: e.target.value })}
+                                        className="input-modern"
+                                        style={{ height: '40px', width: '90px', borderRadius: '12px', padding: '0 10px', fontSize: '0.9rem' }}
+                                    />
+                                </div>
+                            </div>
+
+                            {(wantsKeypointFilter && !hasKeypointCount) && (
+                                <div style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '8px',
+                                    padding: '8px 10px',
+                                    borderRadius: '12px',
+                                    background: 'rgba(245, 158, 11, 0.12)',
+                                    border: '1px solid rgba(245, 158, 11, 0.25)',
+                                    color: '#f59e0b',
+                                    fontSize: '12px',
+                                    fontWeight: 800
+                                }}>
+                                    <AlertTriangle size={14} />
+                                    <span>后端未返回 keypointCount</span>
+                                </div>
+                            )}
+
+                            {(wantsBboxFilter && !hasBboxCount) && (
+                                <div style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '8px',
+                                    padding: '8px 10px',
+                                    borderRadius: '12px',
+                                    background: 'rgba(245, 158, 11, 0.12)',
+                                    border: '1px solid rgba(245, 158, 11, 0.25)',
+                                    color: '#f59e0b',
+                                    fontSize: '12px',
+                                    fontWeight: 800
+                                }}>
+                                    <AlertTriangle size={14} />
+                                    <span>后端未返回 bboxCount</span>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>,
+                document.body
+            )}
 
             {/* Image Grid */}
             <div className="image-grid" style={{ paddingBottom: '2rem' }}>
@@ -787,7 +1069,7 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
                             imageObj={item}
                             projectId={projectId}
                             index={index}
-                            onSelectImage={onSelectImage}
+                            onSelectImage={(img) => onSelectImage(img, { navImages: filtered })}
                             isSelected={selectedImage === (typeof item === 'string' ? item : item.name)}
                             onDelete={handleDeleteImage}
                         />

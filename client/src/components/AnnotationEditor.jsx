@@ -8,7 +8,7 @@ import { ClassInputModal } from './ClassInputModal';
 import { ClassManagerModal } from './ClassManagerModal';
 
 export function AnnotationEditor({ image, projectId, onBack }) {
-    const { images, openEditor, goToTraining, currentProject, exportProject, deleteImage, predictSingleImage, getPredictionSettings } = useProject();
+    const { images, editorNavImages, openEditor, goToTraining, currentProject, exportProject, deleteImage, predictSingleImage, getPredictionSettings, registerEditorAttemptNavigation } = useProject();
     const session = useAnnotationSession({ projectId, imageId: image });
     const annotations = session.annotations;
     const setAnnotations = session.setAnnotations;
@@ -73,6 +73,11 @@ export function AnnotationEditor({ image, projectId, onBack }) {
     const [showStatusPanel, setShowStatusPanel] = useState(false);
     const formatTime = useCallback((t) => t ? new Date(t).toLocaleString() : '-', []);
     const navLocked = session.phase !== 'ready' && session.phase !== 'dirty';
+
+    useEffect(() => {
+        if (!registerEditorAttemptNavigation) return;
+        return registerEditorAttemptNavigation(session.attemptNavigation);
+    }, [registerEditorAttemptNavigation, session.attemptNavigation]);
 
     // Derived State: Group Keypoints by BBox
     const { groups, unassignedKeypoints } = useMemo(() => {
@@ -444,40 +449,46 @@ export function AnnotationEditor({ image, projectId, onBack }) {
 
 
     // Navigation Logic
-    const currentIndex = useMemo(() => images.findIndex(img => (typeof img === 'string' ? img === image : img.name === image)), [images, image]);
+    const navImages = useMemo(() => {
+        if (!Array.isArray(editorNavImages) || editorNavImages.length === 0) return images;
+        const idx = editorNavImages.findIndex(img => (typeof img === 'string' ? img === image : img.name === image));
+        return idx >= 0 ? editorNavImages : images;
+    }, [editorNavImages, images, image]);
+
+    const currentIndex = useMemo(() => navImages.findIndex(img => (typeof img === 'string' ? img === image : img.name === image)), [navImages, image]);
 
     const goToNext = useCallback(async () => {
-        if (currentIndex < images.length - 1) {
-            const nextImg = images[currentIndex + 1];
+        if (currentIndex < navImages.length - 1) {
+            const nextImg = navImages[currentIndex + 1];
             await attemptNavigation({ type: 'openEditor', image: typeof nextImg === 'string' ? nextImg : nextImg.name });
         }
-    }, [currentIndex, images, attemptNavigation]);
+    }, [currentIndex, navImages, attemptNavigation]);
 
     const goToPrev = useCallback(async () => {
         if (currentIndex > 0) {
-            const prevImg = images[currentIndex - 1];
+            const prevImg = navImages[currentIndex - 1];
             await attemptNavigation({ type: 'openEditor', image: typeof prevImg === 'string' ? prevImg : prevImg.name });
         }
-    }, [currentIndex, images, attemptNavigation]);
+    }, [currentIndex, navImages, attemptNavigation]);
 
     const copyPrevToCurrent = useCallback(async () => {
         if (currentIndex <= 0) return;
-        const prevImg = images[currentIndex - 1];
+        const prevImg = navImages[currentIndex - 1];
         const prevName = typeof prevImg === 'string' ? prevImg : prevImg.name;
         await attemptNavigation({ type: 'copyPrevToCurrent', sourceImage: prevName });
-    }, [attemptNavigation, currentIndex, images]);
+    }, [attemptNavigation, currentIndex, navImages]);
 
     const copyCurrentToNext = useCallback(async () => {
-        if (currentIndex >= images.length - 1) return;
-        const nextImg = images[currentIndex + 1];
+        if (currentIndex >= navImages.length - 1) return;
+        const nextImg = navImages[currentIndex + 1];
         const nextName = typeof nextImg === 'string' ? nextImg : nextImg.name;
         const snapshot = JSON.stringify(annotations || []);
         await attemptNavigation({ type: 'copyCurrentToNext', targetImage: nextName, snapshot });
-    }, [annotations, attemptNavigation, currentIndex, images]);
+    }, [annotations, attemptNavigation, currentIndex, navImages]);
 
     const goToNextUnannotated = useCallback(async () => {
-        for (let i = currentIndex + 1; i < images.length; i++) {
-            const img = images[i];
+        for (let i = currentIndex + 1; i < navImages.length; i++) {
+            const img = navImages[i];
             const isUnannotated = typeof img === 'string' ? true : !img.hasAnnotation;
             if (isUnannotated) {
                 await attemptNavigation({ type: 'openEditor', image: typeof img === 'string' ? img : img.name });
@@ -486,11 +497,11 @@ export function AnnotationEditor({ image, projectId, onBack }) {
         }
         setPredictionError('已全部标注');
         setShowPredictionError(true);
-    }, [attemptNavigation, currentIndex, images]);
+    }, [attemptNavigation, currentIndex, navImages]);
 
     const goToPrevUnannotated = useCallback(async () => {
         for (let i = currentIndex - 1; i >= 0; i--) {
-            const img = images[i];
+            const img = navImages[i];
             const isUnannotated = typeof img === 'string' ? true : !img.hasAnnotation;
             if (isUnannotated) {
                 await attemptNavigation({ type: 'openEditor', image: typeof img === 'string' ? img : img.name });
@@ -499,7 +510,7 @@ export function AnnotationEditor({ image, projectId, onBack }) {
         }
         setPredictionError('已全部标注');
         setShowPredictionError(true);
-    }, [attemptNavigation, currentIndex, images]);
+    }, [attemptNavigation, currentIndex, navImages]);
 
     // Keyboard Shortcuts for Navigation
     useEffect(() => {
@@ -907,11 +918,15 @@ export function AnnotationEditor({ image, projectId, onBack }) {
         }
         
         try {
-            const result = await deleteImage(projectId, image, true, currentIndex);
+            const result = await deleteImage(projectId, image, { navigateToNext: true, currentIndex, renumberAfterDelete: true });
             console.log('Delete result:', result);
             
             if (result.success) {
                 setShowDeleteConfirm(false);
+                if (result.renumber && result.renumber.error) {
+                    setPredictionError(result.renumber.error);
+                    setShowPredictionError(true);
+                }
             } else {
                 console.error('Delete failed:', result.message);
             }

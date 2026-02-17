@@ -2,7 +2,9 @@ const path = require('path');
 const fs = require('fs');
 const defaultConfig = require('./defaultConfig');
 
-const GLOBAL_CONFIG_PATH = path.join(__dirname, '..', '..', 'settings.json');
+const DEFAULT_GLOBAL_CONFIG_PATH = path.join(__dirname, '..', '..', 'settings.json');
+
+const getConfigPath = () => process.env.POSE_ANNOTATOR_SETTINGS_PATH || DEFAULT_GLOBAL_CONFIG_PATH;
 
 class SettingsService {
   constructor() {
@@ -11,8 +13,9 @@ class SettingsService {
 
   load() {
     try {
-      if (fs.existsSync(GLOBAL_CONFIG_PATH)) {
-        const data = fs.readFileSync(GLOBAL_CONFIG_PATH, 'utf8');
+      const configPath = getConfigPath();
+      if (fs.existsSync(configPath)) {
+        const data = fs.readFileSync(configPath, 'utf8');
         this._config = { ...defaultConfig, ...JSON.parse(data) };
       } else {
         this._config = { ...defaultConfig };
@@ -36,8 +39,34 @@ class SettingsService {
 
   save(config) {
     try {
+      if (!this._config) this.load();
       const toSave = { ...this._config, ...config };
-      fs.writeFileSync(GLOBAL_CONFIG_PATH, JSON.stringify(toSave, null, 2), 'utf8');
+      const configPath = getConfigPath();
+      const dir = path.dirname(configPath);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+      const json = JSON.stringify(toSave, null, 2);
+      const tmpPath = `${configPath}.tmp_${process.pid}_${Date.now()}`;
+      fs.writeFileSync(tmpPath, json, 'utf8');
+
+      let backupPath = null;
+      try {
+        if (fs.existsSync(configPath)) {
+          backupPath = `${configPath}.bak_${process.pid}_${Date.now()}`;
+          fs.renameSync(configPath, backupPath);
+        }
+        fs.renameSync(tmpPath, configPath);
+        if (backupPath && fs.existsSync(backupPath)) fs.unlinkSync(backupPath);
+      } catch (e) {
+        try {
+          if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
+        } catch {}
+        if (backupPath && fs.existsSync(backupPath) && !fs.existsSync(configPath)) {
+          try { fs.renameSync(backupPath, configPath); } catch {}
+        }
+        throw e;
+      }
+
       this._config = toSave;
       return true;
     } catch (e) {

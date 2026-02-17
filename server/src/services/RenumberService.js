@@ -14,6 +14,9 @@ class RenumberService {
     const paths = PathService.getProjectPaths(projectId, projectsDir);
     const configPath = PathService.getConfigPath(projectId, projectsDir);
     const backupDir = path.join(paths.root, '.renumber_backup_' + Date.now());
+    const backupUploadsDir = path.join(backupDir, 'uploads');
+    const backupAnnotationsDir = path.join(backupDir, 'annotations');
+    const backupThumbnailsDir = path.join(backupDir, 'thumbnails');
     let backupComplete = false;
     let filesRenamed = [];
 
@@ -38,21 +41,24 @@ class RenumberService {
       logger.info(`[RenumberService] Found ${imageFiles.length} images to renumber`);
 
       await fs.mkdir(backupDir);
+      await fs.mkdir(backupUploadsDir);
+      await fs.mkdir(backupAnnotationsDir);
+      await fs.mkdir(backupThumbnailsDir);
       logger.info(`[RenumberService] Created backup directory: ${backupDir}`);
 
       for (const file of imageFiles) {
         const srcPath = path.join(paths.uploads, file);
-        const dstPath = path.join(backupDir, file);
+        const dstPath = path.join(backupUploadsDir, file);
         await fs.copyFile(srcPath, dstPath);
 
         const annPath = path.join(paths.annotations, `${file}.json`);
         if (fsSync.existsSync(annPath)) {
-          await fs.copyFile(annPath, path.join(backupDir, `${file}.json`));
+          await fs.copyFile(annPath, path.join(backupAnnotationsDir, `${file}.json`));
         }
 
         const thumbPath = path.join(paths.thumbnails, file);
         if (fsSync.existsSync(thumbPath)) {
-          await fs.copyFile(thumbPath, path.join(backupDir, file));
+          await fs.copyFile(thumbPath, path.join(backupThumbnailsDir, file));
         }
       }
 
@@ -137,65 +143,75 @@ class RenumberService {
       return;
     }
 
+    const backupUploadsDir = path.join(backupDir, 'uploads');
+    const backupAnnotationsDir = path.join(backupDir, 'annotations');
+    const backupThumbnailsDir = path.join(backupDir, 'thumbnails');
+
+    const hasStructuredBackup =
+      fsSync.existsSync(backupUploadsDir) ||
+      fsSync.existsSync(backupAnnotationsDir) ||
+      fsSync.existsSync(backupThumbnailsDir);
+
+    const restoreDir = async (srcDir, dstDir) => {
+      if (!fsSync.existsSync(srcDir)) return new Set();
+      const files = await fs.readdir(srcDir);
+      for (const file of files) {
+        const srcPath = path.join(srcDir, file);
+        const dstPath = path.join(dstDir, file);
+        if (fsSync.existsSync(dstPath)) {
+          await fs.unlink(dstPath);
+        }
+        await fs.copyFile(srcPath, dstPath);
+      }
+      return new Set(files);
+    };
+
+    const pruneDir = async (dstDir, keepSet) => {
+      if (!fsSync.existsSync(dstDir)) return;
+      const files = await fs.readdir(dstDir);
+      for (const file of files) {
+        if (!keepSet.has(file)) {
+          await fs.unlink(path.join(dstDir, file));
+        }
+      }
+    };
+
+    if (hasStructuredBackup) {
+      const keepUploads = await restoreDir(backupUploadsDir, paths.uploads);
+      const keepAnnotations = await restoreDir(backupAnnotationsDir, paths.annotations);
+      const keepThumbnails = await restoreDir(backupThumbnailsDir, paths.thumbnails);
+
+      await pruneDir(paths.uploads, keepUploads);
+      await pruneDir(paths.annotations, keepAnnotations);
+      await pruneDir(paths.thumbnails, keepThumbnails);
+      return;
+    }
+
     const backupFiles = await fs.readdir(backupDir);
+    const keepUploads = new Set();
+    const keepAnnotations = new Set();
 
     for (const file of backupFiles) {
       const srcPath = path.join(backupDir, file);
-      let dstPath;
-
       if (file.endsWith('.json')) {
-        dstPath = path.join(paths.annotations, file);
-      } else if (this.SUPPORTED_IMAGE_EXTENSIONS.test(file)) {
+        const dstPath = path.join(paths.annotations, file);
+        if (fsSync.existsSync(dstPath)) await fs.unlink(dstPath);
+        await fs.copyFile(srcPath, dstPath);
+        keepAnnotations.add(file);
+        continue;
+      }
+
+      if (this.SUPPORTED_IMAGE_EXTENSIONS.test(file)) {
         const imageDstPath = path.join(paths.uploads, file);
-        const thumbDstPath = path.join(paths.thumbnails, file);
-
-        if (fsSync.existsSync(imageDstPath)) {
-          await fs.unlink(imageDstPath);
-        }
+        if (fsSync.existsSync(imageDstPath)) await fs.unlink(imageDstPath);
         await fs.copyFile(srcPath, imageDstPath);
-
-        if (fsSync.existsSync(path.join(backupDir, file)) && !file.endsWith('.json')) {
-          const thumbBackupPath = path.join(backupDir, file);
-          if (fsSync.existsSync(thumbBackupPath) && fsSync.statSync(thumbBackupPath).isFile()) {
-            if (fsSync.existsSync(thumbDstPath)) {
-              await fs.unlink(thumbDstPath);
-            }
-            await fs.copyFile(thumbBackupPath, thumbDstPath);
-          }
-        }
-        continue;
-      } else {
+        keepUploads.add(file);
         continue;
       }
-
-      if (fsSync.existsSync(dstPath)) {
-        await fs.unlink(dstPath);
-      }
-      await fs.copyFile(srcPath, dstPath);
     }
 
-    const uploadFiles = await fs.readdir(paths.uploads);
-    for (const file of uploadFiles) {
-      if (!fsSync.existsSync(path.join(backupDir, file))) {
-        await fs.unlink(path.join(paths.uploads, file));
-      }
-    }
-
-    const annFiles = await fs.readdir(paths.annotations);
-    for (const file of annFiles) {
-      if (!fsSync.existsSync(path.join(backupDir, file))) {
-        await fs.unlink(path.join(paths.annotations, file));
-      }
-    }
-
-    if (fsSync.existsSync(paths.thumbnails)) {
-      const thumbFiles = await fs.readdir(paths.thumbnails);
-      for (const file of thumbFiles) {
-        if (!fsSync.existsSync(path.join(backupDir, file))) {
-          await fs.unlink(path.join(paths.thumbnails, file));
-        }
-      }
-    }
+    await pruneDir(paths.uploads, keepUploads);
+    await pruneDir(paths.annotations, keepAnnotations);
   }
 }
 

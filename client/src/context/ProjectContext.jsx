@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import { getImageName, validateSequentialNumbering } from '../utils/imageNumbering';
 
 const ProjectContext = createContext();
 
@@ -11,11 +12,45 @@ export const ProjectProvider = ({ children }) => {
     const [view, setView] = useState('dashboard');
     const [previousView, setPreviousView] = useState('dashboard');
     const [selectedImage, setSelectedImage] = useState(null);
+    const [editorNavImages, setEditorNavImages] = useState(null);
+    const [galleryFilters, setGalleryFilters] = useState({
+        search: '',
+        annotated: 'all',
+        keypointsMin: '',
+        keypointsMax: '',
+        bboxesMin: '',
+        bboxesMax: ''
+    });
     const [loading, setLoading] = useState(false);
     const [configLoading, setConfigLoading] = useState(false);
     const [projectConfig, setProjectConfig] = useState({ classMapping: {}, exportSettings: {}, trainingSettings: {} });
     const [deletingProjects, setDeletingProjects] = useState(new Set());
     const updateTimeoutRef = useRef(null);
+    const editorAttemptNavigationRef = useRef(null);
+
+    const registerEditorAttemptNavigation = useCallback((fn) => {
+        editorAttemptNavigationRef.current = fn;
+        return () => {
+            if (editorAttemptNavigationRef.current === fn) {
+                editorAttemptNavigationRef.current = null;
+            }
+        };
+    }, []);
+
+    const navigateTo = useCallback(async (nextView) => {
+        const runNavigation = async () => {
+            if (nextView === 'settings') setPreviousView(view);
+            setView(nextView);
+        };
+
+        const attemptNavigation = editorAttemptNavigationRef.current;
+        if (view === 'editor' && attemptNavigation) {
+            return await attemptNavigation({ type: 'switchView', view: nextView }, runNavigation);
+        }
+
+        await runNavigation();
+        return true;
+    }, [view]);
 
     const fetchProjects = useCallback(async () => {
         setLoading(true);
@@ -153,12 +188,24 @@ export const ProjectProvider = ({ children }) => {
         setImages([]);
         setCurrentProject(projectId);
         setView('gallery');
+        setEditorNavImages(null);
+        setGalleryFilters({
+            search: '',
+            annotated: 'all',
+            keypointsMin: '',
+            keypointsMax: '',
+            bboxesMin: '',
+            bboxesMax: ''
+        });
         fetchImages(projectId);
         fetchProjectConfig(projectId);
     };
 
-    const openEditor = (image) => {
+    const openEditor = (image, options = null) => {
         setSelectedImage(image);
+        if (options && Array.isArray(options.navImages)) {
+            setEditorNavImages(options.navImages);
+        }
         setView('editor');
     };
 
@@ -188,8 +235,7 @@ export const ProjectProvider = ({ children }) => {
     };
 
     const openSettings = () => {
-        setPreviousView(view);
-        setView('settings');
+        navigateTo('settings');
     };
 
     const exportProject = async (projectId, options) => {
@@ -339,8 +385,16 @@ export const ProjectProvider = ({ children }) => {
         }
     };
 
-    const deleteImage = async (projectId, imageId, navigateToNext = false, currentIndex = 0) => {
-        console.log('deleteImage called:', { projectId, imageId, navigateToNext, currentIndex });
+    const deleteImage = async (projectId, imageId, navigateToNextOrOptions = false, currentIndex = 0) => {
+        const opts = (navigateToNextOrOptions && typeof navigateToNextOrOptions === 'object')
+            ? navigateToNextOrOptions
+            : null;
+        const navigateToNext = opts ? !!opts.navigateToNext : !!navigateToNextOrOptions;
+        const effectiveCurrentIndex = opts && Number.isFinite(opts.currentIndex) ? opts.currentIndex : currentIndex;
+        const renumberAfterDelete = opts ? !!opts.renumberAfterDelete : false;
+        let renumberInfo = null;
+
+        console.log('deleteImage called:', { projectId, imageId, navigateToNext, currentIndex: effectiveCurrentIndex, renumberAfterDelete });
         try {
             const res = await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/images/${encodeURIComponent(imageId)}`, {
                 method: 'DELETE'
@@ -350,26 +404,47 @@ export const ProjectProvider = ({ children }) => {
             if (res.ok) {
                 if (navigateToNext) {
                     if (data.remainingCount > 0) {
-                        const targetIndex = Math.max(0, Math.min(currentIndex, data.remainingCount - 1));
+                        const targetIndex = Math.max(0, Math.min(effectiveCurrentIndex, data.remainingCount - 1));
                         console.log('Target index for navigation:', targetIndex);
-                        
+
+                        if (renumberAfterDelete) {
+                            try {
+                                const renumberRes = await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/renumber-all`, {
+                                    method: 'POST'
+                                });
+                                renumberInfo = await renumberRes.json();
+                                if (!renumberRes.ok) {
+                                    renumberInfo = { error: renumberInfo?.error || '重命名失败' };
+                                }
+                            } catch {
+                                renumberInfo = { error: '重命名失败：网络错误' };
+                            }
+                        }
+
                         const imagesRes = await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/images`);
                         const newImages = await imagesRes.json();
                         console.log('New images list:', newImages);
-                        
+
+                        const validation = validateSequentialNumbering(newImages);
+                        if (validation.checked && !validation.ok) {
+                            console.warn('Image numbering validation failed:', validation);
+                        }
+
                         if (newImages.length > targetIndex) {
-                            const newImageName = typeof newImages[targetIndex] === 'string' 
-                                ? newImages[targetIndex] 
-                                : newImages[targetIndex].name;
+                            const newImageName = getImageName(newImages[targetIndex]);
                             console.log('Setting selectedImage to:', newImageName);
-                            
+                            setImages(newImages);
+                            setSelectedImage(newImageName);
+                        } else if (newImages.length > 0) {
+                            const newImageName = getImageName(newImages[newImages.length - 1]);
                             setImages(newImages);
                             setSelectedImage(newImageName);
                         } else {
-                            setImages(newImages);
+                            setImages([]);
                             setView('gallery');
                             setSelectedImage(null);
                         }
+
                     } else {
                         console.log('No remaining images, going to gallery');
                         setImages([]);
@@ -382,7 +457,7 @@ export const ProjectProvider = ({ children }) => {
                 
                 await fetchProjects();
                 
-                return { success: true, message: data.message, remainingCount: data.remainingCount };
+                return { success: true, message: data.message, remainingCount: data.remainingCount, renumber: renumberInfo };
             } else {
                 return { success: false, message: data.error || '删除失败' };
             }
@@ -560,8 +635,13 @@ export const ProjectProvider = ({ children }) => {
         images,
         view,
         selectedImage,
+        editorNavImages,
+        galleryFilters,
+        setGalleryFilters,
         loading,
         setView,
+        navigateTo,
+        registerEditorAttemptNavigation,
         createProject,
         deleteProject,
         isProjectDeleting,

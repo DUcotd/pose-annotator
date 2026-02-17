@@ -4,7 +4,7 @@ import { Layers, Image as ImageIcon, Box, ArrowLeft, Settings, Home, Download, C
 import { ExportModal } from './ExportModal';
 
 export const MainLayout = ({ children }) => {
-    const { currentProject, view, goBack, setView, exportProject, openSettings } = useProject();
+    const { currentProject, view, goBack, navigateTo, exportProject } = useProject();
     const [notification, setNotification] = useState(null);
     const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -96,7 +96,7 @@ export const MainLayout = ({ children }) => {
                         <>
                             <NavButton
                                 active={view === 'gallery' || view === 'upload'}
-                                onClick={() => { setView('gallery'); setSidebarOpen(false); }}
+                                onClick={() => { navigateTo('gallery'); setSidebarOpen(false); }}
                                 icon={<ImageIcon size={18} />}
                                 label="图库"
                             />
@@ -112,14 +112,14 @@ export const MainLayout = ({ children }) => {
 
                             <NavButton
                                 active={view === 'export'}
-                                onClick={() => { setView('export'); setSidebarOpen(false); }}
+                                onClick={() => { navigateTo('export'); setSidebarOpen(false); }}
                                 icon={<Download size={18} />}
                                 label="导出数据集"
                             />
 
                             <NavButton
                                 active={view === 'training'}
-                                onClick={() => { setView('training'); setSidebarOpen(false); }}
+                                onClick={() => { navigateTo('training'); setSidebarOpen(false); }}
                                 icon={<Terminal size={18} />}
                                 label="模型训练"
                             />
@@ -129,7 +129,7 @@ export const MainLayout = ({ children }) => {
                 </nav>
 
                 <div className="sidebar-footer">
-                    <button className="nav-btn" onClick={() => { openSettings(); setSidebarOpen(false); }}>
+                    <button className="nav-btn" onClick={() => { navigateTo('settings'); setSidebarOpen(false); }}>
                         <Settings size={18} strokeWidth={2} />
                         <span>系统设置</span>
                     </button>

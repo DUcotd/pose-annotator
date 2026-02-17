@@ -1,12 +1,18 @@
 # Pose Annotator：目标检测与姿态关键点标注平台
 
-![Version](https://img.shields.io/badge/version-1.3.4-blue.svg)
+![Version](https://img.shields.io/badge/version-2.0.0-blue.svg)
 ![License](https://img.shields.io/badge/license-ISC-green.svg)
 ![Frontend](https://img.shields.io/badge/Frontend-React%20%2B%20Vite-61DAFB.svg)
 ![Backend](https://img.shields.io/badge/Backend-Node.js-339933.svg)
 ![Desktop](https://img.shields.io/badge/Desktop-Electron-47848F.svg)
 
 Pose Annotator 是一个面向计算机视觉数据制作流程的桌面标注工具，覆盖从数据集管理、标注、导出到训练/预标注的闭环。
+
+## 2.0 版本说明
+
+- 图库筛选体验升级：支持按“是否标注 / 关键点数量 / BBox 数量”组合筛选，并保持筛选后导航一致
+- 全局设置界面重构：按主题分组（项目目录 / Python / 环境），可折叠、状态提示更一致
+- 后端稳健性加固：settings 写入原子化、输入校验与错误返回更明确，便于后续扩展配置项
 
 ## 功能概览
 
@@ -72,7 +78,7 @@ npm run client:dev
 npm run electron:build
 ```
 
-构建产物位于 `dist/`，Windows 默认生成 NSIS 安装包（例如 `Pose Annotator Setup 1.3.4.exe`）。
+构建产物位于 `dist/`，Windows 默认生成 NSIS 安装包（例如 `Pose Annotator Setup 2.0.0.exe`）。
 
 ## 配置
 

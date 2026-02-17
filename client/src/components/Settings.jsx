@@ -9,7 +9,7 @@ import { createPortal } from 'react-dom';
 const API_BASE = 'http://localhost:5000/api';
 
 export const Settings = ({ onBack }) => {
-    const [activeTab, setActiveTab] = useState('python');
+    const [activeTab, setActiveTab] = useState('projects');
     const [pythonPath, setPythonPath] = useState('');
     const [isValidating, setIsValidating] = useState(false);
     const [validationResult, setValidationResult] = useState(null);
@@ -33,6 +33,8 @@ export const Settings = ({ onBack }) => {
     });
     const [detectedCuda, setDetectedCuda] = useState(null);
     const [expandedEnv, setExpandedEnv] = useState(null);
+    const [envListOpen, setEnvListOpen] = useState(true);
+    const [compatOpen, setCompatOpen] = useState(false);
 
     useEffect(() => {
         fetchSettings();
@@ -347,6 +349,40 @@ export const Settings = ({ onBack }) => {
                     {children}
                 </div>
             </div>
+        </div>
+    );
+
+    const CollapsibleSection = ({ title, isOpen, onToggle, children }) => (
+        <div style={{
+            background: 'rgba(0,0,0,0.18)',
+            border: '1px solid rgba(255,255,255,0.08)',
+            borderRadius: '18px',
+            overflow: 'hidden'
+        }}>
+            <button
+                type="button"
+                onClick={onToggle}
+                style={{
+                    width: '100%',
+                    padding: '14px 16px',
+                    background: 'transparent',
+                    border: 'none',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '12px',
+                    cursor: 'pointer',
+                    color: 'var(--text-primary)'
+                }}
+            >
+                <span style={{ fontSize: '14px', fontWeight: 800, color: 'var(--text-secondary)' }}>{title}</span>
+                {isOpen ? <ChevronUp size={18} style={{ color: 'var(--text-tertiary)' }} /> : <ChevronDown size={18} style={{ color: 'var(--text-tertiary)' }} />}
+            </button>
+            {isOpen ? (
+                <div style={{ padding: '16px' }}>
+                    {children}
+                </div>
+            ) : null}
         </div>
     );
 
@@ -1328,6 +1364,11 @@ export const Settings = ({ onBack }) => {
                 justifyContent: 'center',
                 background: 'rgba(0,0,0,0.7)',
                 backdropFilter: 'blur(4px)'
+            }} onMouseDown={(e) => {
+                if (e.target === e.currentTarget) {
+                    setShowCreateDialog(false);
+                    setCreateProgress(null);
+                }
             }}>
                 <div style={{
                     background: 'linear-gradient(135deg, rgba(30,35,45,0.98) 0%, rgba(20,25,35,0.98) 100%)',
@@ -1337,7 +1378,7 @@ export const Settings = ({ onBack }) => {
                     maxWidth: '90vw',
                     border: '1px solid rgba(255,255,255,0.1)',
                     boxShadow: '0 24px 48px rgba(0,0,0,0.4)'
-                }}>
+                }} onMouseDown={(e) => e.stopPropagation()}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
                         <h3 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
                             创建新 Python 环境
@@ -1615,6 +1656,46 @@ export const Settings = ({ onBack }) => {
                     backdropFilter: 'blur(10px)'
                 }}>
                     <button
+                        onClick={() => setActiveTab('projects')}
+                        style={{
+                            flex: 1,
+                            padding: '14px 24px',
+                            background: activeTab === 'projects'
+                                ? 'linear-gradient(135deg, rgba(77,161,255,0.18), rgba(52,211,153,0.12))'
+                                : 'transparent',
+                            border: activeTab === 'projects'
+                                ? '1px solid rgba(77,161,255,0.35)'
+                                : '1px solid transparent',
+                            borderRadius: '12px',
+                            color: activeTab === 'projects' ? '#4da1ff' : 'var(--text-secondary)',
+                            fontSize: '14px',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '10px',
+                            transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+                            position: 'relative',
+                            overflow: 'hidden'
+                        }}
+                        onMouseEnter={(e) => {
+                            if (activeTab !== 'projects') {
+                                e.currentTarget.style.background = 'rgba(255,255,255,0.03)';
+                                e.currentTarget.style.color = 'var(--text-primary)';
+                            }
+                        }}
+                        onMouseLeave={(e) => {
+                            if (activeTab !== 'projects') {
+                                e.currentTarget.style.background = 'transparent';
+                                e.currentTarget.style.color = 'var(--text-secondary)';
+                            }
+                        }}
+                    >
+                        <Database size={18} />
+                        <span>项目目录</span>
+                    </button>
+                    <button
                         onClick={() => setActiveTab('python')}
                         style={{
                             flex: 1,
@@ -1701,17 +1782,26 @@ export const Settings = ({ onBack }) => {
                     gap: '1.5rem',
                     marginBottom: '2rem'
                 }}>
+                    {activeTab === 'projects' && (
+                        <>
+                            {renderProjectsDir()}
+                        </>
+                    )}
+
                     {activeTab === 'python' && (
                         <>
                             {renderPythonConfig()}
-                            {renderProjectsDir()}
                         </>
                     )}
 
                     {activeTab === 'environments' && (
                         <>
-                            {renderEnvironments()}
-                            {renderCompatibilityMatrix()}
+                            <CollapsibleSection title="环境列表" isOpen={envListOpen} onToggle={() => setEnvListOpen(v => !v)}>
+                                {renderEnvironments()}
+                            </CollapsibleSection>
+                            <CollapsibleSection title="版本兼容性矩阵" isOpen={compatOpen} onToggle={() => setCompatOpen(v => !v)}>
+                                {renderCompatibilityMatrix()}
+                            </CollapsibleSection>
                         </>
                     )}
                 </div>

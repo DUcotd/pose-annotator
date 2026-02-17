@@ -5,17 +5,59 @@ const PythonEnvService = require('../services/PythonEnvService');
 
 function createSettingsRouter() {
   const router = express.Router();
+  const fs = require('fs');
+
+  const normalizePathValue = (v) => {
+    if (v === null) return null;
+    if (v === undefined) return undefined;
+    if (typeof v !== 'string') return undefined;
+    const s = v.trim();
+    return s ? s : null;
+  };
+
+  const isExistingDir = (p) => {
+    try {
+      return !!p && fs.existsSync(p) && fs.statSync(p).isDirectory();
+    } catch {
+      return false;
+    }
+  };
+
+  const isExistingFile = (p) => {
+    try {
+      return !!p && fs.existsSync(p) && fs.statSync(p).isFile();
+    } catch {
+      return false;
+    }
+  };
 
   router.get('/', (req, res) => {
     const config = settings.load();
-    res.json(config);
+    res.json({ success: true, ...config });
   });
 
   router.post('/', (req, res) => {
-    const { pythonPath, projectsDir } = req.body;
+    if (!req.body || typeof req.body !== 'object') {
+      return res.status(400).json({ success: false, error: '请求体格式错误' });
+    }
+
+    const pythonPath = normalizePathValue(req.body.pythonPath);
+    const projectsDir = normalizePathValue(req.body.projectsDir);
     const updates = {};
-    if (pythonPath !== undefined) updates.pythonPath = pythonPath;
-    if (projectsDir !== undefined) updates.projectsDir = projectsDir;
+
+    if (pythonPath !== undefined) {
+      if (pythonPath && !isExistingFile(pythonPath)) {
+        return res.status(400).json({ success: false, error: 'Python 路径不存在或不是文件' });
+      }
+      updates.pythonPath = pythonPath;
+    }
+
+    if (projectsDir !== undefined) {
+      if (projectsDir && !isExistingDir(projectsDir)) {
+        return res.status(400).json({ success: false, error: '项目目录不存在或不是文件夹' });
+      }
+      updates.projectsDir = projectsDir;
+    }
     
     if (settings.save(updates)) {
       res.json({ success: true, message: 'Settings saved', ...updates });
@@ -28,6 +70,7 @@ function createSettingsRouter() {
     const projectsDir = settings.getProjectsDir();
     const defaultName = settings.getDefaultProjectsDirName();
     res.json({ 
+      success: true,
       projectsDir, 
       defaultProjectsDirName: defaultName,
       hasCustomDir: !!projectsDir 
@@ -35,13 +78,16 @@ function createSettingsRouter() {
   });
 
   router.post('/projects-dir', (req, res) => {
-    const { projectsDir } = req.body;
-    const fs = require('fs');
-    
-    if (projectsDir && !fs.existsSync(projectsDir)) {
+    if (!req.body || typeof req.body !== 'object') {
+      return res.status(400).json({ success: false, error: '请求体格式错误' });
+    }
+
+    const projectsDir = normalizePathValue(req.body.projectsDir);
+
+    if (projectsDir && !isExistingDir(projectsDir)) {
       return res.status(400).json({ 
         success: false, 
-        error: '指定的目录不存在' 
+        error: '指定的目录不存在或不是文件夹' 
       });
     }
     
@@ -57,9 +103,15 @@ function createSettingsRouter() {
   });
 
   router.post('/validate-python', async (req, res) => {
-    const { pythonPath } = req.body;
+    if (!req.body || typeof req.body !== 'object') {
+      return res.status(400).json({ success: false, valid: false, error: '请求体格式错误' });
+    }
+    const pythonPath = normalizePathValue(req.body.pythonPath);
+    if (!pythonPath) {
+      return res.status(400).json({ success: false, valid: false, error: '请提供 Python 路径' });
+    }
     const result = await PythonEnvService.validatePython(pythonPath);
-    res.json(result);
+    res.json({ success: true, ...result });
   });
 
   router.get('/scan-envs', async (req, res) => {

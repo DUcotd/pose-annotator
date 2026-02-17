@@ -1,10 +1,10 @@
 {
   "name": "dataset_web",
-  "version": "1.3.4",
+  "version": "2.0.0",
   "description": "",
   "main": "electron-main.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "node --test server/test/*.test.js client/src/utils/*.test.js",
     "start": "node server/index.js",
     "electron:dev": "concurrently \"npm run client:dev\" \"electron .\"",
     "client:dev": "npm run dev --prefix client",

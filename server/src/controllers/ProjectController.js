@@ -303,14 +303,21 @@ function createProjectRouter(projectsDir) {
     fs.readdir(paths.uploads, (err, files) => {
       if (err) return res.status(500).json({ error: 'Unable to scan directory' });
 
-      const imageFiles = files.filter(file => /\.(jpg|jpeg|png|gif|webp)$/i.test(file));
+      const imageFiles = files
+        .filter(file => /\.(jpg|jpeg|png|gif|webp)$/i.test(file))
+        .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
       const imageList = imageFiles.map(file => {
         const annotationPath = path.join(paths.annotations, `${file}.json`);
         let hasAnnotation = false;
+        let keypointCount = 0;
+        let bboxCount = 0;
         if (fs.existsSync(annotationPath)) {
           try {
             const data = JSON.parse(fs.readFileSync(annotationPath));
-            hasAnnotation = data.some(a => a.type === 'bbox' || a.type === 'keypoint');
+            const arr = Array.isArray(data) ? data : [];
+            keypointCount = arr.filter(a => a && a.type === 'keypoint').length;
+            bboxCount = arr.filter(a => a && a.type === 'bbox').length;
+            hasAnnotation = arr.some(a => a && (a.type === 'bbox' || a.type === 'keypoint'));
           } catch (e) { }
         }
 
@@ -320,7 +327,7 @@ function createProjectRouter(projectsDir) {
           size = stats.size;
         } catch (e) { }
 
-        return { name: file, hasAnnotation, size };
+        return { name: file, hasAnnotation, keypointCount, bboxCount, size };
       });
 
       res.json(imageList);
