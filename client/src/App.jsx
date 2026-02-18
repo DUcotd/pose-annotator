@@ -22,7 +22,7 @@ function App() {
 }
 
 const AppContent = () => {
-  const { view, projects, createProject, selectProject, deleteProject, currentProject, images, selectedImage, openEditor, goBack, refreshImages, openSettings } = useProject();
+  const { view, projects, createProject, selectProject, deleteProject, currentProject, images, selectedImage, editorReloadToken, openEditor, goBack, refreshImages, openSettings } = useProject();
 
   if (view === 'dashboard') {
     return (
@@ -109,7 +109,7 @@ const AppContent = () => {
     return (
       <div style={{ height: '100%', overflow: 'hidden' }}>
         <AnnotationEditor
-          key={selectedImage}
+          key={`${selectedImage}-${editorReloadToken}`}
           image={selectedImage}
           projectId={currentProject}
           onBack={goBack}

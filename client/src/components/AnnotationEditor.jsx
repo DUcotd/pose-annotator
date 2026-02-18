@@ -8,7 +8,7 @@ import { ClassInputModal } from './ClassInputModal';
 import { ClassManagerModal } from './ClassManagerModal';
 
 export function AnnotationEditor({ image, projectId, onBack }) {
-    const { images, editorNavImages, openEditor, goToTraining, currentProject, exportProject, deleteImage, predictSingleImage, getPredictionSettings, registerEditorAttemptNavigation } = useProject();
+    const { images, editorNavImages, editorReloadToken, openEditor, goToTraining, currentProject, exportProject, deleteImage, predictSingleImage, getPredictionSettings, registerEditorAttemptNavigation } = useProject();
     const session = useAnnotationSession({ projectId, imageId: image });
     const annotations = session.annotations;
     const setAnnotations = session.setAnnotations;
@@ -1372,7 +1372,7 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                     <div className="editor-image-wrapper">
                         <img
                             ref={imageRef}
-                            src={`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/uploads/${encodeURIComponent(image)}`}
+                            src={`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/uploads/${encodeURIComponent(image)}?v=${encodeURIComponent(editorReloadToken || 0)}`}
                             alt="Target"
                             key={image}
                             onLoad={handleImageLoad}

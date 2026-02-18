@@ -13,6 +13,7 @@ export const ProjectProvider = ({ children }) => {
     const [previousView, setPreviousView] = useState('dashboard');
     const [selectedImage, setSelectedImage] = useState(null);
     const [editorNavImages, setEditorNavImages] = useState(null);
+    const [editorReloadToken, setEditorReloadToken] = useState(0);
     const [galleryFilters, setGalleryFilters] = useState({
         search: '',
         annotated: 'all',
@@ -434,15 +435,24 @@ export const ProjectProvider = ({ children }) => {
                             const newImageName = getImageName(newImages[targetIndex]);
                             console.log('Setting selectedImage to:', newImageName);
                             setImages(newImages);
+                            setEditorNavImages(newImages);
+                            if (newImageName === imageId) {
+                                setEditorReloadToken(prev => prev + 1);
+                            }
                             setSelectedImage(newImageName);
                         } else if (newImages.length > 0) {
                             const newImageName = getImageName(newImages[newImages.length - 1]);
                             setImages(newImages);
+                            setEditorNavImages(newImages);
+                            if (newImageName === imageId) {
+                                setEditorReloadToken(prev => prev + 1);
+                            }
                             setSelectedImage(newImageName);
                         } else {
                             setImages([]);
                             setView('gallery');
                             setSelectedImage(null);
+                            setEditorNavImages(null);
                         }
 
                     } else {
@@ -450,6 +460,7 @@ export const ProjectProvider = ({ children }) => {
                         setImages([]);
                         setView('gallery');
                         setSelectedImage(null);
+                        setEditorNavImages(null);
                     }
                 } else {
                     await fetchImages(projectId);
@@ -636,6 +647,7 @@ export const ProjectProvider = ({ children }) => {
         view,
         selectedImage,
         editorNavImages,
+        editorReloadToken,
         galleryFilters,
         setGalleryFilters,
         loading,
