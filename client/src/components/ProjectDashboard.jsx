@@ -76,24 +76,19 @@ export const ProjectDashboard = ({ projects = [], onCreateProject, onSelectProje
     const closeNotification = () => setNotification(null);
 
     return (
-        <div style={{
-            padding: '0 3rem 0 3rem',
-            maxWidth: '1600px',
-            margin: '0 auto',
-            height: '100%',
-            display: 'flex',
-            flexDirection: 'column'
-        }}>
-            <HeroSection
-                onCreate={() => setIsCreating(true)}
-                onImport={() => setIsImporting(true)}
-                onGuide={() => setIsGuideOpen(true)}
-            />
+        <div className="dashboard-shell">
+            <div className="dashboard-top">
+                <HeroSection
+                    onCreate={() => setIsCreating(true)}
+                    onImport={() => setIsImporting(true)}
+                    onGuide={() => setIsGuideOpen(true)}
+                />
 
-            <DashboardStats projects={projects} />
+                <DashboardStats projects={projects} />
+            </div>
 
-            <div style={{ flex: 1, overflowY: 'auto', paddingBottom: '3rem', paddingRight: '12px' }} className="custom-scrollbar">
-                <div className="project-grid-modern" style={{ marginTop: '1rem' }}>
+            <div className="dashboard-scroll custom-scrollbar">
+                <div className="project-grid-modern">
                     {projects.length === 0 ? (
                         <EmptyState onCreate={() => setIsCreating(true)} />
                     ) : (

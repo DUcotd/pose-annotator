@@ -460,364 +460,364 @@ export const DatasetExport = () => {
 
                 {/* Main Content Grid */}
                 <div className="export-layout-grid">
-
-                    {/* Data Options */}
-                    <div className="export-layout-data">
-                        <SectionCard icon={Database} title="数据配置" color="99,102,241">
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                                <Toggle
-                                    checked={includeVisibility}
-                                    onChange={(e) => {
-                                        setIncludeVisibility(e.target.checked);
-                                        saveSettings({ includeVisibility: e.target.checked });
-                                    }}
-                                    label="包含可见性标志 (v=2)"
-                                    desc="在标签文件中包含关键点可见性信息"
-                                />
-                                <Toggle
-                                    checked={includeUnannotated}
-                                    onChange={(e) => {
-                                        setIncludeUnannotated(e.target.checked);
-                                        saveSettings({ includeUnannotated: e.target.checked });
-                                    }}
-                                    label="包含未标注数据"
-                                    desc="为未标注图片生成空标签文件"
-                                />
-                            </div>
-
-                            <div style={{ marginTop: '1.5rem', paddingTop: '1.5rem', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '1rem' }}>
-                                    <Target size={18} style={{ color: 'rgb(168,85,247)' }} />
-                                    <span style={{ fontSize: '14px', fontWeight: 600 }}>关键点数量</span>
-                                </div>
-                                <div style={{ display: 'flex', gap: '16px', alignItems: 'center', background: 'rgba(0,0,0,0.2)', padding: '1.25rem', borderRadius: '16px' }}>
-                                    <input
-                                        type="number"
-                                        min="1"
-                                        max="100"
-                                        value={numKeypoints}
+                    <div className="export-layout-left">
+                        <div className="export-layout-data">
+                            <SectionCard icon={Database} title="数据配置" color="99,102,241">
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                                    <Toggle
+                                        checked={includeVisibility}
                                         onChange={(e) => {
-                                            const val = parseInt(e.target.value) || 17;
-                                            setNumKeypoints(val);
-                                            saveSettings({ numKeypoints: val });
+                                            setIncludeVisibility(e.target.checked);
+                                            saveSettings({ includeVisibility: e.target.checked });
                                         }}
-                                        style={{
-                                            width: '90px',
-                                            height: '52px',
-                                            textAlign: 'center',
-                                            background: 'rgba(255,255,255,0.06)',
-                                            fontWeight: 800,
-                                            fontSize: '1.25rem',
-                                            borderRadius: '12px',
-                                            border: '1px solid rgba(255,255,255,0.1)',
-                                            color: 'white',
-                                            outline: 'none'
-                                        }}
+                                        label="包含可见性标志 (v=2)"
+                                        desc="在标签文件中包含关键点可见性信息"
                                     />
-                                    <div>
-                                        <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>COCO 标准关键点</div>
-                                        <div style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>默认为 17 点（COCO 格式）</div>
-                                    </div>
+                                    <Toggle
+                                        checked={includeUnannotated}
+                                        onChange={(e) => {
+                                            setIncludeUnannotated(e.target.checked);
+                                            saveSettings({ includeUnannotated: e.target.checked });
+                                        }}
+                                        label="包含未标注数据"
+                                        desc="为未标注图片生成空标签文件"
+                                    />
                                 </div>
-                            </div>
-                        </SectionCard>
-                    </div>
 
-                    {/* Dataset Split */}
-                    <div className="export-layout-split">
-                    <SectionCard icon={Layout} title="数据集划分" color="251,191,36">
-                        <div style={{ background: 'rgba(0,0,0,0.2)', padding: '1.5rem', borderRadius: '20px', border: '1px solid rgba(255,255,255,0.04)' }}>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', marginBottom: '1.5rem' }}>
-                                {[
-                                    { label: '训练集', sub: 'Train', value: trainRatio, setter: handleTrainChange, color: '34,197,94', gradient: 'linear-gradient(135deg, #22c55e, #4ade80)' },
-                                    { label: '验证集', sub: 'Val', value: valRatio, setter: handleValChange, color: '251,191,36', gradient: 'linear-gradient(135deg, #f59e0b, #fbbf24)' },
-                                    { label: '测试集', sub: 'Test', value: testRatio, setter: handleTestChange, color: '59,130,246', gradient: 'linear-gradient(135deg, #3b82f6, #60a5fa)' }
-                                ].map(item => (
-                                    <div key={item.label} style={{ textAlign: 'center' }}>
-                                        <div style={{ fontSize: '11px', color: `rgb(${item.color})`, fontWeight: 800, marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                                            {item.sub}
-                                        </div>
-                                        <div style={{ position: 'relative', display: 'inline-block' }}>
-                                            <input
-                                                type="text"
-                                                inputMode="numeric"
-                                                pattern="[0-9]*"
-                                                min="0" max="100"
-                                                value={item.value}
-                                                onChange={(e) => {
-                                                    const val = e.target.value.replace(/[^0-9]/g, '');
-                                                    if (val === '' || (parseInt(val) >= 0 && parseInt(val) <= 100)) {
-                                                        item.setter(val);
-                                                    }
-                                                }}
-                                                style={{
-                                                    width: '72px',
-                                                    background: 'rgba(255,255,255,0.05)',
-                                                    border: `1px solid rgba(255,255,255,0.1)`,
-                                                    color: 'white',
-                                                    textAlign: 'center',
-                                                    outline: 'none',
-                                                    fontSize: '1.25rem',
-                                                    fontWeight: 700,
-                                                    borderRadius: '12px',
-                                                    padding: '10px 8px'
-                                                }}
-                                            />
-                                            <span style={{ position: 'absolute', right: '-14px', top: '50%', transform: 'translateY(-50%)', fontSize: '13px', color: 'var(--text-tertiary)' }}>%</span>
-                                        </div>
-                                        <div style={{
-                                            marginTop: '10px',
-                                            height: '6px',
-                                            background: 'rgba(255,255,255,0.08)',
-                                            borderRadius: '3px',
-                                            overflow: 'hidden'
-                                        }}>
-                                            <div style={{
-                                                width: `${item.value}%`,
-                                                height: '100%',
-                                                background: item.gradient,
-                                                transition: 'width 0.4s ease',
-                                                borderRadius: '3px'
-                                            }} />
-                                        </div>
+                                <div style={{ marginTop: '1.5rem', paddingTop: '1.5rem', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '1rem' }}>
+                                        <Target size={18} style={{ color: 'rgb(168,85,247)' }} />
+                                        <span style={{ fontSize: '14px', fontWeight: 600 }}>关键点数量</span>
                                     </div>
-                                ))}
-                            </div>
-
-                            {/* Visual Bar */}
-                            <div style={{
-                                position: 'relative',
-                                padding: '4px 0',
-                                marginBottom: '1rem'
-                            }}>
-                                <div style={{
-                                    width: '100%',
-                                    height: '16px',
-                                    background: 'rgba(255,255,255,0.05)',
-                                    borderRadius: '8px',
-                                    overflow: 'hidden',
-                                    display: 'flex',
-                                    boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.5)'
-                                }}>
-                                    <div style={{ width: `${trainRatio}%`, background: 'linear-gradient(90deg, #22c55e, #4ade80)', transition: 'width 0.5s ease' }} />
-                                    <div style={{ width: `${valRatio}%`, background: 'linear-gradient(90deg, #f59e0b, #fbbf24)', transition: 'width 0.5s ease' }} />
-                                    <div style={{ width: `${testRatio}%`, background: 'linear-gradient(90deg, #3b82f6, #60a5fa)', transition: 'width 0.5s ease' }} />
-                                </div>
-                            </div>
-
-                            {!isRatioValid && (
-                                <div style={{
-                                    color: '#f87171',
-                                    fontSize: '13px',
-                                    marginTop: '1rem',
-                                    padding: '12px',
-                                    background: 'rgba(239, 68, 68, 0.1)',
-                                    borderRadius: '12px',
-                                    textAlign: 'center',
-                                    fontWeight: 600
-                                }}>
-                                    ⚠️ 比例之和必须等于 100% (当前: {totalRatio}%)
-                                </div>
-                            )}
-                        </div>
-                    </SectionCard>
-                    </div>
-
-                    {/* Export Options */}
-                    <div className="export-layout-settings">
-                        <SectionCard icon={Download} title="导出设置" color="34,197,94">
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                                <Toggle
-                                    checked={shuffleData}
-                                    onChange={(e) => {
-                                        setShuffleData(e.target.checked);
-                                        saveSettings({ shuffle: e.target.checked });
-                                    }}
-                                    label="随机打乱数据"
-                                    desc="使用 Fisher-Yates 算法确保分布均匀"
-                                />
-
-                                <div>
-                                    <div style={{ fontSize: '13px', fontWeight: 600, marginBottom: '10px', color: 'var(--text-secondary)' }}>
-                                        自定义导出路径
-                                    </div>
-                                    <div style={{ display: 'flex', gap: '12px' }}>
+                                    <div style={{ display: 'flex', gap: '16px', alignItems: 'center', background: 'rgba(0,0,0,0.2)', padding: '1.25rem', borderRadius: '16px' }}>
                                         <input
-                                            type="text"
-                                            placeholder="默认导出至项目根目录"
-                                            value={customPath}
-                                            readOnly
+                                            type="number"
+                                            min="1"
+                                            max="100"
+                                            value={numKeypoints}
+                                            onChange={(e) => {
+                                                const val = parseInt(e.target.value) || 17;
+                                                setNumKeypoints(val);
+                                                saveSettings({ numKeypoints: val });
+                                            }}
                                             style={{
-                                                flex: 1,
+                                                width: '90px',
                                                 height: '52px',
-                                                padding: '0 18px',
-                                                fontSize: '13px',
-                                                background: 'rgba(0,0,0,0.25)',
+                                                textAlign: 'center',
+                                                background: 'rgba(255,255,255,0.06)',
+                                                fontWeight: 800,
+                                                fontSize: '1.25rem',
+                                                borderRadius: '12px',
                                                 border: '1px solid rgba(255,255,255,0.1)',
-                                                borderRadius: '14px',
-                                                color: 'var(--text-secondary)',
+                                                color: 'white',
                                                 outline: 'none'
                                             }}
                                         />
-                                        <button
-                                            onClick={handleSelectFolder}
-                                            style={{
-                                                width: '52px',
-                                                height: '52px',
-                                                padding: 0,
-                                                borderRadius: '14px',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'center',
-                                                background: 'rgba(255,255,255,0.06)',
-                                                border: '1px solid rgba(255,255,255,0.1)',
-                                                color: 'var(--text-secondary)',
-                                                cursor: 'pointer',
-                                                transition: 'all 0.2s ease'
-                                            }}
-                                            title="选择保存位置"
-                                        >
-                                            <FolderOpen size={20} />
-                                        </button>
+                                        <div>
+                                            <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>COCO 标准关键点</div>
+                                            <div style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>默认为 17 点（COCO 格式）</div>
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
-                        </SectionCard>
-                    </div>
+                            </SectionCard>
+                        </div>
 
-                    {/* Collaboration */}
-                    <div className="export-layout-collab">
-                        <SectionCard icon={Share2} title="项目协作" color="77,161,255">
-                            <div style={{
-                                background: 'rgba(0,0,0,0.2)',
-                                padding: '1.5rem',
-                                borderRadius: '18px',
-                                border: '1px solid rgba(255,255,255,0.04)'
-                            }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
+                        <div className="export-layout-split">
+                            <SectionCard icon={Layout} title="数据集划分" color="251,191,36">
+                                <div style={{ background: 'rgba(0,0,0,0.2)', padding: '1.5rem', borderRadius: '20px', border: '1px solid rgba(255,255,255,0.04)' }}>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', marginBottom: '1.5rem' }}>
+                                        {[
+                                            { label: '训练集', sub: 'Train', value: trainRatio, setter: handleTrainChange, color: '34,197,94', gradient: 'linear-gradient(135deg, #22c55e, #4ade80)' },
+                                            { label: '验证集', sub: 'Val', value: valRatio, setter: handleValChange, color: '251,191,36', gradient: 'linear-gradient(135deg, #f59e0b, #fbbf24)' },
+                                            { label: '测试集', sub: 'Test', value: testRatio, setter: handleTestChange, color: '59,130,246', gradient: 'linear-gradient(135deg, #3b82f6, #60a5fa)' }
+                                        ].map(item => (
+                                            <div key={item.label} style={{ textAlign: 'center' }}>
+                                                <div style={{ fontSize: '11px', color: `rgb(${item.color})`, fontWeight: 800, marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                                    {item.sub}
+                                                </div>
+                                                <div style={{ position: 'relative', display: 'inline-block' }}>
+                                                    <input
+                                                        type="text"
+                                                        inputMode="numeric"
+                                                        pattern="[0-9]*"
+                                                        min="0" max="100"
+                                                        value={item.value}
+                                                        onChange={(e) => {
+                                                            const val = e.target.value.replace(/[^0-9]/g, '');
+                                                            if (val === '' || (parseInt(val) >= 0 && parseInt(val) <= 100)) {
+                                                                item.setter(val);
+                                                            }
+                                                        }}
+                                                        style={{
+                                                            width: '72px',
+                                                            background: 'rgba(255,255,255,0.05)',
+                                                            border: `1px solid rgba(255,255,255,0.1)`,
+                                                            color: 'white',
+                                                            textAlign: 'center',
+                                                            outline: 'none',
+                                                            fontSize: '1.25rem',
+                                                            fontWeight: 700,
+                                                            borderRadius: '12px',
+                                                            padding: '10px 8px'
+                                                        }}
+                                                    />
+                                                    <span style={{ position: 'absolute', right: '-14px', top: '50%', transform: 'translateY(-50%)', fontSize: '13px', color: 'var(--text-tertiary)' }}>%</span>
+                                                </div>
+                                                <div style={{
+                                                    marginTop: '10px',
+                                                    height: '6px',
+                                                    background: 'rgba(255,255,255,0.08)',
+                                                    borderRadius: '3px',
+                                                    overflow: 'hidden'
+                                                }}>
+                                                    <div style={{
+                                                        width: `${item.value}%`,
+                                                        height: '100%',
+                                                        background: item.gradient,
+                                                        transition: 'width 0.4s ease',
+                                                        borderRadius: '3px'
+                                                    }} />
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+
                                     <div style={{
-                                        width: '44px',
-                                        height: '44px',
-                                        borderRadius: '12px',
-                                        background: 'linear-gradient(135deg, rgba(77,161,255,0.2), rgba(96,165,250,0.1))',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        color: '#60a5fa'
+                                        position: 'relative',
+                                        padding: '4px 0',
+                                        marginBottom: '1rem'
                                     }}>
-                                        <Share2 size={20} />
+                                        <div style={{
+                                            width: '100%',
+                                            height: '16px',
+                                            background: 'rgba(255,255,255,0.05)',
+                                            borderRadius: '8px',
+                                            overflow: 'hidden',
+                                            display: 'flex',
+                                            boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.5)'
+                                        }}>
+                                            <div style={{ width: `${trainRatio}%`, background: 'linear-gradient(90deg, #22c55e, #4ade80)', transition: 'width 0.5s ease' }} />
+                                            <div style={{ width: `${valRatio}%`, background: 'linear-gradient(90deg, #f59e0b, #fbbf24)', transition: 'width 0.5s ease' }} />
+                                            <div style={{ width: `${testRatio}%`, background: 'linear-gradient(90deg, #3b82f6, #60a5fa)', transition: 'width 0.5s ease' }} />
+                                        </div>
                                     </div>
-                                    <div>
-                                        <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)' }}>导出协作包 (ZIP)</div>
-                                        <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '2px' }}>打包项目数据，方便分享给他人</div>
-                                    </div>
-                                </div>
-                                <button
-                                    onClick={handleCollaborationExport}
-                                    disabled={isCollaborationExporting}
-                                    style={{
-                                        width: '100%',
-                                        height: '48px',
-                                        borderRadius: '12px',
-                                        background: isCollaborationExporting ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.04)',
-                                        border: '1px solid rgba(255,255,255,0.1)',
-                                        color: isCollaborationExporting ? 'var(--text-tertiary)' : 'var(--text-primary)',
-                                        fontSize: '14px',
-                                        fontWeight: 600,
-                                        cursor: isCollaborationExporting ? 'not-allowed' : 'pointer',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        gap: '8px',
-                                        transition: 'all 0.2s ease'
-                                    }}
-                                >
-                                    {isCollaborationExporting ? (
-                                        <>
-                                            <Loader2 size={16} className="spin" /> 正在导出...
-                                        </>
-                                    ) : (
-                                        <>
-                                            <Share2 size={16} /> 开始导出
-                                        </>
-                                    )}
-                                </button>
 
-                            </div>
-                        </SectionCard>
+                                    {!isRatioValid && (
+                                        <div style={{
+                                            color: '#f87171',
+                                            fontSize: '13px',
+                                            marginTop: '1rem',
+                                            padding: '12px',
+                                            background: 'rgba(239, 68, 68, 0.1)',
+                                            borderRadius: '12px',
+                                            textAlign: 'center',
+                                            fontWeight: 600
+                                        }}>
+                                            ⚠️ 比例之和必须等于 100% (当前: {totalRatio}%)
+                                        </div>
+                                    )}
+                                </div>
+                            </SectionCard>
+                        </div>
+
+                        <div className="export-layout-collab">
+                            <SectionCard icon={Share2} title="项目协作" color="77,161,255">
+                                <div style={{
+                                    background: 'rgba(0,0,0,0.2)',
+                                    padding: '1.5rem',
+                                    borderRadius: '18px',
+                                    border: '1px solid rgba(255,255,255,0.04)'
+                                }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
+                                        <div style={{
+                                            width: '44px',
+                                            height: '44px',
+                                            borderRadius: '12px',
+                                            background: 'linear-gradient(135deg, rgba(77,161,255,0.2), rgba(96,165,250,0.1))',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            color: '#60a5fa'
+                                        }}>
+                                            <Share2 size={20} />
+                                        </div>
+                                        <div>
+                                            <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)' }}>导出协作包 (ZIP)</div>
+                                            <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '2px' }}>打包项目数据，方便分享给他人</div>
+                                        </div>
+                                    </div>
+                                    <button
+                                        onClick={handleCollaborationExport}
+                                        disabled={isCollaborationExporting}
+                                        style={{
+                                            width: '100%',
+                                            height: '48px',
+                                            borderRadius: '12px',
+                                            background: isCollaborationExporting ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.04)',
+                                            border: '1px solid rgba(255,255,255,0.1)',
+                                            color: isCollaborationExporting ? 'var(--text-tertiary)' : 'var(--text-primary)',
+                                            fontSize: '14px',
+                                            fontWeight: 600,
+                                            cursor: isCollaborationExporting ? 'not-allowed' : 'pointer',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            gap: '8px',
+                                            transition: 'all 0.2s ease'
+                                        }}
+                                    >
+                                        {isCollaborationExporting ? (
+                                            <>
+                                                <Loader2 size={16} className="spin" /> 正在导出...
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Share2 size={16} /> 开始导出
+                                            </>
+                                        )}
+                                    </button>
+
+                                </div>
+                            </SectionCard>
+                        </div>
                     </div>
 
-                </div>
+                    <div className="export-layout-right">
+                        <div className="export-layout-settings">
+                            <SectionCard icon={Download} title="导出设置" color="34,197,94">
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                    <Toggle
+                                        checked={shuffleData}
+                                        onChange={(e) => {
+                                            setShuffleData(e.target.checked);
+                                            saveSettings({ shuffle: e.target.checked });
+                                        }}
+                                        label="随机打乱数据"
+                                        desc="使用 Fisher-Yates 算法确保分布均匀"
+                                    />
 
-                {/* Export Button */}
-                <div style={{ marginTop: '2rem', padding: '0 0.5rem' }}>
-                    <button
-                        onClick={handleExport}
-                        disabled={isExporting || !isRatioValid}
-                        style={{
-                            width: '100%',
-                            height: '64px',
-                            fontSize: '1.15rem',
-                            fontWeight: 800,
-                            borderRadius: '20px',
-                            justifyContent: 'center',
-                            gap: '14px',
-                            background: isExporting || !isRatioValid
-                                ? 'rgba(255,255,255,0.05)'
-                                : 'linear-gradient(135deg, #22c55e, #4ade80)',
-                            border: 'none',
-                            color: isExporting || !isRatioValid ? 'var(--text-tertiary)' : 'white',
-                            cursor: isExporting || !isRatioValid ? 'not-allowed' : 'pointer',
-                            boxShadow: isRatioValid ? '0 8px 32px rgba(34,197,94,0.25)' : 'none',
-                            transition: 'all 0.3s ease'
-                        }}
-                    >
-                        {isExporting ? (
-                            <>
-                                <Loader2 size={22} className="spin" /> 正在导出数据集...
-                            </>
-                        ) : (
-                            <>
-                                <Download size={22} /> 执行数据集导出
-                            </>
-                        )}
-                    </button>
+                                    <div>
+                                        <div style={{ fontSize: '13px', fontWeight: 600, marginBottom: '10px', color: 'var(--text-secondary)' }}>
+                                            自定义导出路径
+                                        </div>
+                                        <div style={{ display: 'flex', gap: '12px' }}>
+                                            <input
+                                                type="text"
+                                                placeholder="默认导出至项目根目录"
+                                                value={customPath}
+                                                readOnly
+                                                style={{
+                                                    flex: 1,
+                                                    height: '52px',
+                                                    padding: '0 18px',
+                                                    fontSize: '13px',
+                                                    background: 'rgba(0,0,0,0.25)',
+                                                    border: '1px solid rgba(255,255,255,0.1)',
+                                                    borderRadius: '14px',
+                                                    color: 'var(--text-secondary)',
+                                                    outline: 'none'
+                                                }}
+                                            />
+                                            <button
+                                                onClick={handleSelectFolder}
+                                                style={{
+                                                    width: '52px',
+                                                    height: '52px',
+                                                    padding: 0,
+                                                    borderRadius: '14px',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                    background: 'rgba(255,255,255,0.06)',
+                                                    border: '1px solid rgba(255,255,255,0.1)',
+                                                    color: 'var(--text-secondary)',
+                                                    cursor: 'pointer',
+                                                    transition: 'all 0.2s ease'
+                                                }}
+                                                title="选择保存位置"
+                                            >
+                                                <FolderOpen size={20} />
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </SectionCard>
+                        </div>
 
-                    <button
-                        onClick={handleZipExport}
-                        disabled={isZipExporting || !isRatioValid}
-                        style={{
-                            width: '100%',
-                            height: '64px',
-                            fontSize: '1.15rem',
-                            fontWeight: 800,
-                            borderRadius: '20px',
-                            justifyContent: 'center',
-                            gap: '14px',
-                            marginTop: '1rem',
-                            background: isZipExporting || !isRatioValid
-                                ? 'rgba(255,255,255,0.05)'
-                                : 'linear-gradient(135deg, #3b82f6, #60a5fa)',
-                            border: 'none',
-                            color: isZipExporting || !isRatioValid ? 'var(--text-tertiary)' : 'white',
-                            cursor: isZipExporting || !isRatioValid ? 'not-allowed' : 'pointer',
-                            boxShadow: isRatioValid ? '0 8px 32px rgba(59,130,246,0.25)' : 'none',
-                            transition: 'all 0.3s ease'
-                        }}
-                    >
-                        {isZipExporting ? (
-                            <>
-                                <Loader2 size={22} className="spin" /> 正在导出ZIP数据集...
-                            </>
-                        ) : (
-                            <>
-                                <Download size={22} /> 导出为ZIP数据集
-                            </>
-                        )}
-                    </button>
-                    <p style={{ textAlign: 'center', marginTop: '1rem', color: 'var(--text-tertiary)', fontSize: '13px' }}>
-                        导出过程可能需要几秒钟，请稍候
-                    </p>
+                        <div className="export-layout-actions">
+                            <SectionCard icon={TrendingUp} title="导出操作" color="59,130,246" gradient="linear-gradient(135deg, rgba(59,130,246,0.14), rgba(96,165,250,0.08))">
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                    <button
+                                        onClick={handleExport}
+                                        disabled={isExporting || !isRatioValid}
+                                        style={{
+                                            width: '100%',
+                                            height: '64px',
+                                            fontSize: '1.05rem',
+                                            fontWeight: 800,
+                                            borderRadius: '18px',
+                                            justifyContent: 'center',
+                                            gap: '14px',
+                                            background: isExporting || !isRatioValid
+                                                ? 'rgba(255,255,255,0.05)'
+                                                : 'linear-gradient(135deg, #22c55e, #4ade80)',
+                                            border: 'none',
+                                            color: isExporting || !isRatioValid ? 'var(--text-tertiary)' : 'white',
+                                            cursor: isExporting || !isRatioValid ? 'not-allowed' : 'pointer',
+                                            boxShadow: isRatioValid ? '0 8px 32px rgba(34,197,94,0.25)' : 'none',
+                                            transition: 'all 0.3s ease'
+                                        }}
+                                    >
+                                        {isExporting ? (
+                                            <>
+                                                <Loader2 size={22} className="spin" /> 正在导出数据集...
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Download size={22} /> 执行数据集导出
+                                            </>
+                                        )}
+                                    </button>
+
+                                    <button
+                                        onClick={handleZipExport}
+                                        disabled={isZipExporting || !isRatioValid}
+                                        style={{
+                                            width: '100%',
+                                            height: '64px',
+                                            fontSize: '1.05rem',
+                                            fontWeight: 800,
+                                            borderRadius: '18px',
+                                            justifyContent: 'center',
+                                            gap: '14px',
+                                            background: isZipExporting || !isRatioValid
+                                                ? 'rgba(255,255,255,0.05)'
+                                                : 'linear-gradient(135deg, #3b82f6, #60a5fa)',
+                                            border: 'none',
+                                            color: isZipExporting || !isRatioValid ? 'var(--text-tertiary)' : 'white',
+                                            cursor: isZipExporting || !isRatioValid ? 'not-allowed' : 'pointer',
+                                            boxShadow: isRatioValid ? '0 8px 32px rgba(59,130,246,0.25)' : 'none',
+                                            transition: 'all 0.3s ease'
+                                        }}
+                                    >
+                                        {isZipExporting ? (
+                                            <>
+                                                <Loader2 size={22} className="spin" /> 正在导出ZIP数据集...
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Download size={22} /> 导出为ZIP数据集
+                                            </>
+                                        )}
+                                    </button>
+
+                                    <p style={{ textAlign: 'center', margin: 0, color: 'var(--text-tertiary)', fontSize: '13px' }}>
+                                        导出过程可能需要几秒钟，请稍候
+                                    </p>
+                                </div>
+                            </SectionCard>
+                        </div>
+                    </div>
                 </div>
 
             </div>
