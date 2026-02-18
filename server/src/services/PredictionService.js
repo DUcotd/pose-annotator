@@ -430,6 +430,7 @@ class PredictionService {
     this.predictionStates.set(projectId, {
       totalImages: images.length,
       processedImages: 0,
+      activeIndex: -1,
       currentImage: null,
       results: [],
       startTime: Date.now()
@@ -727,6 +728,9 @@ class PredictionService {
 
     if (data.event === 'progress') {
       state.currentImage = data.image;
+      if (Number.isFinite(data.index)) {
+        state.activeIndex = data.index;
+      }
       // 更新进度信息，但不增加processedImages（因为图片还在处理中）
       this.processes.addLog(projectId, {
         type: 'progress',
@@ -745,6 +749,9 @@ class PredictionService {
 
     if (data.event === 'result') {
       state.processedImages++;
+      if (Number.isFinite(data.index)) {
+        state.activeIndex = Math.max(state.activeIndex ?? -1, data.index);
+      }
       logger.info(`[Prediction] Received result for ${data.image}, predictions: ${JSON.stringify(data.predictions)}`);
       const annotations = this.convertPredictionsToAnnotations(data.predictions);
       logger.info(`[Prediction] Converted to ${annotations.length} annotations`);
@@ -966,6 +973,26 @@ class PredictionService {
         total: predictionState.totalImages,
         processed: predictionState.processedImages,
         percentage: (predictionState.processedImages / predictionState.totalImages * 100).toFixed(1),
+        active: (() => {
+          const active = Math.max(
+            predictionState.processedImages,
+            (Number.isFinite(predictionState.activeIndex) && predictionState.activeIndex >= 0)
+              ? (predictionState.activeIndex + 1)
+              : 0
+          );
+          return active;
+        })(),
+        activePercentage: (() => {
+          const total = predictionState.totalImages || 0;
+          if (total <= 0) return '0';
+          const active = Math.max(
+            predictionState.processedImages,
+            (Number.isFinite(predictionState.activeIndex) && predictionState.activeIndex >= 0)
+              ? (predictionState.activeIndex + 1)
+              : 0
+          );
+          return (active / total * 100).toFixed(1);
+        })(),
         currentImage: predictionState.currentImage,
         successCount: successCount,
         failedCount: failedCount

@@ -402,6 +402,14 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
                 throw new Error('预标注任务启动失败');
             }
 
+            if (targetImages.length > 0) {
+                setPreannotateProgress({
+                    current: 1,
+                    total: targetImages.length,
+                    currentImage: `正在处理: ${targetImages[0]}`
+                });
+            }
+
             // 清理之前的轮询（如果有）
             if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
             if (checkCancelIntervalRef.current) clearInterval(checkCancelIntervalRef.current);
@@ -416,10 +424,12 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
                         
                         // 更新进度 - 确保total不为0
                         const total = status.total || targetImages.length;
-                        const current = status.current || 0;
+                        const completed = status.current || 0;
+                        const active = status.active || completed;
+                        const displayCurrent = status.status === 'running' ? active : completed;
                         
                         setPreannotateProgress({
-                            current: current,
+                            current: displayCurrent,
                             total: total,
                             currentImage: status.message || '正在处理...'
                         });
@@ -450,8 +460,8 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
                             // 如果任务已完成，确保统计信息正确
                             if (status.status === 'completed') {
                                 // 如果后端返回的successCount为0但实际有处理图片，使用current作为成功数
-                                if (successCount === 0 && current > 0) {
-                                    successCount = current;
+                                if (successCount === 0 && completed > 0) {
+                                    successCount = completed;
                                     failedCount = Math.max(0, total - successCount);
                                 }
                                 // 确保成功数不超过总数
@@ -495,29 +505,6 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
                 }
             }, 300); // 每300ms轮询一次，更频繁的更新
 
-            // 如果用户取消，停止轮询
-            checkCancelIntervalRef.current = setInterval(() => {
-                if (cancelPreannotateRef.current) {
-                    // 清理所有定时器
-                    if (pollIntervalRef.current) {
-                        clearInterval(pollIntervalRef.current);
-                        pollIntervalRef.current = null;
-                    }
-                    if (checkCancelIntervalRef.current) {
-                        clearInterval(checkCancelIntervalRef.current);
-                        checkCancelIntervalRef.current = null;
-                    }
-                    if (timeoutRef.current) {
-                        clearTimeout(timeoutRef.current);
-                        timeoutRef.current = null;
-                    }
-                    // 调用取消API
-                    fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/predict/cancel`, {
-                        method: 'POST'
-                    }).catch(e => console.error('Failed to cancel prediction:', e));
-                }
-            }, 100);
-
             // 设置超时，防止无限轮询（最多5分钟）
             timeoutRef.current = setTimeout(() => {
                 // 清理所有定时器
@@ -553,20 +540,15 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
     };
 
     const handleCancelPreannotate = () => {
+        if (cancelPreannotateRef.current) return;
         cancelPreannotateRef.current = true;
-        // 清理所有定时器
-        if (pollIntervalRef.current) {
-            clearInterval(pollIntervalRef.current);
-            pollIntervalRef.current = null;
-        }
-        if (checkCancelIntervalRef.current) {
-            clearInterval(checkCancelIntervalRef.current);
-            checkCancelIntervalRef.current = null;
-        }
-        if (timeoutRef.current) {
-            clearTimeout(timeoutRef.current);
-            timeoutRef.current = null;
-        }
+        setPreannotateProgress(prev => ({
+            ...(prev || { current: 0, total: 0, currentImage: '' }),
+            currentImage: '正在取消预标注任务...'
+        }));
+        fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/predict/cancel`, {
+            method: 'POST'
+        }).catch(e => console.error('Failed to cancel prediction:', e));
     };
 
     // 组件卸载时清理定时器

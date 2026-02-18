@@ -804,7 +804,9 @@ function createProjectRouter(projectsDir) {
     res.json({
       isRunning: status.status === 'running',
       progress: status.progress ? parseFloat(status.progress.percentage) : 0,
+      activeProgress: status.progress ? parseFloat(status.progress.activePercentage || status.progress.percentage) : 0,
       current: status.progress ? status.progress.processed : 0,
+      active: status.progress ? status.progress.active : 0,
       total: status.progress ? status.progress.total : 0,
       message: status.progress ? status.progress.currentImage : '',
       successCount: status.progress ? status.progress.successCount : 0,
