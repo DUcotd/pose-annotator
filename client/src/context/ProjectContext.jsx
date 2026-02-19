@@ -73,6 +73,13 @@ export const ProjectProvider = ({ children }) => {
             const res = await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/images`);
             const data = await res.json();
             setImages(data);
+
+            // If first time and no selection, default to the first image
+            const savedImage = localStorage.getItem(`lastImage_${projectId}`);
+            if (!savedImage && data.length > 0) {
+                const firstImage = getImageName(data[0]);
+                setSelectedImage(firstImage);
+            }
         } catch (err) {
             console.error("Failed to fetch images", err);
         } finally {
@@ -145,24 +152,25 @@ export const ProjectProvider = ({ children }) => {
         setDeletingProjects(prev => new Set([...prev, projectId]));
 
         try {
-            const res = await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}`, { 
-                method: 'DELETE' 
+            const res = await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}`, {
+                method: 'DELETE'
             });
             const data = await res.json();
-            
+
             if (res.ok) {
                 setProjects(prev => prev.filter(p => p.id !== projectId));
+                localStorage.removeItem(`lastImage_${projectId}`);
                 await fetchProjects();
                 if (currentProject === projectId) {
                     setCurrentProject(null);
                     setView('dashboard');
                 }
-                
+
                 if (data.pendingCleanup) {
-                    return { 
-                        success: true, 
+                    return {
+                        success: true,
                         message: '项目已删除（部分文件被占用，将在重启后完全清理）',
-                        pendingCleanup: true 
+                        pendingCleanup: true
                     };
                 }
                 return { success: true, message: data.message || '项目已删除' };
@@ -198,6 +206,15 @@ export const ProjectProvider = ({ children }) => {
             bboxesMin: '',
             bboxesMax: ''
         });
+
+        // Load persistent editor state
+        const lastImage = localStorage.getItem(`lastImage_${projectId}`);
+        if (lastImage) {
+            setSelectedImage(lastImage);
+        } else {
+            setSelectedImage(null);
+        }
+
         fetchImages(projectId);
         fetchProjectConfig(projectId);
     };
@@ -213,7 +230,7 @@ export const ProjectProvider = ({ children }) => {
     const goBack = () => {
         if (view === 'editor') {
             setView('gallery');
-            setSelectedImage(null);
+            // We keep selectedImage to allow returning to the editor
             if (currentProject) fetchImages(currentProject);
         } else if (view === 'export' || view === 'training') {
             setView('gallery');
@@ -221,12 +238,17 @@ export const ProjectProvider = ({ children }) => {
         } else if (view === 'settings') {
             setView(previousView);
         } else if (view === 'gallery') {
-            setView('dashboard');
-            setCurrentProject(null);
-            setImages([]);
-            fetchProjects();
+            exitProject();
         }
     };
+
+    const exitProject = useCallback(() => {
+        setView('dashboard');
+        setCurrentProject(null);
+        setSelectedImage(null); // Clear image when leaving project
+        setImages([]);
+        fetchProjects();
+    }, [fetchProjects]);
 
     const goToTraining = (projectId) => {
         if (projectId) {
@@ -332,6 +354,21 @@ export const ProjectProvider = ({ children }) => {
     };
 
 
+
+    const inspectCollaboration = async (zipPath) => {
+        try {
+            const res = await fetch('http://localhost:5000/api/projects/collaboration/inspect', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path: zipPath })
+            });
+            const data = await res.json();
+            return data;
+        } catch (err) {
+            console.error("Failed to inspect collaboration package", err);
+            return { success: false, error: '检查失败：网络错误' };
+        }
+    };
 
     const importCollaboration = async (zipPath, customPath = null) => {
         try {
@@ -465,9 +502,9 @@ export const ProjectProvider = ({ children }) => {
                 } else {
                     await fetchImages(projectId);
                 }
-                
+
                 await fetchProjects();
-                
+
                 return { success: true, message: data.message, remainingCount: data.remainingCount, renumber: renumberInfo };
             } else {
                 return { success: false, message: data.error || '删除失败' };
@@ -640,6 +677,13 @@ export const ProjectProvider = ({ children }) => {
         fetchProjects();
     }, [fetchProjects]);
 
+    // Save persistent editor state
+    useEffect(() => {
+        if (currentProject && selectedImage) {
+            localStorage.setItem(`lastImage_${currentProject}`, selectedImage);
+        }
+    }, [currentProject, selectedImage]);
+
     const value = {
         projects,
         currentProject,
@@ -660,12 +704,14 @@ export const ProjectProvider = ({ children }) => {
         selectProject,
         openEditor,
         goBack,
+        exitProject,
         goToTraining,
         openSettings,
         refreshImages: () => fetchImages(currentProject),
         exportProject,
         exportDatasetZip,
         exportCollaboration,
+        inspectCollaboration,
         importCollaboration,
         renumberProject,
         deleteImage,

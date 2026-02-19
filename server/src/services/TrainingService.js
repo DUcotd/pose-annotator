@@ -6,6 +6,7 @@ const ProcessManager = require('../managers/ProcessManager');
 const { JobQueue } = require('../managers/JobQueue');
 const PythonEnvService = require('./PythonEnvService');
 const settings = require('../config/settings');
+const RemoteTrainingService = require('./RemoteTrainingService');
 
 const JSON_LOG_PREFIX = '__JSON_LOG__';
 const MAX_LOG_LENGTH = 1000;
@@ -556,6 +557,13 @@ class TrainingService {
 
     const { cmd: pythonCmd } = await this.getPythonCommand();
     const args = this.buildArgs(config);
+
+    if (config.remoteEnabled) {
+      return RemoteTrainingService.start(projectId, {
+        ...config,
+        projectRoot: config.projectRoot || config.project
+      });
+    }
 
     logger.info(`Starting training for project ${projectId} (attempt ${retryCount + 1}): ${pythonCmd} ${args.join(' ')}`);
 

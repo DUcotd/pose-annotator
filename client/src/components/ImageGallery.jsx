@@ -170,7 +170,7 @@ const ThumbnailCard = ({ imageObj, projectId, index, onSelectImage, isSelected, 
                     justifyContent: 'center',
                     zIndex: 10000
                 }}
-                onClick={() => !isDeleting && setShowDeleteConfirm(false)}
+                    onClick={() => !isDeleting && setShowDeleteConfirm(false)}
                 >
                     <div style={{
                         background: 'linear-gradient(135deg, rgba(22, 27, 34, 0.98), rgba(13, 17, 23, 0.98))',
@@ -181,7 +181,7 @@ const ThumbnailCard = ({ imageObj, projectId, index, onSelectImage, isSelected, 
                         border: '1px solid rgba(239, 68, 68, 0.3)',
                         boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)'
                     }}
-                    onClick={e => e.stopPropagation()}
+                        onClick={e => e.stopPropagation()}
                     >
                         <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '1.5rem' }}>
                             <div style={{
@@ -421,13 +421,13 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
                     const statusResp = await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/predict/status`);
                     if (statusResp.ok) {
                         const status = await statusResp.json();
-                        
+
                         // 更新进度 - 确保total不为0
                         const total = status.total || targetImages.length;
                         const completed = status.current || 0;
                         const active = status.active || completed;
                         const displayCurrent = status.status === 'running' ? active : completed;
-                        
+
                         setPreannotateProgress({
                             current: displayCurrent,
                             total: total,
@@ -449,14 +449,14 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
                                 clearTimeout(timeoutRef.current);
                                 timeoutRef.current = null;
                             }
-                            
+
                             setPreannotating(false);
                             setShowPreannotateProgress(false);
-                            
+
                             // 使用后端返回的统计信息
                             let successCount = status.successCount || 0;
                             let failedCount = status.failedCount || 0;
-                            
+
                             // 如果任务已完成，确保统计信息正确
                             if (status.status === 'completed') {
                                 // 如果后端返回的successCount为0但实际有处理图片，使用current作为成功数
@@ -474,11 +474,11 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
                                     failedCount = Math.max(0, total - successCount);
                                 }
                             }
-                            
-                            setPreannotateResult({ 
-                                successCount, 
-                                failedCount, 
-                                cancelled: status.status === 'stopped' || cancelPreannotateRef.current 
+
+                            setPreannotateResult({
+                                successCount,
+                                failedCount,
+                                cancelled: status.status === 'stopped' || cancelPreannotateRef.current
                             });
                             setShowPreannotateResult(true);
                             onUpload();
@@ -518,10 +518,10 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
                 }
                 setPreannotating(false);
                 setShowPreannotateProgress(false);
-                setPreannotateResult({ 
-                    successCount: 0, 
-                    failedCount: targetImages.length, 
-                    cancelled: false 
+                setPreannotateResult({
+                    successCount: 0,
+                    failedCount: targetImages.length,
+                    cancelled: false
                 });
                 setShowPreannotateResult(true);
             }, 5 * 60 * 1000);
@@ -530,10 +530,10 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
             console.error('Failed to start prediction:', e);
             setPreannotating(false);
             setShowPreannotateProgress(false);
-            setPreannotateResult({ 
-                successCount: 0, 
-                failedCount: targetImages.length, 
-                cancelled: false 
+            setPreannotateResult({
+                successCount: 0,
+                failedCount: targetImages.length,
+                cancelled: false
             });
             setShowPreannotateResult(true);
         }
@@ -676,143 +676,166 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
                         display: 'flex',
                         justifyContent: 'space-between',
                         alignItems: 'center',
-                        gap: '1.5rem',
+                        gap: '1rem',
                         flexWrap: 'wrap',
                         flexShrink: 0,
-                        padding: '0.9rem 1.1rem',
-                        borderRadius: '16px',
-                        borderColor: 'rgba(255,255,255,0.12)',
-                        boxShadow: '0 12px 30px rgba(0,0,0,0.45)'
+                        padding: '0.75rem 1rem',
+                        borderRadius: '18px',
+                        borderColor: 'rgba(255,255,255,0.1)',
+                        boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
+                        background: 'rgba(23, 23, 23, 0.4)'
                     }}
                 >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    {/* Left Group: Status & Project Actions */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                         <div style={{
-                            background: 'rgba(77, 161, 255, 0.14)',
-                            padding: '8px 12px',
-                            borderRadius: '999px',
+                            background: 'linear-gradient(135deg, rgba(77, 161, 255, 0.15), rgba(77, 161, 255, 0.05))',
+                            padding: '6px 14px',
+                            borderRadius: '10px',
                             color: '#4da1ff',
                             display: 'flex',
                             alignItems: 'center',
                             gap: '8px',
-                            border: '1px solid rgba(77, 161, 255, 0.35)',
-                            fontSize: '13px',
-                            fontWeight: 600
+                            border: '1px solid rgba(77, 161, 255, 0.25)',
+                            fontSize: '13.5px',
+                            fontWeight: 600,
+                            boxShadow: '0 2px 10px rgba(77, 161, 255, 0.1)'
                         }}>
                             <ImageIcon size={16} />
-                            <span>共 {filtered.length} 张图片</span>
+                            <span>{filtered.length} 资源</span>
                         </div>
-                        <button
-                            onClick={() => {
-                                setShowStats(true);
-                                fetchStats();
-                            }}
-                            className="icon-btn hover-card"
-                            title="查看项目详情"
-                            style={{
-                                background: 'rgba(255, 255, 255, 0.04)',
-                                padding: '8px',
-                                borderRadius: '10px',
-                                border: '1px solid rgba(255, 255, 255, 0.12)',
-                                color: 'var(--text-secondary)'
-                            }}
-                        >
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
-                        </button>
-                        <button
-                            onClick={onUpload}
-                            className="icon-btn hover-card"
-                            title="刷新图库"
-                            style={{
-                                background: 'rgba(255,255,255,0.03)',
-                                padding: '8px',
-                                borderRadius: '10px',
-                                border: '1px solid rgba(255,255,255,0.08)'
-                            }}
-                        >
-                            <RefreshCw size={16} />
-                        </button>
-                        <button
-                            onClick={() => setShowDiscovery(true)}
-                            className="icon-btn hover-card"
-                            title="从文件夹导入"
-                            style={{
-                                background: 'rgba(77, 161, 255, 0.12)',
-                                padding: '8px',
-                                borderRadius: '10px',
-                                border: '1px solid rgba(77, 161, 255, 0.3)',
-                                color: '#4da1ff'
-                            }}
-                        >
-                            <FolderOpen size={16} />
-                        </button>
-                        <button
-                            onClick={() => setShowHistory(true)}
-                            className="icon-btn hover-card"
-                            title="导入历史"
-                            style={{
-                                background: 'rgba(255,255,255,0.03)',
-                                padding: '8px',
-                                borderRadius: '10px',
-                                border: '1px solid rgba(255,255,255,0.08)'
-                            }}
-                        >
-                            <Clock size={16} />
-                        </button>
-                        <button
-                            onClick={() => setShowModelSettings(true)}
-                            className="icon-btn hover-card"
-                            title="预标注模型设置"
-                            style={{
-                                background: modelPath ? 'rgba(16, 185, 129, 0.14)' : 'rgba(255,255,255,0.03)',
-                                padding: '8px',
-                                borderRadius: '10px',
-                                border: modelPath ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(255,255,255,0.08)',
-                                color: modelPath ? '#10b981' : 'var(--text-secondary)'
-                            }}
-                        >
-                            <Settings size={16} />
-                        </button>
-                        <button
-                            onClick={() => setShowPreannotateDialog(true)}
-                            disabled={!modelPath}
-                            className="icon-btn hover-card"
-                            title={!modelPath ? '请先配置预标注模型' : '模型预标注'}
-                            style={{
-                                background: modelPath ? 'rgba(139, 92, 246, 0.14)' : 'rgba(255,255,255,0.02)',
-                                padding: '8px 12px',
-                                borderRadius: '10px',
-                                border: modelPath ? '1px solid rgba(139, 92, 246, 0.3)' : '1px solid rgba(255,255,255,0.08)',
-                                color: modelPath ? '#8b5cf6' : 'var(--text-tertiary)',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '6px',
-                                cursor: modelPath ? 'pointer' : 'not-allowed',
-                                opacity: modelPath ? 1 : 0.5
-                            }}
-                        >
-                            <Wand2 size={16} />
-                            <span style={{ fontSize: '13px', fontWeight: 600 }}>预标注</span>
-                        </button>
-                    </div>
-                    <div style={{ position: 'relative', flex: 1, maxWidth: '320px' }}>
-                        <input
-                            type="text"
-                            placeholder="搜索图片名称..."
-                            value={search}
-                            onChange={(e) => updateGalleryFilters({ search: e.target.value })}
-                            className="input-modern"
-                            style={{
-                                height: '46px',
-                                paddingLeft: '44px',
-                                fontSize: '0.95rem',
-                                borderRadius: '14px'
-                            }}
-                        />
-                        <div style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-tertiary)', pointerEvents: 'none' }}>
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+
+                        <div style={{ width: '1px', height: '24px', background: 'rgba(255,255,255,0.1)', margin: '0 4px' }} />
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <button
+                                onClick={() => {
+                                    setShowStats(true);
+                                    fetchStats();
+                                }}
+                                className="icon-btn hover-card"
+                                title="项目详情"
+                                style={{
+                                    background: 'rgba(255, 255, 255, 0.03)',
+                                    padding: '9px',
+                                    borderRadius: '10px',
+                                    border: '1px solid rgba(255, 255, 255, 0.08)',
+                                    color: 'var(--text-secondary)'
+                                }}
+                            >
+                                <AlertCircle size={17} />
+                            </button>
+                            <button
+                                onClick={onUpload}
+                                className="icon-btn hover-card"
+                                title="刷新图库"
+                                style={{
+                                    background: 'rgba(255,255,255,0.03)',
+                                    padding: '9px',
+                                    borderRadius: '10px',
+                                    border: '1px solid rgba(255,255,255,0.08)'
+                                }}
+                            >
+                                <RefreshCw size={17} />
+                            </button>
+                            <button
+                                onClick={() => setShowDiscovery(true)}
+                                className="icon-btn hover-card"
+                                title="从文件夹导入"
+                                style={{
+                                    background: 'rgba(77, 161, 255, 0.08)',
+                                    padding: '9px',
+                                    borderRadius: '10px',
+                                    border: '1px solid rgba(77, 161, 255, 0.2)',
+                                    color: '#4da1ff'
+                                }}
+                            >
+                                <FolderOpen size={17} />
+                            </button>
+                            <button
+                                onClick={() => setShowHistory(true)}
+                                className="icon-btn hover-card"
+                                title="导入历史"
+                                style={{
+                                    background: 'rgba(255,255,255,0.03)',
+                                    padding: '9px',
+                                    borderRadius: '10px',
+                                    border: '1px solid rgba(255,255,255,0.08)'
+                                }}
+                            >
+                                <Clock size={17} />
+                            </button>
                         </div>
                     </div>
-                    <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+
+                    {/* Middle Group: AI Tools */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                        <div style={{ width: '1px', height: '24px', background: 'rgba(255,255,255,0.1)', margin: '0 4px' }} />
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(255,255,255,0.02)', padding: '4px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                            <button
+                                onClick={() => setShowModelSettings(true)}
+                                className="icon-btn hover-card"
+                                title="模型设置"
+                                style={{
+                                    background: modelPath ? 'rgba(16, 185, 129, 0.1)' : 'transparent',
+                                    padding: '8px',
+                                    borderRadius: '8px',
+                                    border: modelPath ? '1px solid rgba(16, 185, 129, 0.2)' : '1px solid transparent',
+                                    color: modelPath ? '#10b981' : 'var(--text-tertiary)'
+                                }}
+                            >
+                                <Settings size={17} />
+                            </button>
+                            <button
+                                onClick={() => setShowPreannotateDialog(true)}
+                                disabled={!modelPath}
+                                className="icon-btn hover-card"
+                                title={!modelPath ? '请先配置模型' : '一键预标注'}
+                                style={{
+                                    background: modelPath ? 'rgba(139, 92, 246, 0.12)' : 'transparent',
+                                    padding: '6px 14px',
+                                    borderRadius: '8px',
+                                    border: modelPath ? '1px solid rgba(139, 92, 246, 0.25)' : '1px solid transparent',
+                                    color: modelPath ? '#a78bfa' : 'var(--text-tertiary)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '8px',
+                                    cursor: modelPath ? 'pointer' : 'not-allowed',
+                                    opacity: modelPath ? 1 : 0.4
+                                }}
+                            >
+                                <Wand2 size={16} />
+                                <span style={{ fontSize: '13px', fontWeight: 600 }}>智能预标注</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Right Group: Search & Global Filter */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, maxWidth: '420px', justifyContent: 'flex-end' }}>
+                        <div style={{ position: 'relative', flex: 1 }}>
+                            <input
+                                type="text"
+                                placeholder="搜索图片..."
+                                value={search}
+                                onChange={(e) => updateGalleryFilters({ search: e.target.value })}
+                                className="input-modern"
+                                style={{
+                                    height: '40px',
+                                    paddingLeft: '38px',
+                                    paddingRight: '12px',
+                                    fontSize: '0.88rem',
+                                    borderRadius: '10px',
+                                    background: 'rgba(0,0,0,0.2)',
+                                    border: '1px solid rgba(255,255,255,0.08)',
+                                    width: '100%'
+                                }}
+                            />
+                            <div style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-tertiary)', pointerEvents: 'none' }}>
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                            </div>
+                        </div>
+
                         <button
                             onClick={() => {
                                 if (filtersOpen) {
@@ -826,31 +849,36 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
                             }}
                             ref={filterButtonRef}
                             className="icon-btn hover-card"
-                            title="筛选"
+                            title="高级筛选"
                             style={{
-                                position: 'relative',
-                                background: activeFiltersCount > 0 ? 'rgba(77, 161, 255, 0.12)' : 'rgba(255,255,255,0.03)',
-                                padding: '8px 12px',
+                                background: activeFiltersCount > 0 ? 'rgba(77, 161, 255, 0.15)' : 'rgba(255,255,255,0.04)',
+                                padding: '0 14px',
+                                height: '40px',
                                 borderRadius: '10px',
-                                border: activeFiltersCount > 0 ? '1px solid rgba(77, 161, 255, 0.3)' : '1px solid rgba(255,255,255,0.08)',
-                                color: activeFiltersCount > 0 ? '#4da1ff' : 'var(--text-secondary)',
+                                border: activeFiltersCount > 0 ? '1px solid rgba(77, 161, 255, 0.3)' : '1px solid rgba(255,255,255,0.1)',
+                                color: activeFiltersCount > 0 ? '#4da1ff' : 'var(--text-primary)',
                                 display: 'flex',
                                 alignItems: 'center',
-                                gap: '6px'
+                                gap: '8px',
+                                fontWeight: 600,
+                                fontSize: '13px'
                             }}
                         >
                             <Filter size={16} />
-                            <span style={{ fontSize: '13px', fontWeight: 700 }}>筛选</span>
+                            <span>筛选</span>
                             {activeFiltersCount > 0 && (
                                 <span style={{
-                                    marginLeft: '2px',
-                                    background: 'rgba(77, 161, 255, 0.18)',
-                                    border: '1px solid rgba(77, 161, 255, 0.35)',
-                                    color: '#4da1ff',
-                                    padding: '2px 8px',
-                                    borderRadius: '999px',
-                                    fontSize: '12px',
-                                    fontWeight: 800
+                                    background: '#4da1ff',
+                                    color: 'white',
+                                    minWidth: '18px',
+                                    height: '18px',
+                                    borderRadius: '50%',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    fontSize: '10px',
+                                    fontWeight: 800,
+                                    boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
                                 }}>
                                     {activeFiltersCount}
                                 </span>
@@ -1060,777 +1088,687 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
             </div>
 
             {/* Pagination Floating Pill */}
-            {totalPages > 1 && (
-                <div style={{
-                    display: 'flex',
-                    justifyContent: 'center',
-                    padding: '1rem 0 1rem 0'
-                }}>
-                    <div className="glass-panel" style={{
-                        pointerEvents: 'auto',
-                        padding: '8px 12px',
-                        borderRadius: '20px',
-                        background: 'rgba(22, 27, 34, 0.85)',
-                        backdropFilter: 'blur(12px)',
-                        border: '1px solid rgba(255, 255, 255, 0.1)',
-                        boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)',
+            {
+                totalPages > 1 && (
+                    <div style={{
+                        display: 'flex',
+                        justifyContent: 'center',
+                        padding: '1rem 0 1rem 0'
+                    }}>
+                        <div className="glass-panel" style={{
+                            pointerEvents: 'auto',
+                            padding: '8px 12px',
+                            borderRadius: '20px',
+                            background: 'rgba(22, 27, 34, 0.85)',
+                            backdropFilter: 'blur(12px)',
+                            border: '1px solid rgba(255, 255, 255, 0.1)',
+                            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '1rem',
+                            zIndex: 10
+                        }}>
+                            <button
+                                className="icon-btn"
+                                onClick={() => setPage(p => Math.max(0, p - 1))}
+                                disabled={page === 0}
+                                style={{
+                                    borderRadius: '12px', width: '36px', height: '36px',
+                                    background: page === 0 ? 'transparent' : 'rgba(255,255,255,0.05)',
+                                    color: page === 0 ? 'var(--text-tertiary)' : 'var(--text-primary)'
+                                }}
+                            >
+                                <ChevronLeft size={18} />
+                            </button>
+
+                            <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                                {Array.from({ length: totalPages }, (_, i) => {
+                                    if (totalPages <= 7 || i === 0 || i === totalPages - 1 ||
+                                        Math.abs(i - page) <= 1) {
+                                        const isActive = i === page;
+                                        return (
+                                            <button
+                                                key={i}
+                                                onClick={() => setPage(i)}
+                                                style={{
+                                                    width: '32px', height: '32px', borderRadius: '10px',
+                                                    border: isActive ? '1px solid rgba(77, 161, 255, 0.3)' : 'none',
+                                                    background: isActive ? 'rgba(77, 161, 255, 0.15)' : 'transparent',
+                                                    color: isActive ? '#4da1ff' : 'var(--text-secondary)',
+                                                    cursor: 'pointer',
+                                                    fontSize: '13px',
+                                                    fontWeight: isActive ? '700' : '500',
+                                                    transition: 'all 0.2s'
+                                                }}
+                                                className={!isActive ? "hover-text-primary" : ""}
+                                            >
+                                                {i + 1}
+                                            </button>
+                                        );
+                                    } else if (i === 1 || i === totalPages - 2) {
+                                        return <span key={i} style={{ color: 'var(--text-tertiary)', padding: '0 2px', fontSize: '12px' }}>•••</span>;
+                                    }
+                                    return null;
+                                })}
+                            </div>
+
+                            <button
+                                className="icon-btn"
+                                onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
+                                disabled={page === totalPages - 1}
+                                style={{
+                                    borderRadius: '12px', width: '36px', height: '36px',
+                                    background: page === totalPages - 1 ? 'transparent' : 'rgba(255,255,255,0.05)',
+                                    color: page === totalPages - 1 ? 'var(--text-tertiary)' : 'var(--text-primary)'
+                                }}
+                            >
+                                <ChevronRight size={18} />
+                            </button>
+                        </div>
+                    </div>
+                )
+            }
+
+            {
+                filtered.length === 0 && search && (
+                    <div style={{ margin: 'auto', textAlign: 'center', color: 'var(--text-secondary)', padding: '4rem' }}>
+                        <p>没有找到匹配 "{search}" 的图片</p>
+                    </div>
+                )
+            }
+
+            {
+                showDiscovery && (
+                    <ImageDiscovery
+                        projectId={projectId}
+                        onClose={() => setShowDiscovery(false)}
+                        onImportComplete={() => {
+                            onUpload();
+                            setShowDiscovery(false);
+                        }}
+                    />
+                )
+            }
+
+            {
+                showHistory && (
+                    <ImportHistory
+                        projectId={projectId}
+                        onClose={() => setShowHistory(false)}
+                    />
+                )
+            }
+
+            {
+                showStats && (
+                    <div className="modal-overlay" onClick={() => setShowStats(false)}>
+                        <div className="modal-panel animate-scale-in" style={{ maxWidth: '400px' }} onClick={e => e.stopPropagation()}>
+                            <div style={{ padding: '24px' }}>
+                                <div className="modal-header-between" style={{ marginBottom: '24px' }}>
+                                    <h3 style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                        <div style={{
+                                            background: 'rgba(77, 161, 255, 0.1)',
+                                            padding: '8px',
+                                            borderRadius: '10px',
+                                            color: '#4da1ff'
+                                        }}>
+                                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+                                        </div>
+                                        项目详细信息
+                                    </h3>
+                                    <button className="icon-btn" onClick={() => setShowStats(false)}>
+                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                                    </button>
+                                </div>
+
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                                    <div className="glass-card" style={{ padding: '16px', background: 'rgba(255,255,255,0.02)' }}>
+                                        <div style={{ color: 'var(--text-tertiary)', fontSize: '0.8rem', marginBottom: '4px', fontWeight: 600 }}>项目 ID</div>
+                                        <div style={{ color: 'var(--text-primary)', fontWeight: 700, fontSize: '1.1rem' }}>{projectId}</div>
+                                    </div>
+
+                                    {stats?.projectPath && (
+                                        <div className="glass-card" style={{ padding: '16px', background: 'rgba(255,255,255,0.02)', position: 'relative' }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                                <div>
+                                                    <div style={{ color: 'var(--text-tertiary)', fontSize: '0.8rem', marginBottom: '4px', fontWeight: 600 }}>项目路径</div>
+                                                    <div style={{ color: 'var(--text-primary)', fontWeight: 500, fontSize: '0.9rem', wordBreak: 'break-all', paddingRight: '40px' }}>{stats.projectPath}</div>
+                                                </div>
+                                                <button
+                                                    className="icon-btn hover-card"
+                                                    title="在资源管理器中打开"
+                                                    onClick={async () => {
+                                                        try {
+                                                            await fetch('http://localhost:5000/api/utils/open-folder', {
+                                                                method: 'POST',
+                                                                headers: { 'Content-Type': 'application/json' },
+                                                                body: JSON.stringify({ path: stats.projectPath })
+                                                            });
+                                                        } catch (e) {
+                                                            console.error('Failed to open folder:', e);
+                                                        }
+                                                    }}
+                                                    style={{
+                                                        background: 'rgba(77, 161, 255, 0.1)',
+                                                        padding: '8px',
+                                                        borderRadius: '8px',
+                                                        color: '#4da1ff',
+                                                        border: '1px solid rgba(77, 161, 255, 0.2)',
+                                                        flexShrink: 0
+                                                    }}
+                                                >
+                                                    <FolderOpen size={16} />
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {loadingStats ? (
+                                        <div style={{ padding: '40px', textAlign: 'center' }}>
+                                            <RefreshCw className="animate-spin" size={24} style={{ color: 'var(--accent-primary)', opacity: 0.5 }} />
+                                        </div>
+                                    ) : stats ? (
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                                                <div className="glass-card" style={{ padding: '16px', background: 'rgba(255,255,255,0.02)' }}>
+                                                    <div style={{ color: 'var(--text-tertiary)', fontSize: '0.75rem', marginBottom: '4px' }}>图片总数</div>
+                                                    <div style={{ color: 'var(--text-primary)', fontWeight: 700, fontSize: '1.2rem' }}>{stats.total}</div>
+                                                </div>
+                                                <div className="glass-card" style={{ padding: '16px', background: 'rgba(255,255,255,0.02)' }}>
+                                                    <div style={{ color: 'var(--text-tertiary)', fontSize: '0.75rem', marginBottom: '4px' }}>存储占用</div>
+                                                    <div style={{ color: 'var(--text-primary)', fontWeight: 700, fontSize: '1.2rem' }}>{formatBytes(stats.totalSize || 0)}</div>
+                                                </div>
+                                                <div className="glass-card" style={{ padding: '16px', background: 'rgba(16, 185, 129, 0.05)', borderColor: 'rgba(16, 185, 129, 0.1)' }}>
+                                                    <div style={{ color: '#10b981', fontSize: '0.75rem', marginBottom: '4px' }}>已标注图片</div>
+                                                    <div style={{ color: '#10b981', fontWeight: 700, fontSize: '1.2rem' }}>{stats.annotated}</div>
+                                                </div>
+                                                <div className="glass-card" style={{ padding: '16px', background: 'rgba(245, 158, 11, 0.05)', borderColor: 'rgba(245, 158, 11, 0.1)' }}>
+                                                    <div style={{ color: '#f59e0b', fontSize: '0.75rem', marginBottom: '4px' }}>未标注图片</div>
+                                                    <div style={{ color: '#f59e0b', fontWeight: 700, fontSize: '1.2rem' }}>{stats.unannotated}</div>
+                                                </div>
+                                            </div>
+
+                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                                                <div className="glass-card" style={{ padding: '16px', background: 'rgba(77, 161, 255, 0.05)', border: '1px solid rgba(77, 161, 255, 0.1)' }}>
+                                                    <div style={{ color: '#4da1ff', fontSize: '0.75rem', marginBottom: '4px' }}>总标注框 (BBox)</div>
+                                                    <div style={{ color: '#4da1ff', fontWeight: 700, fontSize: '1.2rem' }}>{stats.bboxes || 0}</div>
+                                                </div>
+                                                <div className="glass-card" style={{ padding: '16px', background: 'rgba(139, 92, 246, 0.05)', border: '1px solid rgba(139, 92, 246, 0.1)' }}>
+                                                    <div style={{ color: '#8b5cf6', fontSize: '0.75rem', marginBottom: '4px' }}>总关键点 (Keypoints)</div>
+                                                    <div style={{ color: '#8b5cf6', fontWeight: 700, fontSize: '1.2rem' }}>{stats.keypoints || 0}</div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div style={{ color: 'var(--text-tertiary)', textAlign: 'center', padding: '20px' }}>无法获取统计信息</div>
+                                    )}
+                                </div>
+
+                                <div style={{ marginTop: '32px' }}>
+                                    <button
+                                        className="btn-modern-primary"
+                                        style={{ width: '100%' }}
+                                        onClick={() => setShowStats(false)}
+                                    >
+                                        关闭
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
+
+            {
+                showModelSettings && createPortal(
+                    <div style={{
+                        position: 'fixed',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        background: 'rgba(0, 0, 0, 0.7)',
+                        backdropFilter: 'blur(8px)',
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '1rem',
-                        zIndex: 10
-                    }}>
-                        <button
-                            className="icon-btn"
-                            onClick={() => setPage(p => Math.max(0, p - 1))}
-                            disabled={page === 0}
-                            style={{
-                                borderRadius: '12px', width: '36px', height: '36px',
-                                background: page === 0 ? 'transparent' : 'rgba(255,255,255,0.05)',
-                                color: page === 0 ? 'var(--text-tertiary)' : 'var(--text-primary)'
-                            }}
-                        >
-                            <ChevronLeft size={18} />
-                        </button>
-
-                        <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-                            {Array.from({ length: totalPages }, (_, i) => {
-                                if (totalPages <= 7 || i === 0 || i === totalPages - 1 ||
-                                    Math.abs(i - page) <= 1) {
-                                    const isActive = i === page;
-                                    return (
-                                        <button
-                                            key={i}
-                                            onClick={() => setPage(i)}
-                                            style={{
-                                                width: '32px', height: '32px', borderRadius: '10px',
-                                                border: isActive ? '1px solid rgba(77, 161, 255, 0.3)' : 'none',
-                                                background: isActive ? 'rgba(77, 161, 255, 0.15)' : 'transparent',
-                                                color: isActive ? '#4da1ff' : 'var(--text-secondary)',
-                                                cursor: 'pointer',
-                                                fontSize: '13px',
-                                                fontWeight: isActive ? '700' : '500',
-                                                transition: 'all 0.2s'
-                                            }}
-                                            className={!isActive ? "hover-text-primary" : ""}
-                                        >
-                                            {i + 1}
-                                        </button>
-                                    );
-                                } else if (i === 1 || i === totalPages - 2) {
-                                    return <span key={i} style={{ color: 'var(--text-tertiary)', padding: '0 2px', fontSize: '12px' }}>•••</span>;
-                                }
-                                return null;
-                            })}
-                        </div>
-
-                        <button
-                            className="icon-btn"
-                            onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
-                            disabled={page === totalPages - 1}
-                            style={{
-                                borderRadius: '12px', width: '36px', height: '36px',
-                                background: page === totalPages - 1 ? 'transparent' : 'rgba(255,255,255,0.05)',
-                                color: page === totalPages - 1 ? 'var(--text-tertiary)' : 'var(--text-primary)'
-                            }}
-                        >
-                            <ChevronRight size={18} />
-                        </button>
-                    </div>
-                </div>
-            )}
-
-            {filtered.length === 0 && search && (
-                <div style={{ margin: 'auto', textAlign: 'center', color: 'var(--text-secondary)', padding: '4rem' }}>
-                    <p>没有找到匹配 "{search}" 的图片</p>
-                </div>
-            )}
-
-            {showDiscovery && (
-                <ImageDiscovery
-                    projectId={projectId}
-                    onClose={() => setShowDiscovery(false)}
-                    onImportComplete={() => {
-                        onUpload();
-                        setShowDiscovery(false);
+                        justifyContent: 'center',
+                        zIndex: 10000
                     }}
-                />
-            )}
-
-            {showHistory && (
-                <ImportHistory
-                    projectId={projectId}
-                    onClose={() => setShowHistory(false)}
-                />
-            )}
-
-            {showStats && (
-                <div className="modal-overlay" onClick={() => setShowStats(false)}>
-                    <div className="modal-panel animate-scale-in" style={{ maxWidth: '400px' }} onClick={e => e.stopPropagation()}>
-                        <div style={{ padding: '24px' }}>
-                            <div className="modal-header-between" style={{ marginBottom: '24px' }}>
-                                <h3 style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                    <div style={{
-                                        background: 'rgba(77, 161, 255, 0.1)',
-                                        padding: '8px',
-                                        borderRadius: '10px',
-                                        color: '#4da1ff'
-                                    }}>
-                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
-                                    </div>
-                                    项目详细信息
-                                </h3>
-                                <button className="icon-btn" onClick={() => setShowStats(false)}>
-                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-                                </button>
-                            </div>
-
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                                <div className="glass-card" style={{ padding: '16px', background: 'rgba(255,255,255,0.02)' }}>
-                                    <div style={{ color: 'var(--text-tertiary)', fontSize: '0.8rem', marginBottom: '4px', fontWeight: 600 }}>项目 ID</div>
-                                    <div style={{ color: 'var(--text-primary)', fontWeight: 700, fontSize: '1.1rem' }}>{projectId}</div>
-                                </div>
-
-                                {stats?.projectPath && (
-                                    <div className="glass-card" style={{ padding: '16px', background: 'rgba(255,255,255,0.02)' }}>
-                                        <div style={{ color: 'var(--text-tertiary)', fontSize: '0.8rem', marginBottom: '4px', fontWeight: 600 }}>项目路径</div>
-                                        <div style={{ color: 'var(--text-primary)', fontWeight: 500, fontSize: '0.9rem', wordBreak: 'break-all' }}>{stats.projectPath}</div>
-                                    </div>
-                                )}
-
-                                {loadingStats ? (
-                                    <div style={{ padding: '40px', textAlign: 'center' }}>
-                                        <RefreshCw className="animate-spin" size={24} style={{ color: 'var(--accent-primary)', opacity: 0.5 }} />
-                                    </div>
-                                ) : stats ? (
-                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                                        <div className="glass-card" style={{ padding: '16px', background: 'rgba(255,255,255,0.02)' }}>
-                                            <div style={{ color: 'var(--text-tertiary)', fontSize: '0.75rem', marginBottom: '4px' }}>图片总数</div>
-                                            <div style={{ color: 'var(--text-primary)', fontWeight: 700, fontSize: '1.2rem' }}>{stats.total}</div>
-                                        </div>
-                                        <div className="glass-card" style={{ padding: '16px', background: 'rgba(255,255,255,0.02)' }}>
-                                            <div style={{ color: 'var(--text-tertiary)', fontSize: '0.75rem', marginBottom: '4px' }}>存储占用</div>
-                                            <div style={{ color: 'var(--text-primary)', fontWeight: 700, fontSize: '1.2rem' }}>{formatBytes(stats.totalSize || 0)}</div>
-                                        </div>
-                                        <div className="glass-card" style={{ padding: '16px', background: 'rgba(16, 185, 129, 0.05)', borderColor: 'rgba(16, 185, 129, 0.1)' }}>
-                                            <div style={{ color: '#10b981', fontSize: '0.75rem', marginBottom: '4px' }}>已标注</div>
-                                            <div style={{ color: '#10b981', fontWeight: 700, fontSize: '1.2rem' }}>{stats.annotated}</div>
-                                        </div>
-                                        <div className="glass-card" style={{ padding: '16px', background: 'rgba(245, 158, 11, 0.05)', borderColor: 'rgba(245, 158, 11, 0.1)' }}>
-                                            <div style={{ color: '#f59e0b', fontSize: '0.75rem', marginBottom: '4px' }}>未标注</div>
-                                            <div style={{ color: '#f59e0b', fontWeight: 700, fontSize: '1.2rem' }}>{stats.unannotated}</div>
-                                        </div>
-                                    </div>
-                                ) : (
-                                    <div style={{ color: 'var(--text-tertiary)', textAlign: 'center', padding: '20px' }}>无法获取统计信息</div>
-                                )}
-                            </div>
-
-                            <div style={{ marginTop: '32px' }}>
-                                <button
-                                    className="btn-modern-primary"
-                                    style={{ width: '100%' }}
-                                    onClick={() => setShowStats(false)}
-                                >
-                                    关闭
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {showModelSettings && createPortal(
-                <div style={{
-                    position: 'fixed',
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    background: 'rgba(0, 0, 0, 0.7)',
-                    backdropFilter: 'blur(8px)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    zIndex: 10000
-                }}
-                onClick={() => setShowModelSettings(false)}
-                >
-                    <div style={{
-                        background: 'linear-gradient(135deg, rgba(22, 27, 34, 0.98), rgba(13, 17, 23, 0.98))',
-                        borderRadius: '20px',
-                        padding: '2rem',
-                        maxWidth: '500px',
-                        width: '90%',
-                        border: '1px solid rgba(255, 255, 255, 0.1)',
-                        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)'
-                    }}
-                    onClick={e => e.stopPropagation()}
+                        onClick={() => setShowModelSettings(false)}
                     >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '1.5rem' }}>
-                            <div style={{
-                                width: '48px',
-                                height: '48px',
-                                borderRadius: '14px',
-                                background: 'rgba(16, 185, 129, 0.15)',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                color: '#10b981'
-                            }}>
-                                <Settings size={24} />
-                            </div>
-                            <div>
-                                <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                                    预标注模型设置
-                                </h3>
-                                <p style={{ margin: '4px 0 0 0', color: 'var(--text-secondary)', fontSize: '13px' }}>
-                                    选择 YOLO 姿态估计模型文件 (.pt)
-                                </p>
-                            </div>
-                        </div>
-
                         <div style={{
-                            padding: '16px',
-                            background: 'rgba(255, 255, 255, 0.02)',
-                            borderRadius: '12px',
-                            border: '1px solid rgba(255, 255, 255, 0.08)',
-                            marginBottom: '1.5rem'
-                        }}>
-                            <div style={{ color: 'var(--text-tertiary)', fontSize: '0.8rem', marginBottom: '8px', fontWeight: 600 }}>
-                                当前模型路径
-                            </div>
-                            {modelPath ? (
+                            background: 'linear-gradient(135deg, rgba(22, 27, 34, 0.98), rgba(13, 17, 23, 0.98))',
+                            borderRadius: '20px',
+                            padding: '2rem',
+                            maxWidth: '500px',
+                            width: '90%',
+                            border: '1px solid rgba(255, 255, 255, 0.1)',
+                            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)'
+                        }}
+                            onClick={e => e.stopPropagation()}
+                        >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '1.5rem' }}>
                                 <div style={{
-                                    color: 'var(--text-primary)',
-                                    fontWeight: 500,
-                                    fontSize: '0.9rem',
-                                    wordBreak: 'break-all',
-                                    padding: '10px 12px',
-                                    background: 'rgba(16, 185, 129, 0.1)',
-                                    borderRadius: '8px',
-                                    border: '1px solid rgba(16, 185, 129, 0.2)'
-                                }}>
-                                    {modelPath}
-                                </div>
-                            ) : (
-                                <div style={{
-                                    color: 'var(--text-tertiary)',
-                                    fontSize: '0.9rem',
-                                    padding: '10px 12px',
-                                    background: 'rgba(255, 255, 255, 0.03)',
-                                    borderRadius: '8px',
-                                    border: '1px dashed rgba(255, 255, 255, 0.1)'
-                                }}>
-                                    未配置模型
-                                </div>
-                            )}
-                        </div>
-
-                        <div style={{ display: 'flex', gap: '12px' }}>
-                            <button
-                                onClick={() => setShowModelSettings(false)}
-                                style={{
-                                    flex: 1,
-                                    padding: '12px',
-                                    borderRadius: '12px',
-                                    background: 'rgba(255, 255, 255, 0.05)',
-                                    border: '1px solid rgba(255, 255, 255, 0.1)',
-                                    color: 'var(--text-primary)',
-                                    fontSize: '14px',
-                                    fontWeight: 600,
-                                    cursor: 'pointer'
-                                }}
-                            >
-                                关闭
-                            </button>
-                            <button
-                                onClick={handleSelectModel}
-                                style={{
-                                    flex: 1,
-                                    padding: '12px',
-                                    borderRadius: '12px',
-                                    background: 'linear-gradient(135deg, #10b981, #059669)',
-                                    border: 'none',
-                                    color: 'white',
-                                    fontSize: '14px',
-                                    fontWeight: 600,
-                                    cursor: 'pointer',
+                                    width: '48px',
+                                    height: '48px',
+                                    borderRadius: '14px',
+                                    background: 'rgba(16, 185, 129, 0.15)',
                                     display: 'flex',
                                     alignItems: 'center',
                                     justifyContent: 'center',
-                                    gap: '8px'
-                                }}
-                            >
-                                <FolderOpen size={16} />
-                                选择模型文件
-                            </button>
-                        </div>
-                    </div>
-                </div>,
-                document.body
-            )}
-
-            {showPreannotateDialog && createPortal(
-                <div style={{
-                    position: 'fixed',
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    background: 'rgba(0, 0, 0, 0.7)',
-                    backdropFilter: 'blur(8px)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    zIndex: 10000
-                }}
-                onClick={() => setShowPreannotateDialog(false)}
-                >
-                    <div style={{
-                        background: 'linear-gradient(135deg, rgba(22, 27, 34, 0.98), rgba(13, 17, 23, 0.98))',
-                        borderRadius: '20px',
-                        padding: '2rem',
-                        maxWidth: '450px',
-                        width: '90%',
-                        border: '1px solid rgba(139, 92, 246, 0.2)',
-                        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)'
-                    }}
-                    onClick={e => e.stopPropagation()}
-                    >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '1.5rem' }}>
-                            <div style={{
-                                width: '48px',
-                                height: '48px',
-                                borderRadius: '14px',
-                                background: 'rgba(139, 92, 246, 0.15)',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                color: '#8b5cf6'
-                            }}>
-                                <Wand2 size={24} />
-                            </div>
-                            <div>
-                                <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                                    模型预标注
-                                </h3>
-                                <p style={{ margin: '4px 0 0 0', color: 'var(--text-secondary)', fontSize: '13px' }}>
-                                    选择预标注范围和参数
-                                </p>
-                            </div>
-                        </div>
-
-                        <div style={{ marginBottom: '1.5rem' }}>
-                            <div style={{ color: 'var(--text-tertiary)', fontSize: '0.8rem', marginBottom: '10px', fontWeight: 600 }}>
-                                预标注范围
-                            </div>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                <label style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '12px',
-                                    padding: '12px 14px',
-                                    background: preannotateRange === 'all' ? 'rgba(139, 92, 246, 0.1)' : 'rgba(255, 255, 255, 0.02)',
-                                    border: preannotateRange === 'all' ? '1px solid rgba(139, 92, 246, 0.3)' : '1px solid rgba(255, 255, 255, 0.08)',
-                                    borderRadius: '10px',
-                                    cursor: 'pointer',
-                                    transition: 'all 0.2s'
+                                    color: '#10b981'
                                 }}>
-                                    <input
-                                        type="radio"
-                                        name="preannotateRange"
-                                        value="all"
-                                        checked={preannotateRange === 'all'}
-                                        onChange={() => setPreannotateRange('all')}
-                                        style={{ accentColor: '#8b5cf6' }}
-                                    />
-                                    <span style={{ color: preannotateRange === 'all' ? '#8b5cf6' : 'var(--text-primary)', fontWeight: 500 }}>
-                                        全部图片 ({filtered.length} 张)
-                                    </span>
-                                </label>
-                                <label style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '12px',
-                                    padding: '12px 14px',
-                                    background: preannotateRange === 'unannotated' ? 'rgba(139, 92, 246, 0.1)' : 'rgba(255, 255, 255, 0.02)',
-                                    border: preannotateRange === 'unannotated' ? '1px solid rgba(139, 92, 246, 0.3)' : '1px solid rgba(255, 255, 255, 0.08)',
-                                    borderRadius: '10px',
-                                    cursor: 'pointer',
-                                    transition: 'all 0.2s'
-                                }}>
-                                    <input
-                                        type="radio"
-                                        name="preannotateRange"
-                                        value="unannotated"
-                                        checked={preannotateRange === 'unannotated'}
-                                        onChange={() => setPreannotateRange('unannotated')}
-                                        style={{ accentColor: '#8b5cf6' }}
-                                    />
-                                    <span style={{ color: preannotateRange === 'unannotated' ? '#8b5cf6' : 'var(--text-primary)', fontWeight: 500 }}>
-                                        仅未标注图片 ({filtered.filter(img => typeof img === 'string' ? true : !img.hasAnnotation).length} 张)
-                                    </span>
-                                </label>
-                                <label style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '12px',
-                                    padding: '12px 14px',
-                                    background: preannotateRange === 'selected' ? 'rgba(139, 92, 246, 0.1)' : 'rgba(255, 255, 255, 0.02)',
-                                    border: preannotateRange === 'selected' ? '1px solid rgba(139, 92, 246, 0.3)' : '1px solid rgba(255, 255, 255, 0.08)',
-                                    borderRadius: '10px',
-                                    cursor: selectedImage ? 'pointer' : 'not-allowed',
-                                    transition: 'all 0.2s',
-                                    opacity: selectedImage ? 1 : 0.5
-                                }}>
-                                    <input
-                                        type="radio"
-                                        name="preannotateRange"
-                                        value="selected"
-                                        checked={preannotateRange === 'selected'}
-                                        onChange={() => selectedImage && setPreannotateRange('selected')}
-                                        disabled={!selectedImage}
-                                        style={{ accentColor: '#8b5cf6' }}
-                                    />
-                                    <span style={{ color: preannotateRange === 'selected' ? '#8b5cf6' : 'var(--text-primary)', fontWeight: 500 }}>
-                                        当前选中图片 {selectedImage ? `(1 张)` : '(未选中)'}
-                                    </span>
-                                </label>
+                                    <Settings size={24} />
+                                </div>
+                                <div>
+                                    <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                                        预标注模型设置
+                                    </h3>
+                                    <p style={{ margin: '4px 0 0 0', color: 'var(--text-secondary)', fontSize: '13px' }}>
+                                        选择 YOLO 姿态估计模型文件 (.pt)
+                                    </p>
+                                </div>
                             </div>
-                        </div>
 
-                        <div style={{ marginBottom: '1.5rem' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                                <span style={{ color: 'var(--text-tertiary)', fontSize: '0.8rem', fontWeight: 600 }}>
-                                    置信度阈值
-                                </span>
-                                <span style={{ color: '#8b5cf6', fontSize: '0.9rem', fontWeight: 600 }}>
-                                    {confidenceThreshold.toFixed(2)}
-                                </span>
-                            </div>
-                            <input
-                                type="range"
-                                min="0.1"
-                                max="0.9"
-                                step="0.05"
-                                value={confidenceThreshold}
-                                onChange={(e) => setConfidenceThreshold(parseFloat(e.target.value))}
-                                style={{
-                                    width: '100%',
-                                    height: '6px',
-                                    borderRadius: '3px',
-                                    background: 'rgba(255, 255, 255, 0.1)',
-                                    outline: 'none',
-                                    accentColor: '#8b5cf6'
-                                }}
-                            />
-                            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px' }}>
-                                <span style={{ color: 'var(--text-tertiary)', fontSize: '11px' }}>0.1 (宽松)</span>
-                                <span style={{ color: 'var(--text-tertiary)', fontSize: '11px' }}>0.9 (严格)</span>
-                            </div>
-                        </div>
-
-                        <div style={{ display: 'flex', gap: '12px' }}>
-                            <button
-                                onClick={() => setShowPreannotateDialog(false)}
-                                style={{
-                                    flex: 1,
-                                    padding: '12px',
-                                    borderRadius: '12px',
-                                    background: 'rgba(255, 255, 255, 0.05)',
-                                    border: '1px solid rgba(255, 255, 255, 0.1)',
-                                    color: 'var(--text-primary)',
-                                    fontSize: '14px',
-                                    fontWeight: 600,
-                                    cursor: 'pointer'
-                                }}
-                            >
-                                取消
-                            </button>
-                            <button
-                                onClick={handleStartPreannotate}
-                                style={{
-                                    flex: 1,
-                                    padding: '12px',
-                                    borderRadius: '12px',
-                                    background: 'linear-gradient(135deg, #8b5cf6, #7c3aed)',
-                                    border: 'none',
-                                    color: 'white',
-                                    fontSize: '14px',
-                                    fontWeight: 600,
-                                    cursor: 'pointer',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    gap: '8px'
-                                }}
-                            >
-                                <Play size={16} />
-                                开始预标注
-                            </button>
-                        </div>
-                    </div>
-                </div>,
-                document.body
-            )}
-
-            {showPreannotateProgress && createPortal(
-                <div style={{
-                    position: 'fixed',
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    background: 'rgba(0, 0, 0, 0.8)',
-                    backdropFilter: 'blur(8px)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    zIndex: 10000
-                }}>
-                    <div style={{
-                        background: 'linear-gradient(135deg, rgba(22, 27, 34, 0.98), rgba(13, 17, 23, 0.98))',
-                        borderRadius: '20px',
-                        padding: '2rem',
-                        maxWidth: '450px',
-                        width: '90%',
-                        border: '1px solid rgba(139, 92, 246, 0.2)',
-                        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)'
-                    }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '1.5rem' }}>
                             <div style={{
-                                width: '48px',
-                                height: '48px',
-                                borderRadius: '14px',
-                                background: 'rgba(139, 92, 246, 0.15)',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                color: '#8b5cf6'
-                            }}>
-                                <RefreshCw size={24} className="animate-spin" />
-                            </div>
-                            <div>
-                                <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                                    正在预标注
-                                </h3>
-                                <p style={{ margin: '4px 0 0 0', color: 'var(--text-secondary)', fontSize: '13px' }}>
-                                    请稍候，正在处理图片...
-                                </p>
-                            </div>
-                        </div>
-
-                        <div style={{ marginBottom: '1rem' }}>
-                            <div style={{
-                                width: '100%',
-                                height: '8px',
-                                background: 'rgba(255, 255, 255, 0.1)',
-                                borderRadius: '4px',
-                                overflow: 'hidden'
-                            }}>
-                                <div style={{
-                                    width: `${preannotateProgress.total > 0 ? (preannotateProgress.current / preannotateProgress.total) * 100 : 0}%`,
-                                    height: '100%',
-                                    background: 'linear-gradient(90deg, #8b5cf6, #a78bfa)',
-                                    transition: 'width 0.3s ease'
-                                }} />
-                            </div>
-                        </div>
-
-                        <div style={{
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                            marginBottom: '1rem'
-                        }}>
-                            <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
-                                进度: {preannotateProgress.current} / {preannotateProgress.total}
-                            </span>
-                            <span style={{ color: '#8b5cf6', fontSize: '0.9rem', fontWeight: 600 }}>
-                                {preannotateProgress.total > 0 ? Math.round((preannotateProgress.current / preannotateProgress.total) * 100) : 0}%
-                            </span>
-                        </div>
-
-                        {preannotateProgress.currentImage && (
-                            <div style={{
-                                padding: '12px 14px',
+                                padding: '16px',
                                 background: 'rgba(255, 255, 255, 0.02)',
-                                borderRadius: '10px',
+                                borderRadius: '12px',
                                 border: '1px solid rgba(255, 255, 255, 0.08)',
                                 marginBottom: '1.5rem'
                             }}>
-                                <div style={{ color: 'var(--text-tertiary)', fontSize: '0.75rem', marginBottom: '4px' }}>
-                                    当前处理
+                                <div style={{ color: 'var(--text-tertiary)', fontSize: '0.8rem', marginBottom: '8px', fontWeight: 600 }}>
+                                    当前模型路径
                                 </div>
-                                <div style={{
-                                    color: 'var(--text-primary)',
-                                    fontSize: '0.9rem',
-                                    fontWeight: 500,
-                                    overflow: 'hidden',
-                                    textOverflow: 'ellipsis',
-                                    whiteSpace: 'nowrap'
-                                }}>
-                                    {preannotateProgress.currentImage}
-                                </div>
-                            </div>
-                        )}
-
-                        <button
-                            onClick={handleCancelPreannotate}
-                            style={{
-                                width: '100%',
-                                padding: '12px',
-                                borderRadius: '12px',
-                                background: 'rgba(239, 68, 68, 0.1)',
-                                border: '1px solid rgba(239, 68, 68, 0.3)',
-                                color: '#ef4444',
-                                fontSize: '14px',
-                                fontWeight: 600,
-                                cursor: 'pointer',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                gap: '8px'
-                            }}
-                        >
-                            <X size={16} />
-                            取消预标注
-                        </button>
-                    </div>
-                </div>,
-                document.body
-            )}
-
-            {showPreannotateResult && preannotateResult && createPortal(
-                <div style={{
-                    position: 'fixed',
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    background: 'rgba(0, 0, 0, 0.7)',
-                    backdropFilter: 'blur(8px)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    zIndex: 10000
-                }}
-                onClick={() => setShowPreannotateResult(false)}
-                >
-                    <div style={{
-                        background: 'linear-gradient(135deg, rgba(22, 27, 34, 0.98), rgba(13, 17, 23, 0.98))',
-                        borderRadius: '20px',
-                        padding: '2rem',
-                        maxWidth: '400px',
-                        width: '90%',
-                        border: preannotateResult.cancelled 
-                            ? '1px solid rgba(245, 158, 11, 0.3)' 
-                            : preannotateResult.failedCount > 0 
-                                ? '1px solid rgba(245, 158, 11, 0.3)' 
-                                : '1px solid rgba(16, 185, 129, 0.3)',
-                        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)'
-                    }}
-                    onClick={e => e.stopPropagation()}
-                    >
-                        <div style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
-                            <div style={{
-                                width: '64px',
-                                height: '64px',
-                                borderRadius: '50%',
-                                background: preannotateResult.cancelled 
-                                    ? 'rgba(245, 158, 11, 0.15)' 
-                                    : preannotateResult.failedCount > 0 
-                                        ? 'rgba(245, 158, 11, 0.15)' 
-                                        : 'rgba(16, 185, 129, 0.15)',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                margin: '0 auto 16px auto'
-                            }}>
-                                {preannotateResult.cancelled ? (
-                                    <Pause size={28} color="#f59e0b" />
-                                ) : preannotateResult.failedCount > 0 ? (
-                                    <AlertCircle size={28} color="#f59e0b" />
+                                {modelPath ? (
+                                    <div style={{
+                                        color: 'var(--text-primary)',
+                                        fontWeight: 500,
+                                        fontSize: '0.9rem',
+                                        wordBreak: 'break-all',
+                                        padding: '10px 12px',
+                                        background: 'rgba(16, 185, 129, 0.1)',
+                                        borderRadius: '8px',
+                                        border: '1px solid rgba(16, 185, 129, 0.2)'
+                                    }}>
+                                        {modelPath}
+                                    </div>
                                 ) : (
-                                    <CheckCircle size={28} color="#10b981" />
+                                    <div style={{
+                                        color: 'var(--text-tertiary)',
+                                        fontSize: '0.9rem',
+                                        padding: '10px 12px',
+                                        background: 'rgba(255, 255, 255, 0.03)',
+                                        borderRadius: '8px',
+                                        border: '1px dashed rgba(255, 255, 255, 0.1)'
+                                    }}>
+                                        未配置模型
+                                    </div>
                                 )}
                             </div>
-                            <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                                {preannotateResult.cancelled 
-                                    ? '预标注已取消' 
-                                    : preannotateResult.failedCount > 0 
-                                        ? '预标注完成（部分失败）' 
-                                        : '预标注完成'}
-                            </h3>
-                        </div>
 
+                            <div style={{ display: 'flex', gap: '12px' }}>
+                                <button
+                                    onClick={() => setShowModelSettings(false)}
+                                    style={{
+                                        flex: 1,
+                                        padding: '12px',
+                                        borderRadius: '12px',
+                                        background: 'rgba(255, 255, 255, 0.05)',
+                                        border: '1px solid rgba(255, 255, 255, 0.1)',
+                                        color: 'var(--text-primary)',
+                                        fontSize: '14px',
+                                        fontWeight: 600,
+                                        cursor: 'pointer'
+                                    }}
+                                >
+                                    关闭
+                                </button>
+                                <button
+                                    onClick={handleSelectModel}
+                                    style={{
+                                        flex: 1,
+                                        padding: '12px',
+                                        borderRadius: '12px',
+                                        background: 'linear-gradient(135deg, #10b981, #059669)',
+                                        border: 'none',
+                                        color: 'white',
+                                        fontSize: '14px',
+                                        fontWeight: 600,
+                                        cursor: 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        gap: '8px'
+                                    }}
+                                >
+                                    <FolderOpen size={16} />
+                                    选择模型文件
+                                </button>
+                            </div>
+                        </div>
+                    </div>,
+                    document.body
+                )
+            }
+
+            {
+                showPreannotateDialog && createPortal(
+                    <div style={{
+                        position: 'fixed',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        background: 'rgba(0, 0, 0, 0.7)',
+                        backdropFilter: 'blur(8px)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        zIndex: 10000
+                    }}
+                        onClick={() => setShowPreannotateDialog(false)}
+                    >
                         <div style={{
-                            display: 'grid',
-                            gridTemplateColumns: preannotateResult.failedCount > 0 ? '1fr 1fr' : '1fr',
-                            gap: '12px',
-                            marginBottom: '1.5rem'
-                        }}>
-                            <div style={{
-                                padding: '16px',
-                                background: 'rgba(16, 185, 129, 0.1)',
-                                borderRadius: '12px',
-                                border: '1px solid rgba(16, 185, 129, 0.2)',
-                                textAlign: 'center'
-                            }}>
-                                <div style={{ color: '#10b981', fontSize: '1.5rem', fontWeight: 700 }}>
-                                    {preannotateResult.successCount}
+                            background: 'linear-gradient(135deg, rgba(22, 27, 34, 0.98), rgba(13, 17, 23, 0.98))',
+                            borderRadius: '20px',
+                            padding: '2rem',
+                            maxWidth: '450px',
+                            width: '90%',
+                            border: '1px solid rgba(139, 92, 246, 0.2)',
+                            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)'
+                        }}
+                            onClick={e => e.stopPropagation()}
+                        >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '1.5rem' }}>
+                                <div style={{
+                                    width: '48px',
+                                    height: '48px',
+                                    borderRadius: '14px',
+                                    background: 'rgba(139, 92, 246, 0.15)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    color: '#8b5cf6'
+                                }}>
+                                    <Wand2 size={24} />
                                 </div>
-                                <div style={{ color: '#10b981', fontSize: '0.8rem', fontWeight: 500 }}>
-                                    成功
+                                <div>
+                                    <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                                        模型预标注
+                                    </h3>
+                                    <p style={{ margin: '4px 0 0 0', color: 'var(--text-secondary)', fontSize: '13px' }}>
+                                        选择预标注范围和参数
+                                    </p>
                                 </div>
                             </div>
-                            {preannotateResult.failedCount > 0 && (
+
+                            <div style={{ marginBottom: '1.5rem' }}>
+                                <div style={{ color: 'var(--text-tertiary)', fontSize: '0.8rem', marginBottom: '10px', fontWeight: 600 }}>
+                                    预标注范围
+                                </div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                    <label style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '12px',
+                                        padding: '12px 14px',
+                                        background: preannotateRange === 'all' ? 'rgba(139, 92, 246, 0.1)' : 'rgba(255, 255, 255, 0.02)',
+                                        border: preannotateRange === 'all' ? '1px solid rgba(139, 92, 246, 0.3)' : '1px solid rgba(255, 255, 255, 0.08)',
+                                        borderRadius: '10px',
+                                        cursor: 'pointer',
+                                        transition: 'all 0.2s'
+                                    }}>
+                                        <input
+                                            type="radio"
+                                            name="preannotateRange"
+                                            value="all"
+                                            checked={preannotateRange === 'all'}
+                                            onChange={() => setPreannotateRange('all')}
+                                            style={{ accentColor: '#8b5cf6' }}
+                                        />
+                                        <span style={{ color: preannotateRange === 'all' ? '#8b5cf6' : 'var(--text-primary)', fontWeight: 500 }}>
+                                            全部图片 ({filtered.length} 张)
+                                        </span>
+                                    </label>
+                                    <label style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '12px',
+                                        padding: '12px 14px',
+                                        background: preannotateRange === 'unannotated' ? 'rgba(139, 92, 246, 0.1)' : 'rgba(255, 255, 255, 0.02)',
+                                        border: preannotateRange === 'unannotated' ? '1px solid rgba(139, 92, 246, 0.3)' : '1px solid rgba(255, 255, 255, 0.08)',
+                                        borderRadius: '10px',
+                                        cursor: 'pointer',
+                                        transition: 'all 0.2s'
+                                    }}>
+                                        <input
+                                            type="radio"
+                                            name="preannotateRange"
+                                            value="unannotated"
+                                            checked={preannotateRange === 'unannotated'}
+                                            onChange={() => setPreannotateRange('unannotated')}
+                                            style={{ accentColor: '#8b5cf6' }}
+                                        />
+                                        <span style={{ color: preannotateRange === 'unannotated' ? '#8b5cf6' : 'var(--text-primary)', fontWeight: 500 }}>
+                                            仅未标注图片 ({filtered.filter(img => typeof img === 'string' ? true : !img.hasAnnotation).length} 张)
+                                        </span>
+                                    </label>
+                                    <label style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '12px',
+                                        padding: '12px 14px',
+                                        background: preannotateRange === 'selected' ? 'rgba(139, 92, 246, 0.1)' : 'rgba(255, 255, 255, 0.02)',
+                                        border: preannotateRange === 'selected' ? '1px solid rgba(139, 92, 246, 0.3)' : '1px solid rgba(255, 255, 255, 0.08)',
+                                        borderRadius: '10px',
+                                        cursor: selectedImage ? 'pointer' : 'not-allowed',
+                                        transition: 'all 0.2s',
+                                        opacity: selectedImage ? 1 : 0.5
+                                    }}>
+                                        <input
+                                            type="radio"
+                                            name="preannotateRange"
+                                            value="selected"
+                                            checked={preannotateRange === 'selected'}
+                                            onChange={() => selectedImage && setPreannotateRange('selected')}
+                                            disabled={!selectedImage}
+                                            style={{ accentColor: '#8b5cf6' }}
+                                        />
+                                        <span style={{ color: preannotateRange === 'selected' ? '#8b5cf6' : 'var(--text-primary)', fontWeight: 500 }}>
+                                            当前选中图片 {selectedImage ? `(1 张)` : '(未选中)'}
+                                        </span>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <div style={{ marginBottom: '1.5rem' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                                    <span style={{ color: 'var(--text-tertiary)', fontSize: '0.8rem', fontWeight: 600 }}>
+                                        置信度阈值
+                                    </span>
+                                    <span style={{ color: '#8b5cf6', fontSize: '0.9rem', fontWeight: 600 }}>
+                                        {confidenceThreshold.toFixed(2)}
+                                    </span>
+                                </div>
+                                <input
+                                    type="range"
+                                    min="0.1"
+                                    max="0.9"
+                                    step="0.05"
+                                    value={confidenceThreshold}
+                                    onChange={(e) => setConfidenceThreshold(parseFloat(e.target.value))}
+                                    style={{
+                                        width: '100%',
+                                        height: '6px',
+                                        borderRadius: '3px',
+                                        background: 'rgba(255, 255, 255, 0.1)',
+                                        outline: 'none',
+                                        accentColor: '#8b5cf6'
+                                    }}
+                                />
+                                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px' }}>
+                                    <span style={{ color: 'var(--text-tertiary)', fontSize: '11px' }}>0.1 (宽松)</span>
+                                    <span style={{ color: 'var(--text-tertiary)', fontSize: '11px' }}>0.9 (严格)</span>
+                                </div>
+                            </div>
+
+                            <div style={{ display: 'flex', gap: '12px' }}>
+                                <button
+                                    onClick={() => setShowPreannotateDialog(false)}
+                                    style={{
+                                        flex: 1,
+                                        padding: '12px',
+                                        borderRadius: '12px',
+                                        background: 'rgba(255, 255, 255, 0.05)',
+                                        border: '1px solid rgba(255, 255, 255, 0.1)',
+                                        color: 'var(--text-primary)',
+                                        fontSize: '14px',
+                                        fontWeight: 600,
+                                        cursor: 'pointer'
+                                    }}
+                                >
+                                    取消
+                                </button>
+                                <button
+                                    onClick={handleStartPreannotate}
+                                    style={{
+                                        flex: 1,
+                                        padding: '12px',
+                                        borderRadius: '12px',
+                                        background: 'linear-gradient(135deg, #8b5cf6, #7c3aed)',
+                                        border: 'none',
+                                        color: 'white',
+                                        fontSize: '14px',
+                                        fontWeight: 600,
+                                        cursor: 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        gap: '8px'
+                                    }}
+                                >
+                                    <Play size={16} />
+                                    开始预标注
+                                </button>
+                            </div>
+                        </div>
+                    </div>,
+                    document.body
+                )
+            }
+
+            {
+                showPreannotateProgress && createPortal(
+                    <div style={{
+                        position: 'fixed',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        background: 'rgba(0, 0, 0, 0.8)',
+                        backdropFilter: 'blur(8px)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        zIndex: 10000
+                    }}>
+                        <div style={{
+                            background: 'linear-gradient(135deg, rgba(22, 27, 34, 0.98), rgba(13, 17, 23, 0.98))',
+                            borderRadius: '20px',
+                            padding: '2rem',
+                            maxWidth: '450px',
+                            width: '90%',
+                            border: '1px solid rgba(139, 92, 246, 0.2)',
+                            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)'
+                        }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '1.5rem' }}>
                                 <div style={{
-                                    padding: '16px',
-                                    background: 'rgba(239, 68, 68, 0.1)',
-                                    borderRadius: '12px',
-                                    border: '1px solid rgba(239, 68, 68, 0.2)',
-                                    textAlign: 'center'
+                                    width: '48px',
+                                    height: '48px',
+                                    borderRadius: '14px',
+                                    background: 'rgba(139, 92, 246, 0.15)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    color: '#8b5cf6'
                                 }}>
-                                    <div style={{ color: '#ef4444', fontSize: '1.5rem', fontWeight: 700 }}>
-                                        {preannotateResult.failedCount}
+                                    <RefreshCw size={24} className="animate-spin" />
+                                </div>
+                                <div>
+                                    <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                                        正在预标注
+                                    </h3>
+                                    <p style={{ margin: '4px 0 0 0', color: 'var(--text-secondary)', fontSize: '13px' }}>
+                                        请稍候，正在处理图片...
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div style={{ marginBottom: '1rem' }}>
+                                <div style={{
+                                    width: '100%',
+                                    height: '8px',
+                                    background: 'rgba(255, 255, 255, 0.1)',
+                                    borderRadius: '4px',
+                                    overflow: 'hidden'
+                                }}>
+                                    <div style={{
+                                        width: `${preannotateProgress.total > 0 ? (preannotateProgress.current / preannotateProgress.total) * 100 : 0}%`,
+                                        height: '100%',
+                                        background: 'linear-gradient(90deg, #8b5cf6, #a78bfa)',
+                                        transition: 'width 0.3s ease'
+                                    }} />
+                                </div>
+                            </div>
+
+                            <div style={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                marginBottom: '1rem'
+                            }}>
+                                <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+                                    进度: {preannotateProgress.current} / {preannotateProgress.total}
+                                </span>
+                                <span style={{ color: '#8b5cf6', fontSize: '0.9rem', fontWeight: 600 }}>
+                                    {preannotateProgress.total > 0 ? Math.round((preannotateProgress.current / preannotateProgress.total) * 100) : 0}%
+                                </span>
+                            </div>
+
+                            {preannotateProgress.currentImage && (
+                                <div style={{
+                                    padding: '12px 14px',
+                                    background: 'rgba(255, 255, 255, 0.02)',
+                                    borderRadius: '10px',
+                                    border: '1px solid rgba(255, 255, 255, 0.08)',
+                                    marginBottom: '1.5rem'
+                                }}>
+                                    <div style={{ color: 'var(--text-tertiary)', fontSize: '0.75rem', marginBottom: '4px' }}>
+                                        当前处理
                                     </div>
-                                    <div style={{ color: '#ef4444', fontSize: '0.8rem', fontWeight: 500 }}>
-                                        失败
+                                    <div style={{
+                                        color: 'var(--text-primary)',
+                                        fontSize: '0.9rem',
+                                        fontWeight: 500,
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                        whiteSpace: 'nowrap'
+                                    }}>
+                                        {preannotateProgress.currentImage}
                                     </div>
                                 </div>
                             )}
-                        </div>
 
-                        <div style={{ display: 'flex', gap: '12px' }}>
                             <button
-                                onClick={() => setShowPreannotateResult(false)}
+                                onClick={handleCancelPreannotate}
                                 style={{
-                                    flex: 1,
+                                    width: '100%',
                                     padding: '12px',
                                     borderRadius: '12px',
-                                    background: 'rgba(255, 255, 255, 0.05)',
-                                    border: '1px solid rgba(255, 255, 255, 0.1)',
-                                    color: 'var(--text-primary)',
-                                    fontSize: '14px',
-                                    fontWeight: 600,
-                                    cursor: 'pointer'
-                                }}
-                            >
-                                关闭
-                            </button>
-                            <button
-                                onClick={() => {
-                                    setShowPreannotateResult(false);
-                                    onUpload();
-                                }}
-                                style={{
-                                    flex: 1,
-                                    padding: '12px',
-                                    borderRadius: '12px',
-                                    background: 'linear-gradient(135deg, #4da1ff, #2188ff)',
-                                    border: 'none',
-                                    color: 'white',
+                                    background: 'rgba(239, 68, 68, 0.1)',
+                                    border: '1px solid rgba(239, 68, 68, 0.3)',
+                                    color: '#ef4444',
                                     fontSize: '14px',
                                     fontWeight: 600,
                                     cursor: 'pointer',
@@ -1840,37 +1778,188 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
                                     gap: '8px'
                                 }}
                             >
-                                <RefreshCw size={16} />
-                                刷新图库
+                                <X size={16} />
+                                取消预标注
                             </button>
                         </div>
-                    </div>
-                </div>,
-                document.body
-            )}
+                    </div>,
+                    document.body
+                )
+            }
 
-            {showModelToast && createPortal(
-                <div style={{
-                    position: 'fixed',
-                    bottom: '24px',
-                    right: '24px',
-                    zIndex: 10001,
-                    animation: 'slideInRight 0.3s ease-out'
-                }}>
+            {
+                showPreannotateResult && preannotateResult && createPortal(
                     <div style={{
+                        position: 'fixed',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        background: 'rgba(0, 0, 0, 0.7)',
+                        backdropFilter: 'blur(8px)',
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '12px',
-                        padding: '14px 20px',
-                        background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.95), rgba(5, 150, 105, 0.95))',
-                        borderRadius: '14px',
-                        boxShadow: '0 10px 40px rgba(16, 185, 129, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.1)',
-                        color: 'white'
+                        justifyContent: 'center',
+                        zIndex: 10000
+                    }}
+                        onClick={() => setShowPreannotateResult(false)}
+                    >
+                        <div style={{
+                            background: 'linear-gradient(135deg, rgba(22, 27, 34, 0.98), rgba(13, 17, 23, 0.98))',
+                            borderRadius: '20px',
+                            padding: '2rem',
+                            maxWidth: '400px',
+                            width: '90%',
+                            border: preannotateResult.cancelled
+                                ? '1px solid rgba(245, 158, 11, 0.3)'
+                                : preannotateResult.failedCount > 0
+                                    ? '1px solid rgba(245, 158, 11, 0.3)'
+                                    : '1px solid rgba(16, 185, 129, 0.3)',
+                            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)'
+                        }}
+                            onClick={e => e.stopPropagation()}
+                        >
+                            <div style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
+                                <div style={{
+                                    width: '64px',
+                                    height: '64px',
+                                    borderRadius: '50%',
+                                    background: preannotateResult.cancelled
+                                        ? 'rgba(245, 158, 11, 0.15)'
+                                        : preannotateResult.failedCount > 0
+                                            ? 'rgba(245, 158, 11, 0.15)'
+                                            : 'rgba(16, 185, 129, 0.15)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    margin: '0 auto 16px auto'
+                                }}>
+                                    {preannotateResult.cancelled ? (
+                                        <Pause size={28} color="#f59e0b" />
+                                    ) : preannotateResult.failedCount > 0 ? (
+                                        <AlertCircle size={28} color="#f59e0b" />
+                                    ) : (
+                                        <CheckCircle size={28} color="#10b981" />
+                                    )}
+                                </div>
+                                <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                                    {preannotateResult.cancelled
+                                        ? '预标注已取消'
+                                        : preannotateResult.failedCount > 0
+                                            ? '预标注完成（部分失败）'
+                                            : '预标注完成'}
+                                </h3>
+                            </div>
+
+                            <div style={{
+                                display: 'grid',
+                                gridTemplateColumns: preannotateResult.failedCount > 0 ? '1fr 1fr' : '1fr',
+                                gap: '12px',
+                                marginBottom: '1.5rem'
+                            }}>
+                                <div style={{
+                                    padding: '16px',
+                                    background: 'rgba(16, 185, 129, 0.1)',
+                                    borderRadius: '12px',
+                                    border: '1px solid rgba(16, 185, 129, 0.2)',
+                                    textAlign: 'center'
+                                }}>
+                                    <div style={{ color: '#10b981', fontSize: '1.5rem', fontWeight: 700 }}>
+                                        {preannotateResult.successCount}
+                                    </div>
+                                    <div style={{ color: '#10b981', fontSize: '0.8rem', fontWeight: 500 }}>
+                                        成功
+                                    </div>
+                                </div>
+                                {preannotateResult.failedCount > 0 && (
+                                    <div style={{
+                                        padding: '16px',
+                                        background: 'rgba(239, 68, 68, 0.1)',
+                                        borderRadius: '12px',
+                                        border: '1px solid rgba(239, 68, 68, 0.2)',
+                                        textAlign: 'center'
+                                    }}>
+                                        <div style={{ color: '#ef4444', fontSize: '1.5rem', fontWeight: 700 }}>
+                                            {preannotateResult.failedCount}
+                                        </div>
+                                        <div style={{ color: '#ef4444', fontSize: '0.8rem', fontWeight: 500 }}>
+                                            失败
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            <div style={{ display: 'flex', gap: '12px' }}>
+                                <button
+                                    onClick={() => setShowPreannotateResult(false)}
+                                    style={{
+                                        flex: 1,
+                                        padding: '12px',
+                                        borderRadius: '12px',
+                                        background: 'rgba(255, 255, 255, 0.05)',
+                                        border: '1px solid rgba(255, 255, 255, 0.1)',
+                                        color: 'var(--text-primary)',
+                                        fontSize: '14px',
+                                        fontWeight: 600,
+                                        cursor: 'pointer'
+                                    }}
+                                >
+                                    关闭
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        setShowPreannotateResult(false);
+                                        onUpload();
+                                    }}
+                                    style={{
+                                        flex: 1,
+                                        padding: '12px',
+                                        borderRadius: '12px',
+                                        background: 'linear-gradient(135deg, #4da1ff, #2188ff)',
+                                        border: 'none',
+                                        color: 'white',
+                                        fontSize: '14px',
+                                        fontWeight: 600,
+                                        cursor: 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        gap: '8px'
+                                    }}
+                                >
+                                    <RefreshCw size={16} />
+                                    刷新图库
+                                </button>
+                            </div>
+                        </div>
+                    </div>,
+                    document.body
+                )
+            }
+
+            {
+                showModelToast && createPortal(
+                    <div style={{
+                        position: 'fixed',
+                        bottom: '24px',
+                        right: '24px',
+                        zIndex: 10001,
+                        animation: 'slideInRight 0.3s ease-out'
                     }}>
-                        <CheckCircle size={20} />
-                        <span style={{ fontWeight: 600, fontSize: '14px' }}>模型已选择成功</span>
-                    </div>
-                    <style>{`
+                        <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '12px',
+                            padding: '14px 20px',
+                            background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.95), rgba(5, 150, 105, 0.95))',
+                            borderRadius: '14px',
+                            boxShadow: '0 10px 40px rgba(16, 185, 129, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.1)',
+                            color: 'white'
+                        }}>
+                            <CheckCircle size={20} />
+                            <span style={{ fontWeight: 600, fontSize: '14px' }}>模型已选择成功</span>
+                        </div>
+                        <style>{`
                         @keyframes slideInRight {
                             from {
                                 opacity: 0;
@@ -1882,9 +1971,10 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
                             }
                         }
                     `}</style>
-                </div>,
-                document.body
-            )}
-        </div>
+                    </div>,
+                    document.body
+                )
+            }
+        </div >
     );
 };

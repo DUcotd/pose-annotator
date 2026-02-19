@@ -249,6 +249,7 @@ export const TrainingForm = ({ config, updateConfig, status, onBrowseData, envIn
                                 value={config.epochs}
                                 onChange={(e) => updateConfig({ epochs: parseInt(e.target.value) })}
                                 disabled={isRunning}
+                                className="remote-input"
                                 style={{
                                     width: '100%',
                                     background: 'rgba(0,0,0,0.25)',
@@ -267,6 +268,7 @@ export const TrainingForm = ({ config, updateConfig, status, onBrowseData, envIn
                                 value={config.batch}
                                 onChange={(e) => updateConfig({ batch: parseInt(e.target.value) })}
                                 disabled={isRunning}
+                                className="remote-input"
                                 style={{
                                     width: '100%',
                                     background: 'rgba(0,0,0,0.25)',
@@ -288,6 +290,7 @@ export const TrainingForm = ({ config, updateConfig, status, onBrowseData, envIn
                                 value={config.imgsz}
                                 onChange={(e) => updateConfig({ imgsz: parseInt(e.target.value) })}
                                 disabled={isRunning}
+                                className="remote-input"
                                 style={{
                                     width: '100%',
                                     background: 'rgba(0,0,0,0.25)',
@@ -306,6 +309,7 @@ export const TrainingForm = ({ config, updateConfig, status, onBrowseData, envIn
                                 value={config.name}
                                 onChange={(e) => updateConfig({ name: e.target.value })}
                                 disabled={isRunning}
+                                className="remote-input"
                                 style={{
                                     width: '100%',
                                     background: 'rgba(0,0,0,0.25)',
@@ -417,12 +421,12 @@ export const TrainingForm = ({ config, updateConfig, status, onBrowseData, envIn
 export const HardwareForm = ({ config, updateConfig, status }) => {
     const isRunning = status === 'running' || status === 'starting';
     const isEnabled = config.hardwareEnabled !== false;
-    
+
     return (
-        <SectionCard 
-            icon={Server} 
-            title="硬件与性能" 
-            color="168,85,247" 
+        <SectionCard
+            icon={Server}
+            title="硬件与性能"
+            color="168,85,247"
             gradient="linear-gradient(135deg, rgba(168,85,247,0.15), rgba(139,92,246,0.05))"
             collapsible={true}
             defaultCollapsed={true}
@@ -480,12 +484,12 @@ export const HardwareForm = ({ config, updateConfig, status }) => {
 export const StrategyForm = ({ config, updateConfig, status }) => {
     const isRunning = status === 'running' || status === 'starting';
     const isEnabled = config.strategyEnabled !== false;
-    
+
     return (
-        <SectionCard 
-            icon={TrendingUp} 
-            title="训练策略" 
-            color="251,146,60" 
+        <SectionCard
+            icon={TrendingUp}
+            title="训练策略"
+            color="251,146,60"
             gradient="linear-gradient(135deg, rgba(251,146,60,0.15), rgba(245,158,11,0.05))"
             collapsible={true}
             defaultCollapsed={true}
@@ -577,12 +581,12 @@ export const StrategyForm = ({ config, updateConfig, status }) => {
 export const LossForm = ({ config, updateConfig, status }) => {
     const isRunning = status === 'running' || status === 'starting';
     const isEnabled = config.lossEnabled !== false;
-    
+
     return (
-        <SectionCard 
-            icon={Target} 
-            title="损失函数权重" 
-            color="236,72,153" 
+        <SectionCard
+            icon={Target}
+            title="损失函数权重"
+            color="236,72,153"
             gradient="linear-gradient(135deg, rgba(236,72,153,0.15), rgba(217,70,239,0.05))"
             collapsible={true}
             defaultCollapsed={true}
@@ -683,10 +687,10 @@ export const AugmentationForm = ({ config, updateConfig, status }) => {
     );
 
     return (
-        <SectionCard 
-            icon={Settings} 
-            title="数据增强" 
-            color="34,197,94" 
+        <SectionCard
+            icon={Settings}
+            title="数据增强"
+            color="34,197,94"
             gradient="linear-gradient(135deg, rgba(34,197,94,0.15), rgba(74,222,128,0.05))"
             collapsible={true}
             defaultCollapsed={true}
@@ -736,6 +740,158 @@ export const AugmentationForm = ({ config, updateConfig, status }) => {
                     value={config.mosaic} min={0} max={1} step={0.1}
                     onChange={(v) => updateConfig({ mosaic: v })}
                 />
+            </div>
+        </SectionCard>
+    );
+};
+
+export const RemoteForm = ({ config, updateConfig, status }) => {
+    const isRunning = status === 'running' || status === 'starting';
+    const isEnabled = config.remoteEnabled === true;
+
+    return (
+        <SectionCard
+            icon={Server}
+            title="远程训练配置"
+            color="59,130,246"
+            gradient="linear-gradient(135deg, rgba(59,130,246,0.15), rgba(37,99,235,0.05))"
+            collapsible={true}
+            defaultCollapsed={!isEnabled}
+            statusSummary={isEnabled ? `主机: ${config.remoteHost || '未配置'}` : '本地训练'}
+        >
+            <Toggle
+                checked={isEnabled}
+                onChange={(e) => updateConfig({ remoteEnabled: e.target.checked })}
+                label="启用远程服务器训练"
+                desc="同步数据集到服务器并远程执行训练任务"
+                disabled={isRunning}
+            />
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginTop: '1rem', opacity: isEnabled ? 1 : 0.5 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '3fr 1fr', gap: '1rem' }}>
+                    <div>
+                        <label style={{ fontSize: '13px', color: 'var(--text-tertiary)', marginBottom: '8px', display: 'block', fontWeight: 600 }}>主机 (Host)</label>
+                        <input
+                            type="text"
+                            placeholder="192.168.1.100"
+                            value={config.remoteHost}
+                            onChange={(e) => updateConfig({ remoteHost: e.target.value })}
+                            disabled={isRunning || !isEnabled}
+                            className="remote-input"
+                            style={{
+                                width: '100%',
+                                background: 'rgba(0,0,0,0.25)',
+                                border: '1px solid rgba(255,255,255,0.1)',
+                                borderRadius: '12px',
+                                padding: '12px 16px',
+                                color: 'white',
+                                fontSize: '14px'
+                            }}
+                        />
+                    </div>
+                    <div>
+                        <label style={{ fontSize: '13px', color: 'var(--text-tertiary)', marginBottom: '8px', display: 'block', fontWeight: 600 }}>端口</label>
+                        <input
+                            type="number"
+                            value={config.remotePort}
+                            onChange={(e) => updateConfig({ remotePort: parseInt(e.target.value) })}
+                            disabled={isRunning || !isEnabled}
+                            className="remote-input"
+                            style={{
+                                width: '100%',
+                                background: 'rgba(0,0,0,0.25)',
+                                border: '1px solid rgba(255,255,255,0.1)',
+                                borderRadius: '12px',
+                                padding: '12px 16px',
+                                color: 'white',
+                                fontSize: '14px'
+                            }}
+                        />
+                    </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                    <div>
+                        <label style={{ fontSize: '13px', color: 'var(--text-tertiary)', marginBottom: '8px', display: 'block', fontWeight: 600 }}>用户名</label>
+                        <input
+                            type="text"
+                            value={config.remoteUser}
+                            onChange={(e) => updateConfig({ remoteUser: e.target.value })}
+                            disabled={isRunning || !isEnabled}
+                            className="remote-input"
+                            style={{
+                                width: '100%',
+                                background: 'rgba(0,0,0,0.25)',
+                                border: '1px solid rgba(255,255,255,0.1)',
+                                borderRadius: '12px',
+                                padding: '12px 16px',
+                                color: 'white',
+                                fontSize: '14px'
+                            }}
+                        />
+                    </div>
+                    <div>
+                        <label style={{ fontSize: '13px', color: 'var(--text-tertiary)', marginBottom: '8px', display: 'block', fontWeight: 600 }}>密码</label>
+                        <input
+                            type="password"
+                            value={config.remotePassword}
+                            onChange={(e) => updateConfig({ remotePassword: e.target.value })}
+                            disabled={isRunning || !isEnabled}
+                            className="remote-input"
+                            style={{
+                                width: '100%',
+                                background: 'rgba(0,0,0,0.25)',
+                                border: '1px solid rgba(255,255,255,0.1)',
+                                borderRadius: '12px',
+                                padding: '12px 16px',
+                                color: 'white',
+                                fontSize: '14px'
+                            }}
+                        />
+                    </div>
+                </div>
+
+                <div>
+                    <label style={{ fontSize: '13px', color: 'var(--text-tertiary)', marginBottom: '8px', display: 'block', fontWeight: 600 }}>远程工作路径 (Remote Path)</label>
+                    <input
+                        type="text"
+                        placeholder="/home/user/training"
+                        value={config.remotePath}
+                        onChange={(e) => updateConfig({ remotePath: e.target.value })}
+                        disabled={isRunning || !isEnabled}
+                        className="remote-input"
+                        style={{
+                            width: '100%',
+                            background: 'rgba(0,0,0,0.25)',
+                            border: '1px solid rgba(255,255,255,0.1)',
+                            borderRadius: '12px',
+                            padding: '12px 16px',
+                            color: 'white',
+                            fontSize: '14px'
+                        }}
+                    />
+                </div>
+
+                <div>
+                    <label style={{ fontSize: '13px', color: 'var(--text-tertiary)', marginBottom: '8px', display: 'block', fontWeight: 600 }}>Python 解释器路径</label>
+                    <input
+                        type="text"
+                        placeholder="python3"
+                        value={config.remotePython}
+                        onChange={(e) => updateConfig({ remotePython: e.target.value })}
+                        disabled={isRunning || !isEnabled}
+                        className="remote-input"
+                        style={{
+                            width: '100%',
+                            background: 'rgba(0,0,0,0.25)',
+                            border: '1px solid rgba(255,255,255,0.1)',
+                            borderRadius: '12px',
+                            padding: '12px 16px',
+                            color: 'white',
+                            fontSize: '14px'
+                        }}
+                    />
+                </div>
             </div>
         </SectionCard>
     );

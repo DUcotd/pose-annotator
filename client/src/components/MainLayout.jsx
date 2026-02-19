@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useProject } from '../context/ProjectContext';
-import { Layers, Image as ImageIcon, Box, ArrowLeft, Settings, Home, Download, CheckCircle, AlertTriangle, Terminal, Menu, X } from 'lucide-react';
+import { Layers, Image as ImageIcon, Box, ArrowLeft, Settings, Home, Download, CheckCircle, AlertTriangle, Terminal, Menu, X, Cpu } from 'lucide-react';
 import { ExportModal } from './ExportModal';
 
 export const MainLayout = ({ children }) => {
-    const { currentProject, view, goBack, navigateTo, exportProject } = useProject();
+    const { currentProject, view, goBack, exitProject, navigateTo, exportProject, selectedImage } = useProject();
     const [notification, setNotification] = useState(null);
     const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -40,7 +40,7 @@ export const MainLayout = ({ children }) => {
 
     return (
         <div className="app-layout">
-            <button 
+            <button
                 className="mobile-menu-btn"
                 onClick={() => setSidebarOpen(!sidebarOpen)}
                 aria-label="Toggle menu"
@@ -48,7 +48,7 @@ export const MainLayout = ({ children }) => {
                 {sidebarOpen ? <X size={22} /> : <Menu size={22} />}
             </button>
 
-            <div 
+            <div
                 className={`sidebar-overlay ${sidebarOpen ? 'visible' : ''}`}
                 onClick={() => setSidebarOpen(false)}
             />
@@ -56,11 +56,11 @@ export const MainLayout = ({ children }) => {
             <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
                 <div className="sidebar-brand">
                     <div className="brand-logo">
-                        <Box size={24} strokeWidth={2.5} />
+                        <Cpu size={22} strokeWidth={2} />
                     </div>
                     <div className="brand-text">
                         <h1>数据标注平台</h1>
-                        <span className="brand-tagline">AI Smart Labeling</span>
+                        <span className="brand-tagline">AI Smart Labeling · v1.2</span>
                     </div>
                 </div>
 
@@ -68,21 +68,11 @@ export const MainLayout = ({ children }) => {
                     <div className="sidebar-section">
                         {currentProject ? (
                             <>
-                                <button onClick={() => { goBack(); setSidebarOpen(false); }} className="nav-btn-back">
+                                <button onClick={() => { exitProject(); setSidebarOpen(false); }} className="nav-btn-back">
                                     <ArrowLeft size={16} strokeWidth={2.5} />
                                     <span>返回项目列表</span>
                                 </button>
-                                <div className="sidebar-project-card">
-                                    <div className="project-card-header">
-                                        <div className="project-card-icon">
-                                            <Layers size={14} strokeWidth={2.5} />
-                                        </div>
-                                        <span className="sidebar-label" style={{ margin: 0, fontSize: '10px' }}>CURRENT PROJECT</span>
-                                    </div>
-                                    <div className="project-card-name" title={currentProject}>
-                                        {currentProject}
-                                    </div>
-                                </div>
+                                <SidebarProjectCard currentProject={currentProject} />
                             </>
                         ) : (
                             <div className="nav-info">
@@ -99,14 +89,16 @@ export const MainLayout = ({ children }) => {
                                 onClick={() => { navigateTo('gallery'); setSidebarOpen(false); }}
                                 icon={<ImageIcon size={18} />}
                                 label="图库"
+                                className="nav-btn-gallery"
                             />
 
-                            {view === 'editor' && (
+                            {selectedImage && (
                                 <NavButton
-                                    active={true}
-                                    onClick={() => {}}
+                                    active={view === 'editor'}
+                                    onClick={() => { navigateTo('editor'); setSidebarOpen(false); }}
                                     icon={<Box size={18} />}
                                     label="编辑器"
+                                    className="nav-btn-editor"
                                 />
                             )}
 
@@ -115,6 +107,7 @@ export const MainLayout = ({ children }) => {
                                 onClick={() => { navigateTo('export'); setSidebarOpen(false); }}
                                 icon={<Download size={18} />}
                                 label="导出数据集"
+                                className="nav-btn-export"
                             />
 
                             <NavButton
@@ -122,6 +115,7 @@ export const MainLayout = ({ children }) => {
                                 onClick={() => { navigateTo('training'); setSidebarOpen(false); }}
                                 icon={<Terminal size={18} />}
                                 label="模型训练"
+                                className="nav-btn-training"
                             />
                         </>
                     )}
@@ -129,7 +123,7 @@ export const MainLayout = ({ children }) => {
                 </nav>
 
                 <div className="sidebar-footer">
-                    <button className="nav-btn" onClick={() => { navigateTo('settings'); setSidebarOpen(false); }}>
+                    <button className="nav-btn nav-btn-settings" onClick={() => { navigateTo('settings'); setSidebarOpen(false); }}>
                         <Settings size={18} strokeWidth={2} />
                         <span>系统设置</span>
                     </button>
@@ -151,12 +145,49 @@ export const MainLayout = ({ children }) => {
     );
 };
 
-const NavButton = ({ active, onClick, icon, label }) => (
+const NavButton = ({ active, onClick, icon, label, className = '' }) => (
     <button
         onClick={onClick}
-        className={`nav-btn ${active ? 'active' : ''}`}
+        className={`nav-btn ${className} ${active ? 'active' : ''}`}
     >
         {icon}
         <span>{label}</span>
     </button>
 );
+
+const SidebarProjectCard = ({ currentProject }) => {
+    const { images } = useProject();
+    const annotatedCount = images.filter(img => typeof img === 'string' ? false : !!img?.hasAnnotation).length;
+    const totalCount = images.length;
+    const rate = totalCount > 0 ? Math.round((annotatedCount / totalCount) * 100) : 0;
+
+    return (
+        <div className="sidebar-project-card glass-module">
+            <div className="project-card-header">
+                <div className="project-card-icon">
+                    <Layers size={14} strokeWidth={2.5} />
+                </div>
+                <div className="sidebar-project-tag">CURRENT PROJECT</div>
+            </div>
+            <div className="project-card-name" title={currentProject}>
+                {currentProject}
+            </div>
+            {totalCount > 0 && (
+                <div className="sidebar-project-progress">
+                    <div className="progress-label-row">
+                        <span>标注进度</span>
+                        <span className={`progress-value ${rate >= 80 ? 'success' : ''}`}>
+                            {annotatedCount}/{totalCount}
+                        </span>
+                    </div>
+                    <div className="sidebar-progress-bar">
+                        <div
+                            className={`sidebar-progress-fill ${rate >= 80 ? 'green' : ''}`}
+                            style={{ width: `${rate}%` }}
+                        />
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};

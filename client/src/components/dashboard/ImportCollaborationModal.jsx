@@ -1,13 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { FolderOpen, X, Upload } from 'lucide-react';
+import { FolderOpen, X, Upload, BarChart3, Image as ImageIcon, Layers, Calendar, Info, Loader2, CheckCircle2 } from 'lucide-react';
+import { useProject } from '../../context/ProjectContext';
 
 export const ImportCollaborationModal = ({ isOpen, onClose, onImport }) => {
+    const { inspectCollaboration } = useProject();
     const [zipPath, setZipPath] = useState('');
     const [customPath, setCustomPath] = useState('');
     const [defaultPath, setDefaultPath] = useState('');
     const [useCustomPath, setUseCustomPath] = useState(false);
     const [isImporting, setIsImporting] = useState(false);
+    const [isInspecting, setIsInspecting] = useState(false);
+    const [pkgMeta, setPkgMeta] = useState(null);
+    const [error, setError] = useState('');
 
     useEffect(() => {
         if (isOpen) {
@@ -22,8 +27,27 @@ export const ImportCollaborationModal = ({ isOpen, onClose, onImport }) => {
             setZipPath('');
             setCustomPath('');
             setUseCustomPath(false);
+            setPkgMeta(null);
+            setError('');
         }
     }, [isOpen]);
+
+    const handleInspect = async (path) => {
+        setIsInspecting(true);
+        setError('');
+        try {
+            const result = await inspectCollaboration(path);
+            if (result.success) {
+                setPkgMeta(result.meta);
+            } else {
+                setError(result.error || '无法读取协作包信息');
+            }
+        } catch (err) {
+            setError('解析协作包失败');
+        } finally {
+            setIsInspecting(false);
+        }
+    };
 
     const handleSelectZip = async () => {
         try {
@@ -37,6 +61,7 @@ export const ImportCollaborationModal = ({ isOpen, onClose, onImport }) => {
             const data = await res.json();
             if (data.path) {
                 setZipPath(data.path);
+                handleInspect(data.path);
             }
         } catch (err) {
             console.error('Failed to select file:', err);
@@ -168,9 +193,9 @@ export const ImportCollaborationModal = ({ isOpen, onClose, onImport }) => {
                             <label style={{ margin: 0, fontSize: '0.95rem', fontWeight: 600, color: 'var(--text-secondary)' }}>协作包文件</label>
                             <span style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)', background: 'rgba(255,255,255,0.05)', padding: '2px 8px', borderRadius: '4px' }}>必填</span>
                         </div>
-                        <div style={{ 
-                            display: 'flex', 
-                            gap: '0.75rem', 
+                        <div style={{
+                            display: 'flex',
+                            gap: '0.75rem',
                             alignItems: 'center',
                             padding: '0.75rem',
                             background: 'rgba(0,0,0,0.3)',
@@ -189,14 +214,14 @@ export const ImportCollaborationModal = ({ isOpen, onClose, onImport }) => {
                                 overflow: 'hidden'
                             }}>
                                 <FolderOpen size={16} style={{ flexShrink: 0, color: 'rgba(255,255,255,0.4)' }} />
-                                <span style={{ 
-                                    fontSize: '0.9rem', 
+                                <span style={{
+                                    fontSize: '0.9rem',
                                     color: zipPath ? 'var(--text-primary)' : 'var(--text-tertiary)',
                                     whiteSpace: 'nowrap',
                                     overflow: 'hidden',
                                     textOverflow: 'ellipsis'
                                 }}>
-                                    {zipPath || '点击选择 ZIP 文件...'}
+                                    {zipPath ? zipPath.split(/[\\/]/).pop() : '点击选择 ZIP 文件...'}
                                 </span>
                             </div>
                             <button
@@ -216,19 +241,100 @@ export const ImportCollaborationModal = ({ isOpen, onClose, onImport }) => {
                                 }}
                                 className="hover-card"
                             >
-                                选择文件
+                                {zipPath ? '更换文件' : '选择文件'}
                             </button>
                         </div>
                     </div>
+
+                    {/* Inspection / Preview Section */}
+                    {(isInspecting || pkgMeta || error) && (
+                        <div style={{ padding: '0 3rem 2rem 3rem' }}>
+                            <div className="glass-panel-premium" style={{
+                                padding: '1.5rem',
+                                borderRadius: '16px',
+                                background: isInspecting ? 'rgba(255,255,255,0.02)' : pkgMeta ? 'rgba(52, 211, 153, 0.03)' : 'rgba(248, 81, 73, 0.05)',
+                                border: '1px solid rgba(255,255,255,0.05)',
+                                minHeight: '100px',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                justifyContent: 'center'
+                            }}>
+                                {isInspecting ? (
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', color: 'var(--text-secondary)' }}>
+                                        <Loader2 size={24} className="spin" />
+                                        <span style={{ fontWeight: 500 }}>正在解析协作包数据...</span>
+                                    </div>
+                                ) : error ? (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', color: '#f85149' }}>
+                                        <Info size={24} />
+                                        <div>
+                                            <div style={{ fontWeight: 600 }}>解析失败</div>
+                                            <div style={{ fontSize: '0.85rem', opacity: 0.8 }}>{error}</div>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div style={{ position: 'relative' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '1.2rem' }}>
+                                            <CheckCircle2 size={20} style={{ color: '#10b981' }} />
+                                            <span style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                                {pkgMeta.projectName}
+                                            </span>
+                                            <span style={{
+                                                fontSize: '0.75rem',
+                                                padding: '2px 8px',
+                                                borderRadius: '100px',
+                                                background: 'rgba(255,255,255,0.05)',
+                                                color: 'var(--text-tertiary)'
+                                            }}>
+                                                v{pkgMeta.version || '1.0'}
+                                            </span>
+                                        </div>
+
+                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem' }}>
+                                            <div style={{ background: 'rgba(255,255,255,0.03)', padding: '0.75rem', borderRadius: '12px', textAlign: 'center' }}>
+                                                <div style={{ color: 'var(--text-tertiary)', fontSize: '0.75rem', marginBottom: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
+                                                    <ImageIcon size={12} /> 图片
+                                                </div>
+                                                <div style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                                                    {pkgMeta.stats.total}
+                                                </div>
+                                            </div>
+                                            <div style={{ background: 'rgba(255,255,255,0.03)', padding: '0.75rem', borderRadius: '12px', textAlign: 'center' }}>
+                                                <div style={{ color: 'var(--text-tertiary)', fontSize: '0.75rem', marginBottom: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
+                                                    <BarChart3 size={12} /> 标注
+                                                </div>
+                                                <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#34d399' }}>
+                                                    {pkgMeta.stats.annotated}
+                                                </div>
+                                            </div>
+                                            <div style={{ background: 'rgba(255,255,255,0.03)', padding: '0.75rem', borderRadius: '12px', textAlign: 'center' }}>
+                                                <div style={{ color: 'var(--text-tertiary)', fontSize: '0.75rem', marginBottom: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
+                                                    <Layers size={12} /> 类别
+                                                </div>
+                                                <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#fbbf24' }}>
+                                                    {pkgMeta.stats.classes.length || pkgMeta.stats.classesCount || 0}
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div style={{ marginTop: '1rem', display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-tertiary)', fontSize: '0.8rem' }}>
+                                            <Calendar size={14} />
+                                            <span>导出于 {new Date(pkgMeta.exportDate).toLocaleString()}</span>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
 
                     <div style={{ padding: '0 3rem 3rem 3rem' }}>
                         <div style={{ marginBottom: '0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <label style={{ margin: 0, fontSize: '0.95rem', fontWeight: 600, color: 'var(--text-secondary)' }}>导入位置</label>
                             <span style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)', background: 'rgba(255,255,255,0.05)', padding: '2px 8px', borderRadius: '4px' }}>可选</span>
                         </div>
-                        <div style={{ 
-                            display: 'flex', 
-                            gap: '0.75rem', 
+                        <div style={{
+                            display: 'flex',
+                            gap: '0.75rem',
                             alignItems: 'center',
                             padding: '0.75rem',
                             background: 'rgba(0,0,0,0.3)',
@@ -247,14 +353,14 @@ export const ImportCollaborationModal = ({ isOpen, onClose, onImport }) => {
                                 overflow: 'hidden'
                             }}>
                                 <FolderOpen size={16} style={{ flexShrink: 0, color: 'rgba(255,255,255,0.4)' }} />
-                                <span style={{ 
-                                    fontSize: '0.9rem', 
+                                <span style={{
+                                    fontSize: '0.9rem',
                                     color: useCustomPath ? 'var(--text-primary)' : 'var(--text-tertiary)',
                                     whiteSpace: 'nowrap',
                                     overflow: 'hidden',
                                     textOverflow: 'ellipsis'
                                 }}>
-                                    {useCustomPath ? customPath : defaultPath}
+                                    {useCustomPath ? customPath : (defaultPath === '使用默认位置' ? '默认导入路径' : defaultPath)}
                                 </span>
                             </div>
                             <button
@@ -297,10 +403,10 @@ export const ImportCollaborationModal = ({ isOpen, onClose, onImport }) => {
                                 </button>
                             )}
                         </div>
-                        <p style={{ 
-                            margin: '0.5rem 0 0 0', 
-                            fontSize: '0.8rem', 
-                            color: 'var(--text-tertiary)' 
+                        <p style={{
+                            margin: '0.5rem 0 0 0',
+                            fontSize: '0.8rem',
+                            color: 'var(--text-tertiary)'
                         }}>
                             {useCustomPath ? '项目将导入到所选目录下' : '默认导入到应用数据目录，点击"浏览"选择其他位置'}
                         </p>
@@ -330,9 +436,9 @@ export const ImportCollaborationModal = ({ isOpen, onClose, onImport }) => {
                                 padding: '0 2.5rem',
                                 minWidth: '140px'
                             }}
-                            disabled={!zipPath || isImporting}
+                            disabled={!zipPath || isImporting || isInspecting}
                         >
-                            {isImporting ? '导入中...' : '导入项目'}
+                            {isImporting ? '导入中...' : isInspecting ? '检查中...' : '确认导入项目'}
                         </button>
                     </div>
                 </form>

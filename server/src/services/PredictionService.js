@@ -414,7 +414,7 @@ class PredictionService {
     const projectRoot = PathService.findProjectRoot(projectId, projectsDir);
     // 使用项目根目录的父目录作为 projectsDir，这样 Python 脚本可以正确构建路径
     const actualProjectsDir = path.dirname(projectRoot);
-    
+
     logger.debug(`[Prediction] Project ${projectId} root: ${projectRoot}`);
     logger.debug(`[Prediction] Using projectsDir: ${actualProjectsDir}`);
 
@@ -458,7 +458,7 @@ class PredictionService {
       msg: `预标注进程已启动，PID: ${child.pid}，共 ${images.length} 张图片`,
       time: Date.now()
     });
-    
+
     // 记录启动命令和参数用于调试
     logger.debug(`[Prediction] Command: ${pythonCmd} ${args.join(' ')}`);
     logger.debug(`[Prediction] Images count: ${images.length}, first image: ${images[0] || 'N/A'}`);
@@ -565,7 +565,7 @@ class PredictionService {
       child.on('close', async (code) => {
         // 等待一小段时间确保所有输出都被捕获
         await new Promise(resolve => setTimeout(resolve, 100));
-        
+
         // 处理剩余的 stdout buffer
         const leftover = (jsonBuffer || '').trim();
         if (leftover && leftover.startsWith(JSON_LOG_PREFIX)) {
@@ -578,7 +578,7 @@ class PredictionService {
             logger.warn(`Failed to parse flushed JSON log: ${e.message}, line: ${leftover.substring(0, 100)}`);
           }
         }
-        
+
         // 处理剩余的 stderr buffer
         if (stderrBuffer && stderrBuffer.trim()) {
           const remainingLines = stderrBuffer.split('\n');
@@ -611,7 +611,7 @@ class PredictionService {
             }
           });
         }
-        
+
         // 记录进程退出信息用于调试
         logger.debug(`[Prediction] Process ${child.pid} exited with code ${code} for project ${projectId}`);
         logger.debug(`[Prediction] Final stderrBuffer length: ${stderrBuffer ? stderrBuffer.length : 0}`);
@@ -628,7 +628,7 @@ class PredictionService {
           // 在删除predictionState之前，将统计信息保存到processState中
           const processedImages = state ? state.processedImages : 0;
           const totalImages = state ? state.totalImages : 0;
-          
+
           // 保存最终统计信息到processState，这样即使predictionState被删除也能获取
           const processState = this.processes.get(projectId);
           if (processState) {
@@ -639,7 +639,7 @@ class PredictionService {
               failedCount: Math.max(0, totalImages - processedImages)
             };
           }
-          
+
           this.processes.setStatus(projectId, 'completed');
           this.processes.addLog(projectId, {
             type: 'system',
@@ -660,18 +660,18 @@ class PredictionService {
             msg: `❌ 预标注失败！进程退出码: ${code}`,
             time: Date.now()
           });
-          
+
           // 获取并显示详细的错误日志
           const errorLogs = this.processes.getErrorLogs(projectId) || [];
           const recentErrors = errorLogs.slice(-20);
-          
+
           if (recentErrors.length > 0) {
             this.processes.addLog(projectId, {
               type: 'error',
               msg: `📋 错误详情:\n${recentErrors.join('\n')}`,
               time: Date.now()
             });
-            
+
             // 尝试分类错误并给出建议
             const allErrorText = recentErrors.join('\n').toLowerCase();
             const classified = this.classifyError(allErrorText);
@@ -682,7 +682,7 @@ class PredictionService {
                 errorType: classified.type,
                 time: Date.now()
               });
-              
+
               if (classified.suggestions && classified.suggestions.length > 0) {
                 this.processes.addLog(projectId, {
                   type: 'suggestion',
@@ -698,7 +698,7 @@ class PredictionService {
               time: Date.now()
             });
           }
-          
+
           logger.error(`Prediction failed for project ${projectId} with code ${code}`);
           this.pendingSaves.delete(projectId);
           reject(new Error(`预标注进程异常退出，代码: ${code}`));
@@ -905,7 +905,7 @@ class PredictionService {
       response.progress = {
         total: processState.finalStats.totalImages,
         processed: processState.finalStats.processedImages,
-        percentage: processState.finalStats.totalImages > 0 
+        percentage: processState.finalStats.totalImages > 0
           ? (processState.finalStats.processedImages / processState.finalStats.totalImages * 100).toFixed(1)
           : '0',
         currentImage: null,
@@ -919,14 +919,14 @@ class PredictionService {
       // 统计成功和失败的数量
       let successCount = 0;
       let failedCount = 0;
-      
+
       // 如果任务已完成，优先使用processedImages作为成功数（最可靠）
       if (processState.status === 'completed') {
         successCount = predictionState.processedImages || 0;
         failedCount = Math.max(0, predictionState.totalImages - successCount);
       } else {
         // 任务进行中时，从metrics和logs中统计
-        
+
         // 从metrics中统计 - 所有image_complete事件都算成功处理
         if (processState.metrics && Array.isArray(processState.metrics)) {
           processState.metrics.forEach(metric => {
@@ -936,7 +936,7 @@ class PredictionService {
             }
           });
         }
-        
+
         // 从logs中统计错误数量
         if (processState.logs && Array.isArray(processState.logs)) {
           processState.logs.forEach(log => {
@@ -945,7 +945,7 @@ class PredictionService {
             }
           });
         }
-        
+
         // 如果metrics中没有数据，从logs中统计成功数
         if (successCount === 0 && processState.logs) {
           processState.logs.forEach(log => {
@@ -957,18 +957,18 @@ class PredictionService {
             }
           });
         }
-        
+
         // 如果还是没有统计到，使用processedImages作为成功数
         if (successCount === 0) {
           successCount = predictionState.processedImages || 0;
         }
-        
+
         // 计算失败数（如果还没有统计到）
         if (failedCount === 0 && successCount > 0) {
           failedCount = Math.max(0, predictionState.totalImages - successCount);
         }
       }
-      
+
       response.progress = {
         total: predictionState.totalImages,
         processed: predictionState.processedImages,

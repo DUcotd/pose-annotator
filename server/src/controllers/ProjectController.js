@@ -39,6 +39,155 @@ function createProjectRouter(projectsDir) {
 
   const upload = multer({ storage });
 
+  const getProjectStats = (projectId) => {
+    const paths = PathService.getProjectPaths(projectId, projectsDir);
+    if (!fs.existsSync(paths.uploads)) {
+      return { total: 0, annotated: 0, bboxes: 0, keypoints: 0, classes: [] };
+    }
+
+    const files = fs.readdirSync(paths.uploads);
+    const images = files.filter(file => /\.(jpg|jpeg|png|gif|webp)$/i.test(file));
+    let annotatedCount = 0;
+    let totalBboxes = 0;
+    let totalKeypoints = 0;
+    const classes = new Set();
+
+    // Get classes from config if available
+    const configPath = PathService.getConfigPath(projectId, projectsDir);
+    if (fs.existsSync(configPath)) {
+      try {
+        const config = JSON.parse(fs.readFileSync(configPath));
+        if (config.classMapping) {
+          Object.values(config.classMapping).forEach(c => classes.add(c.name));
+        }
+      } catch (e) { }
+    }
+
+    images.forEach(imageFile => {
+      const annotationFile = path.join(paths.annotations, `${imageFile}.json`);
+      if (fs.existsSync(annotationFile)) {
+        try {
+          const data = JSON.parse(fs.readFileSync(annotationFile));
+          const annotations = Array.isArray(data) ? data : (Array.isArray(data?.annotations) ? data.annotations : []);
+          const bboxes = annotations.filter(a => a?.type === 'bbox').length;
+          const keypoints = annotations.filter(a => a?.type === 'keypoint').length;
+          totalBboxes += bboxes;
+          totalKeypoints += keypoints;
+          if (bboxes > 0 || keypoints > 0) annotatedCount++;
+        } catch (e) { }
+      }
+    });
+
+    return {
+      total: images.length,
+      annotated: annotatedCount,
+      bboxes: totalBboxes,
+      keypoints: totalKeypoints,
+      classes: Array.from(classes)
+    };
+  };
+
+  const createCollaborationArchive = (projectId, outputStream) => {
+    return new Promise(async (resolve, reject) => {
+      const paths = PathService.getProjectPaths(projectId, projectsDir);
+      if (!fs.existsSync(paths.root)) {
+        return reject(new Error('Project not found'));
+      }
+
+      const archive = archiver('zip', {
+        zlib: { level: 0 }
+      });
+
+      outputStream.on('close', () => resolve(archive.pointer()));
+      archive.on('error', (err) => reject(err));
+      archive.pipe(outputStream);
+
+      // Add metadata file
+      const stats = getProjectStats(projectId);
+      const meta = {
+        projectName: projectId,
+        exportDate: new Date().toISOString(),
+        stats: stats,
+        version: '1.1' // Version for metadata format
+      };
+      archive.append(JSON.stringify(meta, null, 2), { name: 'collaboration_meta.json' });
+
+      const safeDirs = ['uploads', 'annotations'];
+      const safeFiles = ['config.json', 'import-history.json', 'project.json', 'index.json'];
+
+      safeDirs.forEach(dir => {
+        const dirPath = path.join(paths.root, dir);
+        if (fs.existsSync(dirPath)) archive.directory(dirPath, dir);
+      });
+
+      safeFiles.forEach(file => {
+        const filePath = path.join(paths.root, file);
+        if (fs.existsSync(filePath)) archive.file(filePath, { name: file });
+      });
+
+      archive.finalize();
+    });
+  };
+
+  router.post('/collaboration/inspect', async (req, res) => {
+    const { path: zipPath } = req.body;
+    if (!zipPath || !fs.existsSync(zipPath)) {
+      return res.status(400).json({ error: 'Package path is required' });
+    }
+
+    try {
+      const zip = new AdmZip(zipPath);
+      const metaEntry = zip.getEntry('collaboration_meta.json');
+
+      if (metaEntry) {
+        const metaData = JSON.parse(zip.readAsText(metaEntry));
+        return res.json({ success: true, meta: metaData });
+      }
+
+      // Fallback: manual scan for older ZIPs
+      logger.info(`No metadata found in ${zipPath}, performing manual scan...`);
+      const entries = zip.getEntries();
+      const imageCount = entries.filter(e => e.entryName.startsWith('uploads/') && !e.isDirectory && /\.(jpg|jpeg|png|gif|webp)$/i.test(e.entryName)).length;
+      const annotationCount = entries.filter(e => e.entryName.startsWith('annotations/') && !e.isDirectory && e.entryName.endsWith('.json')).length;
+
+      res.json({
+        success: true,
+        meta: {
+          projectName: path.basename(zipPath, path.extname(zipPath)).replace('_collaboration', ''),
+          exportDate: fs.statSync(zipPath).mtime.toISOString(),
+          stats: {
+            total: imageCount,
+            annotated: annotationCount,
+            bboxes: '?',
+            keypoints: '?',
+            classes: []
+          },
+          version: '1.0 (legacy)'
+        }
+      });
+    } catch (err) {
+      logger.error('Failed to inspect collaboration ZIP:', err);
+      res.status(500).json({ error: 'Failed to inspect package', details: err.message });
+    }
+  });
+
+  router.get('/:projectId/collaboration/export', async (req, res) => {
+    const { projectId } = req.params;
+    try {
+      res.set('Content-Type', 'application/zip');
+      const safeFilename = encodeURIComponent(`${projectId}_collaboration.zip`);
+      res.set('Content-Disposition', `attachment; filename="${safeFilename}"; filename*=UTF-8''${safeFilename}`);
+
+      const bytes = await createCollaborationArchive(projectId, res);
+      logger.info(`Collaboration ZIP exported for ${projectId}: ${bytes} bytes`);
+    } catch (err) {
+      logger.error('Failed to export collaboration ZIP:', err);
+      if (!res.headersSent) {
+        res.status(err.message === 'Project not found' ? 404 : 500).json({ error: err.message });
+      }
+    }
+  });
+
   router.get('/', (req, res) => {
     try {
       const allPaths = PathService.getAllProjectPaths(projectsDir);
@@ -58,14 +207,14 @@ function createProjectRouter(projectsDir) {
           projects.forEach(p => {
             if (!projectMap.has(p)) {
               const projectPath = path.join(dir, p);
-              
+
               const validation = projectValidator.validateProject(projectPath, p);
               if (!validation.valid) {
                 logger.warn(`[Projects] Skipping invalid project '${p}': ${validation.reason}`);
                 skippedCount++;
                 return;
               }
-              
+
               projectMap.set(p, projectPath);
             }
           });
@@ -99,12 +248,12 @@ function createProjectRouter(projectsDir) {
             });
           }
         } catch (e) { }
-        
+
         const registryProject = projectRegistry.getProject(p);
         if (!registryProject) {
           projectRegistry.registerProject(p, root);
         }
-        
+
         return { id: p, name: p, imageCount, annotatedCount, path: root };
       });
 
@@ -120,7 +269,7 @@ function createProjectRouter(projectsDir) {
     if (!name) return res.status(400).json({ error: 'Project name required' });
 
     const safeName = PathService.sanitizeProjectName(name);
-    
+
     let targetDir = projectsDir;
     if (customPath) {
       targetDir = PathService.resolveCustomProjectPath(customPath, projectsDir);
@@ -187,9 +336,9 @@ function createProjectRouter(projectsDir) {
 
   router.delete('/:projectId', async (req, res) => {
     const { projectId } = req.params;
-    
+
     logger.info(`[Delete] Attempting to delete project: ${projectId}`);
-    
+
     const paths = PathService.getProjectPaths(projectId, projectsDir);
     logger.info(`[Delete] Project path: ${paths.root}`);
 
@@ -202,18 +351,18 @@ function createProjectRouter(projectsDir) {
     try {
       logger.info(`[Delete] Marking project as deleted in registry: ${projectId}`);
       projectRegistry.markProjectDeleted(projectId);
-      
+
       logger.info(`[Delete] Starting directory removal: ${paths.root}`);
       const result = await SafeFileOp.removeDirRename(paths.root);
-      
+
       logger.info(`[Delete] Removal result:`, result);
-      
+
       if (result.success) {
         if (result.pendingCleanup) {
           logger.info(`[Delete] Project deletion pending cleanup: ${projectId}`);
-          res.json({ 
+          res.json({
             message: '项目删除中（部分文件被占用，将在重启后清理）',
-            pendingCleanup: true 
+            pendingCleanup: true
           });
         } else {
           projectRegistry.unregisterProject(projectId);
@@ -225,14 +374,14 @@ function createProjectRouter(projectsDir) {
       }
     } catch (err) {
       logger.error(`[Delete] Failed to delete project ${projectId}:`, err);
-      
+
       const registryProject = projectRegistry.getProject(projectId);
       if (registryProject && registryProject.status === 'deleted') {
         projectRegistry.updateProject(projectId, { status: 'active' });
       }
-      
-      res.status(500).json({ 
-        error: '删除项目失败', 
+
+      res.status(500).json({
+        error: '删除项目失败',
         details: err.message,
         path: paths.root
       });
@@ -388,7 +537,7 @@ function createProjectRouter(projectsDir) {
   router.delete('/:projectId/images/:imageId', async (req, res) => {
     const { projectId, imageId } = req.params;
     logger.info(`[DeleteImage] Attempting to delete image: ${imageId} from project: ${projectId}`);
-    
+
     const paths = PathService.getProjectPaths(projectId, projectsDir);
     const imagePath = path.join(paths.uploads, imageId);
     const annotationPath = path.join(paths.annotations, `${imageId}.json`);
@@ -396,7 +545,7 @@ function createProjectRouter(projectsDir) {
 
     try {
       let deleted = false;
-      
+
       if (fs.existsSync(imagePath)) {
         await fs.promises.unlink(imagePath);
         logger.info(`[DeleteImage] Deleted image file: ${imagePath}`);
@@ -419,13 +568,13 @@ function createProjectRouter(projectsDir) {
         return res.status(404).json({ error: 'Image not found' });
       }
 
-      const remainingFiles = fs.existsSync(paths.uploads) 
+      const remainingFiles = fs.existsSync(paths.uploads)
         ? fs.readdirSync(paths.uploads).filter(f => /\.(jpg|jpeg|png|gif|webp)$/i.test(f))
         : [];
-      
+
       logger.info(`[DeleteImage] Image deleted. Remaining images: ${remainingFiles.length}`);
-      
-      res.json({ 
+
+      res.json({
         message: '图片已删除',
         remainingCount: remainingFiles.length
       });
@@ -621,55 +770,6 @@ function createProjectRouter(projectsDir) {
     }
   });
 
-  const createCollaborationArchive = (projectId, outputStream) => {
-    return new Promise((resolve, reject) => {
-      const paths = PathService.getProjectPaths(projectId, projectsDir);
-      if (!fs.existsSync(paths.root)) {
-        return reject(new Error('Project not found'));
-      }
-
-      const archive = archiver('zip', {
-        zlib: { level: 0 }
-      });
-
-      outputStream.on('close', () => resolve(archive.pointer()));
-      archive.on('error', (err) => reject(err));
-      archive.pipe(outputStream);
-
-      const safeDirs = ['uploads', 'annotations'];
-      const safeFiles = ['config.json', 'import-history.json', 'project.json', 'index.json'];
-
-      safeDirs.forEach(dir => {
-        const dirPath = path.join(paths.root, dir);
-        if (fs.existsSync(dirPath)) archive.directory(dirPath, dir);
-      });
-
-      safeFiles.forEach(file => {
-        const filePath = path.join(paths.root, file);
-        if (fs.existsSync(filePath)) archive.file(filePath, { name: file });
-      });
-
-      archive.finalize();
-    });
-  };
-
-  router.get('/:projectId/collaboration/export', async (req, res) => {
-    const { projectId } = req.params;
-    try {
-      res.set('Content-Type', 'application/zip');
-      const safeFilename = encodeURIComponent(`${projectId}_collaboration.zip`);
-      res.set('Content-Disposition', `attachment; filename="${safeFilename}"; filename*=UTF-8''${safeFilename}`);
-
-      const bytes = await createCollaborationArchive(projectId, res);
-      logger.info(`Collaboration ZIP exported for ${projectId}: ${bytes} bytes`);
-    } catch (err) {
-      logger.error('Failed to export collaboration ZIP:', err);
-      if (!res.headersSent) {
-        res.status(err.message === 'Project not found' ? 404 : 500).json({ error: err.message });
-      }
-    }
-  });
-
   router.post('/:projectId/collaboration/export-to-path', async (req, res) => {
     const { projectId } = req.params;
     const { savePath } = req.body;
@@ -738,7 +838,7 @@ function createProjectRouter(projectsDir) {
       }
 
       logger.info(`Extracting project to: ${finalProjectName} at ${targetDir}`);
-      
+
       const projectRoot = path.join(targetDir, finalProjectName);
       await PathService.ensureProjectDirs(finalProjectName, projectsDir, targetDir);
 
@@ -770,6 +870,8 @@ function createProjectRouter(projectsDir) {
       });
     }
   });
+
+  // Placeholder for moved inspect route
 
   router.post('/:projectId/predict', async (req, res) => {
     const { projectId } = req.params;

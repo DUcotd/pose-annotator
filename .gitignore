@@ -83,3 +83,4 @@ Pose Estimation Datasets Overview.md
 training_log_*.txt
 training_report_*.txt
 scripts/__pycache__
+.agent/**

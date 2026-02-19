@@ -1,16 +1,17 @@
 import React from 'react';
-import { Folder, Trash2, Zap, ChevronRight, Image as ImageIcon, CheckCircle, MapPin, Loader2 } from 'lucide-react';
+import { Folder, Trash2, Zap, ChevronRight, Image as ImageIcon, CheckCircle, MapPin, Loader2, Plus } from 'lucide-react';
 
 export const ProjectCard = ({ project, onClick, onDelete, onRenumber, index, isDeleting }) => {
     const hasImages = (project.imageCount || 0) > 0;
     const hasAnnotated = (project.annotatedCount || 0) > 0;
+    const annotationRate = hasImages ? Math.round(((project.annotatedCount || 0) / project.imageCount) * 100) : 0;
 
     return (
         <div
             className="glass-card glass-card-hover project-card"
             style={{
-                height: '280px',
-                padding: '32px',
+                height: '300px',
+                padding: '28px',
                 display: 'flex',
                 flexDirection: 'column',
                 position: 'relative',
@@ -45,20 +46,23 @@ export const ProjectCard = ({ project, onClick, onDelete, onRenumber, index, isD
                     </div>
                 </div>
             )}
-            
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem' }}>
+
+            {/* Header row */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.25rem' }}>
                 <div style={{
                     width: '48px',
                     height: '48px',
                     borderRadius: '14px',
-                    background: 'rgba(77, 161, 255, 0.1)',
+                    background: 'linear-gradient(135deg, rgba(77, 161, 255, 0.2), rgba(99, 102, 241, 0.1))',
                     color: '#4da1ff',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    border: '1px solid rgba(77, 161, 255, 0.1)'
+                    border: '1px solid rgba(77, 161, 255, 0.15)',
+                    boxShadow: '0 4px 12px rgba(77, 161, 255, 0.1)',
+                    flexShrink: 0
                 }}>
-                    <Folder size={24} />
+                    <Folder size={22} strokeWidth={2} />
                 </div>
                 <div style={{ display: 'flex', gap: '8px' }}>
                     <button
@@ -92,18 +96,22 @@ export const ProjectCard = ({ project, onClick, onDelete, onRenumber, index, isD
                 </div>
             </div>
 
+            {/* Content */}
             <div style={{ flex: 1 }}>
                 <h3 style={{
-                    margin: '0 0 0.75rem 0',
-                    fontSize: '1.4rem',
+                    margin: '0 0 0.5rem 0',
+                    fontSize: '1.3rem',
                     fontWeight: 800,
                     letterSpacing: '-0.5px',
                     color: 'var(--text-primary)',
-                    lineHeight: 1.2
+                    lineHeight: 1.2,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap'
                 }}>
                     {project.name}
                 </h3>
-                
+
                 {project.path && (
                     <div style={{
                         display: 'flex',
@@ -124,8 +132,9 @@ export const ProjectCard = ({ project, onClick, onDelete, onRenumber, index, isD
                         </span>
                     </div>
                 )}
-                
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+
+                {/* Stats badges */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                     <div style={{
                         background: 'rgba(255, 255, 255, 0.04)',
                         border: '1px solid rgba(255, 255, 255, 0.08)',
@@ -135,48 +144,65 @@ export const ProjectCard = ({ project, onClick, onDelete, onRenumber, index, isD
                         alignItems: 'center',
                         gap: '6px',
                         color: 'var(--text-secondary)',
-                        fontSize: '0.85rem',
+                        fontSize: '0.82rem',
                         fontWeight: 600
                     }}>
-                        <ImageIcon size={14} />
-                        <span>{project.imageCount || 0}</span>
+                        <ImageIcon size={13} />
+                        <span>{project.imageCount || 0} 张</span>
                     </div>
                     {hasAnnotated && (
                         <div style={{
-                            background: 'rgba(52, 211, 153, 0.1)',
-                            border: '1px solid rgba(52, 211, 153, 0.2)',
+                            background: 'rgba(52, 211, 153, 0.08)',
+                            border: '1px solid rgba(52, 211, 153, 0.18)',
                             padding: '4px 10px',
                             borderRadius: '8px',
                             display: 'flex',
                             alignItems: 'center',
                             gap: '6px',
                             color: '#34d399',
-                            fontSize: '0.85rem',
+                            fontSize: '0.82rem',
                             fontWeight: 600
                         }}>
-                            <CheckCircle size={14} />
-                            <span>{project.annotatedCount || 0}</span>
+                            <CheckCircle size={13} />
+                            <span>{project.annotatedCount || 0} 已标</span>
                         </div>
                     )}
-                    <span className="card-tag">YOLO 格式</span>
+                    <span className="card-tag">YOLO</span>
                 </div>
+
+                {/* Annotation progress bar */}
+                {hasImages && (
+                    <div className="project-card-progress">
+                        <div className="project-card-progress-label">
+                            <span>标注进度</span>
+                            <span style={{ color: annotationRate >= 80 ? '#34d399' : 'var(--text-tertiary)' }}>{annotationRate}%</span>
+                        </div>
+                        <div className="progress-bar-track">
+                            <div
+                                className={`progress-bar-fill ${annotationRate >= 80 ? 'green' : ''}`}
+                                style={{ width: `${annotationRate}%` }}
+                            />
+                        </div>
+                    </div>
+                )}
             </div>
 
-            <div style={{ marginTop: 'auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            {/* Footer */}
+            <div style={{ marginTop: 'auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '12px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <div style={{
-                        width: '8px',
-                        height: '8px',
+                        width: '7px',
+                        height: '7px',
                         borderRadius: '50%',
                         background: hasImages ? '#34d399' : '#fbbf24',
-                        boxShadow: `0 0 10px ${hasImages ? 'rgba(52, 211, 153, 0.4)' : 'rgba(251, 191, 36, 0.4)'}`
+                        boxShadow: `0 0 8px ${hasImages ? 'rgba(52, 211, 153, 0.5)' : 'rgba(251, 191, 36, 0.5)'}`
                     }} />
-                    <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                    <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
                         {hasImages ? '已就绪' : '等待图片'}
                     </span>
                 </div>
                 <div className="card-arrow-icon">
-                    <ChevronRight size={18} />
+                    <ChevronRight size={16} />
                 </div>
             </div>
         </div>
@@ -194,15 +220,16 @@ export const CreateProjectCard = ({ onClick }) => (
             cursor: 'pointer',
             borderStyle: 'dashed',
             borderWidth: '2px',
-            borderColor: 'rgba(255,255,255,0.1)',
-            height: '280px',
+            borderColor: 'rgba(255,255,255,0.08)',
+            height: '300px',
             padding: '32px',
             background: 'rgba(255, 255, 255, 0.01)',
             animationDelay: '0.1s',
             touchAction: 'pan-x pan-y',
             userSelect: 'none',
             position: 'relative',
-            zIndex: 1
+            zIndex: 1,
+            transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)'
         }}
         onClick={onClick}
     >
@@ -217,21 +244,20 @@ export const CreateProjectCard = ({ onClick }) => (
             marginBottom: '20px',
             color: 'var(--text-tertiary)',
             border: '1px solid rgba(255, 255, 255, 0.05)',
-            transition: 'all 0.3s ease'
         }} className="create-card-icon">
-            <Folder size={32} strokeWidth={1.5} />
+            <Plus size={32} strokeWidth={1.5} />
         </div>
-        <h3 style={{ margin: 0, fontWeight: 700, fontSize: '1.2rem', color: 'var(--text-primary)' }}>创建新项目</h3>
-        <p style={{ margin: '8px 0 0 0', color: 'var(--text-tertiary)', fontSize: '0.9rem', fontWeight: 500 }}>开始您的标注之旅</p>
+        <h3 style={{ margin: 0, fontWeight: 700, fontSize: '1.15rem', color: 'var(--text-primary)' }}>创建新项目</h3>
+        <p style={{ margin: '8px 0 0 0', color: 'var(--text-tertiary)', fontSize: '0.88rem', fontWeight: 500 }}>开始您的标注之旅</p>
     </div>
 );
 
 export const EmptyState = ({ onCreate }) => (
-    <div 
-        className="empty-state-container" 
-        style={{ 
-            padding: '40px 40px', 
-            minHeight: '320px', 
+    <div
+        className="empty-state-container"
+        style={{
+            padding: '40px 40px',
+            minHeight: '320px',
             justifyContent: 'center',
             touchAction: 'pan-x pan-y',
             userSelect: 'none',

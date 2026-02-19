@@ -1,5 +1,5 @@
 import React from 'react';
-import { Folder, Upload, Zap } from 'lucide-react';
+import { Folder, Upload, Zap, Layers, Image as ImageIcon, CheckCircle, TrendingUp } from 'lucide-react';
 
 export const HeroSection = ({ onCreate, onImport, onGuide }) => {
     return (
@@ -38,42 +38,69 @@ export const HeroSection = ({ onCreate, onImport, onGuide }) => {
 export const DashboardStats = ({ projects }) => {
     const totalImages = projects.reduce((acc, p) => acc + (p.imageCount || 0), 0);
     const totalAnnotated = projects.reduce((acc, p) => acc + (p.annotatedCount || 0), 0);
+    const annotationRate = totalImages > 0 ? Math.round((totalAnnotated / totalImages) * 100) : 0;
 
     return (
         <div className="dashboard-stats">
-            <StatCard 
-                label="项目总数" 
-                value={projects.length} 
-                color="99,102,241" 
+            <StatCard
+                label="项目总数"
+                value={projects.length}
+                color="99,102,241"
                 gradient="linear-gradient(135deg, rgba(99,102,241,0.15), rgba(139,92,246,0.05))"
+                icon={<Layers size={20} strokeWidth={2} />}
+                iconBg="rgba(99,102,241,0.15)"
+                iconColor="#818cf8"
             />
-            <StatCard 
-                label="图片总数" 
-                value={totalImages} 
-                color="77,161,255" 
+            <StatCard
+                label="图片总数"
+                value={totalImages}
+                color="77,161,255"
                 gradient="linear-gradient(135deg, rgba(77,161,255,0.15), rgba(96,165,250,0.05))"
+                icon={<ImageIcon size={20} strokeWidth={2} />}
+                iconBg="rgba(77,161,255,0.15)"
+                iconColor="#4da1ff"
             />
-            <StatCard 
-                label="已标注" 
-                value={totalAnnotated} 
-                color="34,197,94" 
+            <StatCard
+                label="已标注"
+                value={totalAnnotated}
+                color="34,197,94"
                 gradient="linear-gradient(135deg, rgba(34,197,94,0.15), rgba(74,222,128,0.05))"
+                icon={<CheckCircle size={20} strokeWidth={2} />}
+                iconBg="rgba(34,197,94,0.15)"
+                iconColor="#34d399"
             />
-            <StatCard 
-                label="标注率" 
-                value={totalImages > 0 ? Math.round((totalAnnotated / totalImages) * 100) + '%' : '0%'} 
-                color="251,191,36" 
+            <StatCard
+                label="标注率"
+                value={annotationRate + '%'}
+                color="251,191,36"
                 gradient="linear-gradient(135deg, rgba(251,191,36,0.15), rgba(252,211,77,0.05))"
+                icon={<TrendingUp size={20} strokeWidth={2} />}
+                iconBg="rgba(251,191,36,0.15)"
+                iconColor="#fbbf24"
+                showProgress={true}
+                progressValue={annotationRate}
+                progressColor={annotationRate >= 80 ? 'green' : ''}
             />
         </div>
     );
 };
 
-const StatCard = ({ label, value, color, gradient }) => (
+const StatCard = ({ label, value, color, gradient, icon, iconBg, iconColor, showProgress, progressValue, progressColor }) => (
     <div className="dashboard-stat-card" style={{ background: gradient, borderColor: `rgba(${color}, 0.2)` }}>
-        <div>
-            <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.5px' }}>{label}</div>
-            <div style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--text-primary)' }}>{value}</div>
+        <div className="stat-card-icon" style={{ background: iconBg, color: iconColor }}>
+            {icon}
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.5px', marginBottom: '4px' }}>{label}</div>
+            <div className="stat-value-animated">{value}</div>
+            {showProgress && (
+                <div className="progress-bar-track" style={{ marginTop: '8px' }}>
+                    <div
+                        className={`progress-bar-fill ${progressColor || ''}`}
+                        style={{ width: `${progressValue}%` }}
+                    />
+                </div>
+            )}
         </div>
     </div>
 );

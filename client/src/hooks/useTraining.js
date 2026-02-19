@@ -17,7 +17,7 @@ export const useTraining = (projectId) => {
         hardwareEnabled: false,
         workers: 0,
         cache_images: false,
-        
+
         strategyEnabled: false,
         patience: 60,
         cos_lr: true,
@@ -48,6 +48,15 @@ export const useTraining = (projectId) => {
         loss_cls: 0.5,
         resume: false,
         export_formats: '',
+
+        remoteEnabled: false,
+        remoteHost: '',
+        remotePort: 22,
+        remoteUser: '',
+        remotePassword: '',
+        remotePath: '/tmp/training',
+        remotePython: 'python3',
+
         ...(projectConfig.trainingSettings || {})
     });
 
@@ -215,7 +224,7 @@ export const useTraining = (projectId) => {
 
         try {
             const response = await fetch(url);
-            
+
             if (!response.ok) {
                 const errorData = await response.json().catch(() => ({ error: '导出失败' }));
                 throw new Error(errorData.error || '导出日志失败');

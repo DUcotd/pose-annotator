@@ -61,6 +61,7 @@ export function AnnotationEditor({ image, projectId, onBack }) {
     // Delete Image State
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [isDeletingImage, setIsDeletingImage] = useState(false);
+    const [showClearConfirm, setShowClearConfirm] = useState(false);
 
     // Single Prediction State
     const [isPredicting, setIsPredicting] = useState(false);
@@ -709,7 +710,7 @@ export function AnnotationEditor({ image, projectId, onBack }) {
     };
 
     const [cursorPos, setCursorPos] = useState({ x: 0, y: 0 });
-    
+
     // Use ref for RAF-based updates - smoother than throttle
     const rafRef = useRef(null);
     const pendingUpdateRef = useRef(null);
@@ -733,7 +734,7 @@ export function AnnotationEditor({ image, projectId, onBack }) {
 
         // Crosshair guides need display coordinates for CSS positioning
         const displayPos = getDisplayPos(e);
-        
+
         // Store pending update and use RAF for smooth rendering
         pendingUpdateRef.current = {
             cursorX: clamp(displayPos.x, 0, imageRef.current.width),
@@ -742,7 +743,7 @@ export function AnnotationEditor({ image, projectId, onBack }) {
             imageWidth,
             imageHeight
         };
-        
+
         if (!rafRef.current) {
             rafRef.current = requestAnimationFrame(() => {
                 rafRef.current = null;
@@ -909,18 +910,18 @@ export function AnnotationEditor({ image, projectId, onBack }) {
     const handleDeleteCurrentImage = async () => {
         setIsDeletingImage(true);
         console.log('Deleting image:', image, 'at index:', currentIndex);
-        
+
         // First save current annotations before deleting
         try {
             await session.save();
         } catch (err) {
             console.warn('Failed to save annotations before delete:', err);
         }
-        
+
         try {
             const result = await deleteImage(projectId, image, { navigateToNext: true, currentIndex, renumberAfterDelete: true });
             console.log('Delete result:', result);
-            
+
             if (result.success) {
                 setShowDeleteConfirm(false);
                 if (result.renumber && result.renumber.error) {
@@ -963,8 +964,8 @@ export function AnnotationEditor({ image, projectId, onBack }) {
             {/* Top Toolbar */}
             <header className="editor-header">
                 <div className="editor-header-left">
-                    <button onClick={handleBackClick} disabled={navLocked} className="btn-secondary" style={{ padding: '8px 12px', opacity: navLocked ? 0.5 : 1, cursor: navLocked ? 'not-allowed' : 'pointer' }}>
-                        <ArrowLeft size={16} /> 返回
+                    <button onClick={handleBackClick} disabled={navLocked} className="editor-back-btn">
+                        <ArrowLeft size={15} strokeWidth={2.5} /> 返回
                     </button>
                     <div className="divider"></div>
 
@@ -1000,6 +1001,9 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                             <div className="editor-nav-counter">
                                 {currentIndex + 1} / {images.length}
                                 {datasetStats && Number.isFinite(datasetStats.unannotated) ? ` · 未标注 ${datasetStats.unannotated}` : ''}
+                            </div>
+                            <div className="editor-nav-progress">
+                                <div className="editor-nav-progress-fill" style={{ width: `${images.length > 0 ? ((currentIndex + 1) / images.length) * 100 : 0}%` }} />
                             </div>
                         </div>
 
@@ -1073,24 +1077,25 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                     <button
                         onClick={handleCompleteAnnotation}
                         disabled={navLocked}
+                        className={`complete-btn-pulse`}
                         style={{
                             display: 'flex',
                             alignItems: 'center',
                             gap: '6px',
-                            padding: '8px 16px',
+                            padding: '8px 18px',
                             background: 'linear-gradient(135deg, #22c55e, #4ade80)',
                             border: 'none',
                             borderRadius: '10px',
                             color: 'white',
                             fontSize: '0.85rem',
-                            fontWeight: 600,
+                            fontWeight: 700,
                             cursor: navLocked ? 'not-allowed' : 'pointer',
                             opacity: navLocked ? 0.6 : 1,
-                            boxShadow: '0 4px 12px rgba(34, 197, 94, 0.3)',
-                            transition: 'all 0.2s ease'
+                            transition: 'all 0.2s ease',
+                            letterSpacing: '0.2px'
                         }}
                     >
-                        <CheckCircle size={16} />
+                        <CheckCircle size={16} strokeWidth={2.5} />
                         完成标注
                     </button>
                 </div>
@@ -1262,58 +1267,58 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                         </button>
                     ))}
                     <div className="toolbar-divider"></div>
-                    <button 
-                        onClick={undo} 
+                    <button
+                        onClick={undo}
                         disabled={historyIndex <= 0}
-                        title="撤销 (Ctrl/Cmd+Z)" 
+                        title="撤销 (Ctrl/Cmd+Z)"
                         className="tool-btn"
                         style={{ opacity: historyIndex <= 0 ? 0.4 : 1 }}
                     >
                         <Undo2 size={20} />
                     </button>
-                    <button 
-                        onClick={redo} 
+                    <button
+                        onClick={redo}
                         disabled={historyIndex >= history.length - 1}
-                        title="重做 (Ctrl/Cmd+Shift+Z / Ctrl/Cmd+Y)" 
+                        title="重做 (Ctrl/Cmd+Shift+Z / Ctrl/Cmd+Y)"
                         className="tool-btn"
                         style={{ opacity: historyIndex >= history.length - 1 ? 0.4 : 1 }}
                     >
                         <Redo2 size={20} />
                     </button>
                     <div className="toolbar-divider"></div>
-                    <button 
-                        onClick={() => setZoomLevel(prev => Math.min(prev + 0.25, 3))} 
-                        title="放大" 
+                    <button
+                        onClick={() => setZoomLevel(prev => Math.min(prev + 0.25, 3))}
+                        title="放大"
                         className="tool-btn"
                     >
                         <ZoomIn size={20} />
                     </button>
-                    <button 
-                        onClick={() => setZoomLevel(prev => Math.max(prev - 0.25, 0.5))} 
-                        title="缩小" 
+                    <button
+                        onClick={() => setZoomLevel(prev => Math.max(prev - 0.25, 0.5))}
+                        title="缩小"
                         className="tool-btn"
                     >
                         <ZoomOut size={20} />
                     </button>
-                    <button 
-                        onClick={resetView} 
-                        title="复位视图" 
+                    <button
+                        onClick={resetView}
+                        title="复位视图"
                         className="tool-btn"
                     >
                         <Maximize size={20} />
                     </button>
                     <div className="toolbar-divider"></div>
-                    <button 
-                        onClick={() => setShowGrid(prev => !prev)} 
-                        title="切换网格 (G)" 
+                    <button
+                        onClick={() => setShowGrid(prev => !prev)}
+                        title="切换网格 (G)"
                         className={`tool-btn ${showGrid ? 'active' : ''}`}
                         style={{ opacity: showGrid ? 1 : 0.6 }}
                     >
                         <Grid3X3 size={20} />
                     </button>
-                    <button 
-                        onClick={() => setShowConnections(prev => !prev)} 
-                        title="切换连接线 (H)" 
+                    <button
+                        onClick={() => setShowConnections(prev => !prev)}
+                        title="切换连接线 (H)"
                         className={`tool-btn ${showConnections ? 'active' : ''}`}
                         style={{ opacity: showConnections ? 1 : 0.6 }}
                     >
@@ -1329,29 +1334,25 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                         <Tag size={20} />
                     </button>
                     <div className="toolbar-divider"></div>
-                    <button 
+                    <button
                         onClick={handleSinglePrediction}
                         disabled={isPredicting || !predictionModelPath}
                         title={predictionModelPath ? "模型预标注当前图片" : "请先在图库配置预标注模型"}
-                        className="tool-btn"
-                        style={{ 
-                            color: predictionModelPath ? '#a855f7' : 'inherit',
-                            opacity: predictionModelPath ? 1 : 0.4
-                        }}
+                        className={`tool-btn tool-btn-ai`}
+                        style={{ opacity: predictionModelPath ? 1 : 0.35 }}
                     >
                         {isPredicting ? <RefreshCw size={20} className="spin" /> : <Wand2 size={20} />}
                     </button>
-                    <button 
+                    <button
                         onClick={() => setShowDeleteConfirm(true)}
-                        title="删除当前图片" 
-                        className="tool-btn"
-                        style={{ color: '#ef4444' }}
+                        title="删除当前图片"
+                        className="tool-btn tool-btn-danger"
                     >
                         <Trash2 size={20} />
                     </button>
-                    <button 
-                        onClick={() => setShowHelpPanel(prev => !prev)} 
-                        title="快捷键帮助 (?)" 
+                    <button
+                        onClick={() => setShowHelpPanel(prev => !prev)}
+                        title="快捷键帮助 (?)"
                         className="tool-btn"
                         style={{ color: showHelpPanel ? 'var(--accent-primary)' : 'inherit' }}
                     >
@@ -1499,18 +1500,31 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                         </div>
 
                         {currentBox && (
-                            <div style={{
-                                position: 'absolute',
-                                left: currentBox.x * displayScale.sx,
-                                top: currentBox.y * displayScale.sy,
-                                width: currentBox.width * displayScale.sx,
-                                height: currentBox.height * displayScale.sy,
-                                border: '2.5px dashed #58a6ff',
-                                background: 'rgba(88, 166, 255, 0.2)',
-                                boxShadow: '0 0 0 1px black',
-                                pointerEvents: 'none',
-                                zIndex: 100
-                            }} />
+                            <>
+                                <div style={{
+                                    position: 'absolute',
+                                    left: currentBox.x * displayScale.sx,
+                                    top: currentBox.y * displayScale.sy,
+                                    width: currentBox.width * displayScale.sx,
+                                    height: currentBox.height * displayScale.sy,
+                                    border: '2px dashed #58a6ff',
+                                    background: 'rgba(88, 166, 255, 0.15)',
+                                    boxShadow: '0 0 0 1px rgba(0,0,0,0.5), 0 0 20px rgba(88,166,255,0.1)',
+                                    pointerEvents: 'none',
+                                    zIndex: 100
+                                }} />
+                                {currentBox.width > 10 && currentBox.height > 10 && (
+                                    <div
+                                        className="bbox-size-hint"
+                                        style={{
+                                            left: currentBox.x * displayScale.sx,
+                                            top: Math.max(0, currentBox.y * displayScale.sy - 26)
+                                        }}
+                                    >
+                                        {Math.round(currentBox.width)} × {Math.round(currentBox.height)} px
+                                    </div>
+                                )}
+                            </>
                         )}
                     </div>
                 </div>
@@ -1520,106 +1534,186 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                     <div className="editor-sidebar-header">
                         <Layers size={18} color="var(--accent-primary)" />
                         <h4>图层列表</h4>
-                        <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px', fontSize: '11px' }}>
-                            <span style={{ 
-                                background: 'rgba(88, 166, 255, 0.15)', 
-                                padding: '2px 8px', 
-                                borderRadius: '6px',
-                                color: 'var(--accent-primary)'
-                            }}>
-                                {annotationStats.bboxes} 框
-                            </span>
-                            <span style={{ 
-                                background: 'rgba(255, 189, 46, 0.15)', 
-                                padding: '2px 8px', 
-                                borderRadius: '6px',
-                                color: '#ffbd2e'
-                            }}>
-                                {annotationStats.keypoints} 点
-                            </span>
+                    </div>
+
+                    {/* Stats mini-bar */}
+                    <div className="editor-sidebar-stats">
+                        <div className="editor-sidebar-stat">
+                            <div className="editor-sidebar-stat-value" style={{ color: 'var(--accent-primary)' }}>{annotationStats.bboxes}</div>
+                            <div className="editor-sidebar-stat-label">标注框</div>
+                        </div>
+                        <div className="editor-sidebar-stat">
+                            <div className="editor-sidebar-stat-value" style={{ color: '#ffbd2e' }}>{annotationStats.keypoints}</div>
+                            <div className="editor-sidebar-stat-label">关键点</div>
+                        </div>
+                        <div className="editor-sidebar-stat">
+                            <div className="editor-sidebar-stat-value" style={{ color: '#34d399' }}>{annotationStats.labeled}</div>
+                            <div className="editor-sidebar-stat-label">已标类</div>
                         </div>
                     </div>
 
                     <div className="editor-sidebar-body">
+                        {groups.length === 0 && (
+                            <div className="editor-layer-empty">
+                                <div className="editor-layer-empty-icon">
+                                    <Box size={22} strokeWidth={1.5} />
+                                </div>
+                                <p className="editor-layer-empty-title">暂无标注</p>
+                                <p className="editor-layer-empty-desc">切换到「画框」模式，在图片上拖拽即可创建标注框</p>
+                            </div>
+                        )}
                         {groups.map((group, idx) => {
                             const classDisplayName = projectConfig.classMapping[group.classIndex] || `Class ${group.classIndex ?? 0}`;
+                            const classColors = ['#58a6ff', '#fbbf24', '#a855f7', '#34d399', '#f97316', '#f43f5e', '#06b6d4', '#84cc16'];
+                            const chipColor = classColors[(group.classIndex ?? 0) % classColors.length];
+
                             return (
-                            <div key={group.id} className={`layer-group ${selectedId === group.id ? 'selected' : ''}`}>
-                                <div
-                                    onClick={() => { setSelectedId(group.id); setMode('select'); }}
-                                    className={`layer-group-header ${selectedId === group.id ? 'selected' : ''}`}
-                                >
-                                    <div className="layer-group-header-left">
-                                        <div onClick={(e) => { e.stopPropagation(); toggleGroup(group.id); }} className="layer-group-toggle">
-                                            {expandedGroups[group.id] ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                                        </div>
-                                        <Box size={14} color="var(--accent-primary)" />
-                                        <span className="layer-group-name">
-                                            对象 {idx + 1}
-                                        </span>
-                                    </div>
-                                    <button onClick={(e) => { e.stopPropagation(); handleDelete(group.id); }} className="icon-btn trash-btn" title="删除">
-                                        <Trash2 size={14} />
-                                    </button>
-                                </div>
-
-                                {expandedGroups[group.id] && (
-                                    <div className="layer-children">
-                                        <div className="layer-child-meta">
-                                            <span>类别 ID:</span>
-                                            <input
-                                                type="number" min="0"
-                                                value={group.classIndex ?? 0}
-                                                onChange={(e) => {
-                                                    const val = parseInt(e.target.value) || 0;
-                                                    applyAnnotationEdit(prev => prev.map(a => a.id === group.id ? { ...a, classIndex: val } : a));
+                                <div key={group.id} className={`layer-group ${selectedId === group.id ? 'selected' : ''}`}>
+                                    <div
+                                        onClick={() => {
+                                            setSelectedId(group.id);
+                                            setMode('select');
+                                            toggleGroup(group.id);
+                                        }}
+                                        className={`layer-group-header ${selectedId === group.id ? 'selected' : ''}`}
+                                    >
+                                        <div className="layer-group-header-left">
+                                            <div className="layer-group-toggle">
+                                                {expandedGroups[group.id] ? <ChevronDown size={14} strokeWidth={3} /> : <ChevronRight size={14} strokeWidth={3} />}
+                                            </div>
+                                            <div
+                                                className="layer-class-chip"
+                                                style={{
+                                                    background: `linear-gradient(135deg, ${chipColor}, ${chipColor}dd)`,
+                                                    boxShadow: `0 0 12px ${chipColor}40`,
+                                                    width: '10px',
+                                                    height: '10px',
+                                                    borderRadius: '3px'
                                                 }}
-                                                className="input-inline"
                                             />
+                                            <span className="layer-group-name" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                {classDisplayName}
+                                                <span style={{
+                                                    background: 'rgba(255, 255, 255, 0.05)',
+                                                    padding: '1px 6px',
+                                                    borderRadius: '4px',
+                                                    color: 'var(--text-tertiary)',
+                                                    fontWeight: 500,
+                                                    fontSize: '10px'
+                                                }}>#{idx + 1}</span>
+                                            </span>
                                         </div>
-                                        <div className="layer-child-meta" style={{ opacity: 0.7, fontSize: '12px' }}>
-                                            <span>类别名称:</span>
-                                            <span style={{ color: 'var(--accent-primary)', fontWeight: 500 }}>{classDisplayName}</span>
-                                        </div>
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); handleDelete(group.id); }}
+                                            className="icon-btn trash-btn"
+                                            style={{ opacity: 0.6, transition: 'all 0.2s' }}
+                                            title="删除"
+                                        >
+                                            <Trash2 size={13} />
+                                        </button>
+                                    </div>
 
-                                        {group.children.length > 0 ? (
-                                            <div>
-                                                {group.children.map((kp) => (
-                                                    <div
-                                                        key={kp.id}
-                                                        onClick={() => { setSelectedId(kp.id); setMode('select'); }}
-                                                        className={`layer-child ${selectedId === kp.id ? 'selected' : ''}`}
-                                                    >
-                                                        <div className="layer-child-left">
-                                                            <Crosshair size={12} color="var(--warning)" />
-                                                            <span>点 {kp.keypointIndex}</span>
-                                                        </div>
-                                                        <div className="layer-child-right">
-                                                            <input
-                                                                type="number" min="0"
-                                                                value={kp.keypointIndex ?? 0}
-                                                                onClick={(e) => e.stopPropagation()}
-                                                                onChange={(e) => {
-                                                                    const val = parseInt(e.target.value) || 0;
-                                                                    applyAnnotationEdit(prev => prev.map(a => a.id === kp.id ? { ...a, keypointIndex: val } : a));
+                                    {expandedGroups[group.id] && (
+                                        <div className="layer-children">
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '8px' }}>
+                                                <div className="layer-child-meta">
+                                                    <span style={{ minWidth: '50px' }}>ID:</span>
+                                                    <div style={{ position: 'relative', flex: 1 }}>
+                                                        <Tag size={10} style={{ position: 'absolute', left: '8px', top: '50%', transform: 'translateY(-50%)', opacity: 0.5 }} />
+                                                        <input
+                                                            type="number" min="0"
+                                                            value={group.classIndex ?? 0}
+                                                            onChange={(e) => {
+                                                                const val = parseInt(e.target.value) || 0;
+                                                                applyAnnotationEdit(prev => prev.map(a => a.id === group.id ? { ...a, classIndex: val } : a));
+                                                            }}
+                                                            className="input-inline"
+                                                            style={{
+                                                                paddingLeft: '24px',
+                                                                width: '100%',
+                                                                background: 'rgba(255, 255, 255, 0.03)',
+                                                                border: '1px solid rgba(255, 255, 255, 0.08)',
+                                                                borderRadius: '8px',
+                                                                height: '28px',
+                                                                fontSize: '12px'
+                                                            }}
+                                                        />
+                                                    </div>
+                                                </div>
+                                                <div className="layer-child-meta">
+                                                    <span style={{ minWidth: '50px' }}>类别:</span>
+                                                    <span style={{
+                                                        color: chipColor,
+                                                        fontWeight: 700,
+                                                        fontSize: '12px',
+                                                        textShadow: `0 0 8px ${chipColor}40`
+                                                    }}>{classDisplayName}</span>
+                                                </div>
+                                            </div>
+
+                                            {group.children.length > 0 ? (
+                                                <div style={{ padding: '4px 12px 4px 40px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                                    {group.children.map((kp) => (
+                                                        <div
+                                                            key={kp.id}
+                                                            className={`annotation-chip ${selectedId === kp.id ? 'selected' : ''}`}
+                                                            style={{
+                                                                background: selectedId === kp.id
+                                                                    ? 'linear-gradient(135deg, rgba(251, 191, 36, 0.25), rgba(251, 191, 36, 0.15))'
+                                                                    : 'rgba(255, 255, 255, 0.04)',
+                                                                border: selectedId === kp.id
+                                                                    ? '1px solid rgba(251, 191, 36, 0.4)'
+                                                                    : '1px solid rgba(255, 255, 255, 0.06)',
+                                                                borderRadius: '8px',
+                                                                padding: '4px 8px',
+                                                                display: 'flex',
+                                                                alignItems: 'center',
+                                                                gap: '6px',
+                                                                cursor: 'pointer',
+                                                                transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)'
+                                                            }}
+                                                            onClick={() => { setSelectedId(kp.id); setMode('select'); }}
+                                                        >
+                                                            <Crosshair size={11} style={{ color: selectedId === kp.id ? '#fbbf24' : 'var(--text-tertiary)' }} />
+                                                            <span style={{
+                                                                fontSize: '11px',
+                                                                fontWeight: 600,
+                                                                color: selectedId === kp.id ? 'var(--text-primary)' : 'var(--text-secondary)'
+                                                            }}>点 {kp.keypointIndex}</span>
+                                                            <button
+                                                                className="annotation-chip-delete"
+                                                                style={{
+                                                                    border: 'none',
+                                                                    background: 'none',
+                                                                    color: 'var(--text-tertiary)',
+                                                                    cursor: 'pointer',
+                                                                    padding: '2px',
+                                                                    display: 'flex',
+                                                                    borderRadius: '4px',
+                                                                    transition: 'background 0.2s',
+                                                                    opacity: selectedId === kp.id ? 1 : 0.5
                                                                 }}
-                                                                className="input-inline-xs"
-                                                            />
-                                                            <button onClick={(e) => { e.stopPropagation(); handleDelete(kp.id); }} className="icon-btn trash-btn" style={{ padding: '2px' }}>
-                                                                <Trash2 size={12} />
+                                                                onClick={(e) => { e.stopPropagation(); handleDelete(kp.id); }}
+                                                            >
+                                                                <X size={10} />
                                                             </button>
                                                         </div>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        ) : (
-                                            <div className="layer-empty">
-                                                暂无关键点
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
-                            </div>
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                                <div className="layer-empty" style={{
+                                                    padding: '8px 16px 8px 42px',
+                                                    fontSize: '11px',
+                                                    color: 'var(--text-tertiary)',
+                                                    fontStyle: 'italic',
+                                                    opacity: 0.6
+                                                }}>
+                                                    暂无关键点
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
                             );
                         })}
 
@@ -1634,6 +1728,30 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                                 ))}
                             </div>
                         )}
+                    </div>
+
+                    {/* Sidebar footer quick actions */}
+                    <div className="editor-sidebar-footer">
+                        <button
+                            className="editor-sidebar-footer-btn"
+                            onClick={() => { setSelectedId(null); setMode('bbox'); }}
+                            title="取消选择"
+                        >
+                            <MousePointer2 size={12} />
+                            取消选择
+                        </button>
+                        <button
+                            className="editor-sidebar-footer-btn danger"
+                            onClick={() => {
+                                if (annotations.length > 0) {
+                                    setShowClearConfirm(true);
+                                }
+                            }}
+                            title="清空所有标注"
+                        >
+                            <Trash2 size={12} />
+                            清空标注
+                        </button>
                     </div>
                 </aside>
             </div>
@@ -1681,7 +1799,7 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                             <h3 style={{ margin: 0, fontSize: '1.3rem', fontWeight: 700, color: 'var(--text-primary)' }}>
                                 ⌨️ 快捷键帮助
                             </h3>
-                            <button 
+                            <button
                                 onClick={() => setShowHelpPanel(false)}
                                 style={{
                                     background: 'rgba(255, 255, 255, 0.05)',
@@ -1695,7 +1813,7 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                                 ✕
                             </button>
                         </div>
-                        
+
                         <div style={{ display: 'grid', gap: '16px' }}>
                             <div>
                                 <h4 style={{ margin: '0 0 10px 0', fontSize: '0.85rem', color: 'var(--accent-primary)', fontWeight: 600 }}>
@@ -1723,7 +1841,7 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                                     ))}
                                 </div>
                             </div>
-                            
+
                             <div>
                                 <h4 style={{ margin: '0 0 10px 0', fontSize: '0.85rem', color: 'var(--accent-primary)', fontWeight: 600 }}>
                                     导航操作
@@ -1753,7 +1871,7 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                                     ))}
                                 </div>
                             </div>
-                            
+
                             <div>
                                 <h4 style={{ margin: '0 0 10px 0', fontSize: '0.85rem', color: 'var(--accent-primary)', fontWeight: 600 }}>
                                     视图控制
@@ -1782,11 +1900,11 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                                 </div>
                             </div>
                         </div>
-                        
-                        <div style={{ 
-                            marginTop: '20px', 
-                            padding: '12px', 
-                            background: 'rgba(88, 166, 255, 0.1)', 
+
+                        <div style={{
+                            marginTop: '20px',
+                            padding: '12px',
+                            background: 'rgba(88, 166, 255, 0.1)',
                             borderRadius: '10px',
                             fontSize: '12px',
                             color: 'var(--text-tertiary)'
@@ -1836,7 +1954,7 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                                     标注完成确认
                                 </h3>
                             </div>
-                            <button 
+                            <button
                                 onClick={handleContinueAnnotation}
                                 style={{
                                     background: 'rgba(255, 255, 255, 0.05)',
@@ -1851,10 +1969,10 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                                 <X size={20} />
                             </button>
                         </div>
-                        
-                        <div style={{ 
-                            background: 'rgba(255, 255, 255, 0.03)', 
-                            borderRadius: '16px', 
+
+                        <div style={{
+                            background: 'rgba(255, 255, 255, 0.03)',
+                            borderRadius: '16px',
                             padding: '20px',
                             marginBottom: '24px',
                             border: '1px solid rgba(255, 255, 255, 0.06)'
@@ -1865,12 +1983,12 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                             <div style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '20px' }}>
                                 {image}
                             </div>
-                            
+
                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
-                                <div style={{ 
-                                    textAlign: 'center', 
-                                    padding: '14px', 
-                                    background: 'rgba(88, 166, 255, 0.08)', 
+                                <div style={{
+                                    textAlign: 'center',
+                                    padding: '14px',
+                                    background: 'rgba(88, 166, 255, 0.08)',
                                     borderRadius: '12px',
                                     border: '1px solid rgba(88, 166, 255, 0.15)'
                                 }}>
@@ -1879,10 +1997,10 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                                     </div>
                                     <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '4px' }}>标注框</div>
                                 </div>
-                                <div style={{ 
-                                    textAlign: 'center', 
-                                    padding: '14px', 
-                                    background: 'rgba(251, 191, 36, 0.08)', 
+                                <div style={{
+                                    textAlign: 'center',
+                                    padding: '14px',
+                                    background: 'rgba(251, 191, 36, 0.08)',
                                     borderRadius: '12px',
                                     border: '1px solid rgba(251, 191, 36, 0.15)'
                                 }}>
@@ -1891,10 +2009,10 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                                     </div>
                                     <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '4px' }}>关键点</div>
                                 </div>
-                                <div style={{ 
-                                    textAlign: 'center', 
-                                    padding: '14px', 
-                                    background: 'rgba(34, 197, 94, 0.08)', 
+                                <div style={{
+                                    textAlign: 'center',
+                                    padding: '14px',
+                                    background: 'rgba(34, 197, 94, 0.08)',
                                     borderRadius: '12px',
                                     border: '1px solid rgba(34, 197, 94, 0.15)'
                                 }}>
@@ -1923,7 +2041,7 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                                 {exportStatus.message || '导出失败'}
                             </div>
                         )}
-                        
+
                         <div style={{ display: 'flex', gap: '12px', marginTop: '8px' }}>
                             <button
                                 onClick={handleContinueAnnotation}
@@ -1965,8 +2083,8 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                                 style={{
                                     flex: 1.2,
                                     padding: '14px',
-                                    background: isExporting 
-                                        ? 'rgba(34, 197, 94, 0.5)' 
+                                    background: isExporting
+                                        ? 'rgba(34, 197, 94, 0.5)'
                                         : 'linear-gradient(135deg, #22c55e, #4ade80)',
                                     border: 'none',
                                     borderRadius: '12px',
@@ -2002,11 +2120,11 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                                 )}
                             </button>
                         </div>
-                        
-                        <div style={{ 
-                            marginTop: '16px', 
-                            padding: '12px', 
-                            background: 'rgba(88, 166, 255, 0.08)', 
+
+                        <div style={{
+                            marginTop: '16px',
+                            padding: '12px',
+                            background: 'rgba(88, 166, 255, 0.08)',
                             borderRadius: '10px',
                             fontSize: '12px',
                             color: 'var(--text-tertiary)',
@@ -2033,7 +2151,7 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                     justifyContent: 'center',
                     zIndex: 10000
                 }}
-                onClick={() => saveStatus !== 'saving' && closeConflict()}
+                    onClick={() => saveStatus !== 'saving' && closeConflict()}
                 >
                     <div style={{
                         background: 'linear-gradient(135deg, rgba(22, 27, 34, 0.98), rgba(13, 17, 23, 0.98))',
@@ -2044,7 +2162,7 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                         border: '1px solid rgba(239, 68, 68, 0.3)',
                         boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)'
                     }}
-                    onClick={e => e.stopPropagation()}
+                        onClick={e => e.stopPropagation()}
                     >
                         <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '1.25rem' }}>
                             <div style={{
@@ -2160,7 +2278,7 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                     justifyContent: 'center',
                     zIndex: 10000
                 }}
-                onClick={() => saveStatus !== 'saving' && session.closeBlockedNavigation()}
+                    onClick={() => saveStatus !== 'saving' && session.closeBlockedNavigation()}
                 >
                     <div style={{
                         background: 'linear-gradient(135deg, rgba(22, 27, 34, 0.98), rgba(13, 17, 23, 0.98))',
@@ -2171,7 +2289,7 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                         border: '1px solid rgba(239, 68, 68, 0.3)',
                         boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)'
                     }}
-                    onClick={e => e.stopPropagation()}
+                        onClick={e => e.stopPropagation()}
                     >
                         <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '1.25rem' }}>
                             <div style={{
@@ -2284,7 +2402,7 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                     justifyContent: 'center',
                     zIndex: 10000
                 }}
-                onClick={() => !isDeletingImage && setShowDeleteConfirm(false)}
+                    onClick={() => !isDeletingImage && setShowDeleteConfirm(false)}
                 >
                     <div style={{
                         background: 'linear-gradient(135deg, rgba(22, 27, 34, 0.98), rgba(13, 17, 23, 0.98))',
@@ -2295,7 +2413,7 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                         border: '1px solid rgba(239, 68, 68, 0.3)',
                         boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)'
                     }}
-                    onClick={e => e.stopPropagation()}
+                        onClick={e => e.stopPropagation()}
                     >
                         <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '1.5rem' }}>
                             <div style={{
@@ -2398,6 +2516,109 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                 document.body
             )}
 
+            {/* Clear Annotations Confirmation Dialog */}
+            {showClearConfirm && createPortal(
+                <div style={{
+                    position: 'fixed',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    background: 'rgba(0, 0, 0, 0.7)',
+                    backdropFilter: 'blur(8px)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    zIndex: 10000
+                }}
+                    onClick={() => setShowClearConfirm(false)}
+                >
+                    <div style={{
+                        background: 'linear-gradient(135deg, rgba(22, 27, 34, 0.98), rgba(13, 17, 23, 0.98))',
+                        borderRadius: '20px',
+                        padding: '2rem',
+                        maxWidth: '400px',
+                        width: '90%',
+                        border: '1px solid rgba(88, 166, 255, 0.3)',
+                        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)'
+                    }}
+                        onClick={e => e.stopPropagation()}
+                    >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '1.5rem' }}>
+                            <div style={{
+                                width: '48px',
+                                height: '48px',
+                                borderRadius: '14px',
+                                background: 'rgba(88, 166, 255, 0.15)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                color: '#4da1ff'
+                            }}>
+                                <RefreshCw size={24} />
+                            </div>
+                            <div>
+                                <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                                    清空标注
+                                </h3>
+                                <p style={{ margin: '4px 0 0 0', color: 'var(--text-secondary)', fontSize: '13px' }}>
+                                    重置当前图片标注
+                                </p>
+                            </div>
+                        </div>
+
+                        <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem', fontSize: '14px', lineHeight: 1.6 }}>
+                            确认要清空当前图片的所有 <strong style={{ color: 'var(--text-primary)' }}>{annotations.length}</strong> 个标注吗？此操作可以使用 <kbd style={{ background: 'rgba(255,255,255,0.1)', padding: '2px 4px', borderRadius: '4px', fontSize: '11px' }}>Ctrl+Z</kbd> 撤销。
+                        </p>
+
+                        <div style={{ display: 'flex', gap: '12px' }}>
+                            <button
+                                onClick={() => setShowClearConfirm(false)}
+                                style={{
+                                    flex: 1,
+                                    padding: '12px',
+                                    borderRadius: '12px',
+                                    background: 'rgba(255, 255, 255, 0.05)',
+                                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                                    color: 'var(--text-primary)',
+                                    fontSize: '14px',
+                                    fontWeight: 600,
+                                    cursor: 'pointer'
+                                }}
+                            >
+                                取消
+                            </button>
+                            <button
+                                onClick={() => {
+                                    applyAnnotationEdit(() => []);
+                                    setSelectedId(null);
+                                    setShowClearConfirm(false);
+                                }}
+                                style={{
+                                    flex: 1,
+                                    padding: '12px',
+                                    borderRadius: '12px',
+                                    background: 'linear-gradient(135deg, #4f46e5, #3b82f6)',
+                                    border: 'none',
+                                    color: 'white',
+                                    fontSize: '14px',
+                                    fontWeight: 600,
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: '8px'
+                                }}
+                            >
+                                <Trash2 size={16} />
+                                确认清空
+                            </button>
+                        </div>
+                    </div>
+                </div>,
+                document.body
+            )}
+
             {showPredictionError && createPortal(
                 <div style={{
                     position: 'fixed',
@@ -2412,7 +2633,7 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                     justifyContent: 'center',
                     zIndex: 10000
                 }}
-                onClick={() => setShowPredictionError(false)}
+                    onClick={() => setShowPredictionError(false)}
                 >
                     <div style={{
                         background: 'linear-gradient(135deg, rgba(22, 27, 34, 0.98), rgba(13, 17, 23, 0.98))',
@@ -2423,7 +2644,7 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                         border: '1px solid rgba(239, 68, 68, 0.3)',
                         boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)'
                     }}
-                    onClick={e => e.stopPropagation()}
+                        onClick={e => e.stopPropagation()}
                     >
                         <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '1.5rem' }}>
                             <div style={{

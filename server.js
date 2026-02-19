@@ -301,7 +301,7 @@ app.post('/api/projects', (req, res) => {
     if (!name) return res.status(400).json({ error: 'Project name required' });
 
     const safeName = name.trim().replace(/[<>:"/\\|?*\x00-\x1F]/g, '_');
-    
+
     let targetDir = PROJECTS_DIR;
     if (customPath) {
         try {
@@ -786,6 +786,36 @@ app.post('/api/utils/save-file-dialog', async (req, res) => {
     }
 });
 
+// 打开文件夹
+app.post('/api/utils/open-folder', async (req, res) => {
+    const { path: folderPath } = req.body;
+    if (!folderPath) return res.status(400).json({ error: 'Path is required' });
+
+    let electron;
+    try {
+        electron = require('electron');
+    } catch (e) { }
+
+    if (electron && electron.shell) {
+        try {
+            await electron.shell.openPath(folderPath);
+            res.json({ success: true });
+        } catch (err) {
+            res.status(500).json({ error: 'Failed to open folder: ' + err.message });
+        }
+    } else {
+        // Fallback for non-electron (though this app usually runs in electron)
+        const { spawn } = require('child_process');
+        const command = process.platform === 'win32' ? 'explorer' : (process.platform === 'darwin' ? 'open' : 'xdg-open');
+        try {
+            spawn(command, [folderPath]);
+            res.json({ success: true, note: 'Opened using fallback spawn' });
+        } catch (err) {
+            res.status(500).json({ error: 'Failed to open folder fallback: ' + err.message });
+        }
+    }
+});
+
 
 const SUPPORTED_IMAGE_EXTENSIONS = /\.(jpg|jpeg|png|gif|bmp|webp)$/i;
 
@@ -1184,7 +1214,7 @@ app.get('/api/settings/scan-envs', async (req, res) => {
                     windowsHide: true
                 });
                 hasUltralytics = true;
-            } catch (e) {}
+            } catch (e) { }
 
             try {
                 const torchInfo = execSync(`"${pythonPath}" -c "import torch; print(torch.__version__); print(torch.cuda.is_available())"`, {
@@ -1195,7 +1225,7 @@ app.get('/api/settings/scan-envs', async (req, res) => {
                 hasTorch = true;
                 torchVersion = torchInfo[0];
                 cudaAvailable = torchInfo[1] === 'True';
-            } catch (e) {}
+            } catch (e) { }
 
             envs.push({
                 name,
@@ -1208,7 +1238,7 @@ app.get('/api/settings/scan-envs', async (req, res) => {
                 cudaAvailable,
                 valid: true
             });
-        } catch (e) {}
+        } catch (e) { }
     };
 
     // Check common paths
@@ -1244,7 +1274,7 @@ app.get('/api/settings/scan-envs', async (req, res) => {
                     const envPython = path.join(envsDir, envName, 'python.exe');
                     checkPython(envPython, `${c.name} (${envName})`, 'conda');
                 });
-            } catch (e) {}
+            } catch (e) { }
         }
     });
 
@@ -1258,7 +1288,7 @@ app.get('/api/settings/scan-envs', async (req, res) => {
         if (whereResult) {
             checkPython(whereResult.trim(), 'System PATH', 'path');
         }
-    } catch (e) {}
+    } catch (e) { }
 
     res.json(envs);
 });

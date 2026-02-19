@@ -8,7 +8,7 @@ import { useTraining } from '../hooks/useTraining';
 import { StatBadge } from './training/CommonComponents';
 import { LogViewer } from './training/VizComponents';
 import { TrainingDashboard } from './training/TrainingDashboard';
-import { TrainingForm, AugmentationForm, HardwareForm, StrategyForm, LossForm } from './training/TrainingForms';
+import { TrainingForm, AugmentationForm, HardwareForm, StrategyForm, LossForm, RemoteForm } from './training/TrainingForms';
 
 export const TrainingConfig = () => {
     const { currentProject, configLoading, goBack } = useProject();
@@ -173,13 +173,13 @@ export const TrainingConfig = () => {
 
                     {/* Dataset Path Info */}
                     <div style={{
-                        background: datasetInfo?.exists 
-                            ? 'rgba(34, 197, 94, 0.08)' 
+                        background: datasetInfo?.exists
+                            ? 'rgba(34, 197, 94, 0.08)'
                             : 'rgba(251, 191, 36, 0.08)',
                         borderRadius: '16px',
                         padding: '1rem 1.25rem',
-                        border: `1px solid ${datasetInfo?.exists 
-                            ? 'rgba(34, 197, 94, 0.2)' 
+                        border: `1px solid ${datasetInfo?.exists
+                            ? 'rgba(34, 197, 94, 0.2)'
                             : 'rgba(251, 191, 36, 0.2)'}`,
                         flexShrink: 0
                     }}>
@@ -189,10 +189,10 @@ export const TrainingConfig = () => {
                             ) : (
                                 <AlertCircle size={20} style={{ color: '#fbbf24' }} />
                             )}
-                            <span style={{ 
-                                fontSize: '14px', 
-                                fontWeight: 700, 
-                                color: datasetInfo?.exists ? '#4ade80' : '#fbbf24' 
+                            <span style={{
+                                fontSize: '14px',
+                                fontWeight: 700,
+                                color: datasetInfo?.exists ? '#4ade80' : '#fbbf24'
                             }}>
                                 {datasetInfo?.exists ? '数据集已就绪' : '数据集未导出'}
                             </span>
@@ -209,7 +209,7 @@ export const TrainingConfig = () => {
                                 </span>
                             )}
                         </div>
-                        
+
                         {datasetInfo?.exists ? (
                             <div style={{
                                 background: 'rgba(0, 0, 0, 0.2)',
@@ -220,9 +220,9 @@ export const TrainingConfig = () => {
                                 gap: '10px'
                             }}>
                                 <FileText size={16} style={{ color: 'var(--text-tertiary)', flexShrink: 0 }} />
-                                <div style={{ 
-                                    fontFamily: 'monospace', 
-                                    fontSize: '12px', 
+                                <div style={{
+                                    fontFamily: 'monospace',
+                                    fontSize: '12px',
                                     color: '#60a5fa',
                                     wordBreak: 'break-all',
                                     flex: 1
@@ -315,16 +315,16 @@ export const TrainingConfig = () => {
                         disabled={logs.length === 0 && metrics.length === 0}
                         style={{
                             width: '100%',
-                            background: logs.length === 0 && metrics.length === 0 
-                                ? 'rgba(255,255,255,0.03)' 
+                            background: logs.length === 0 && metrics.length === 0
+                                ? 'rgba(255,255,255,0.03)'
                                 : 'rgba(99, 102, 241, 0.1)',
-                            border: logs.length === 0 && metrics.length === 0 
-                                ? '1px solid rgba(255,255,255,0.06)' 
+                            border: logs.length === 0 && metrics.length === 0
+                                ? '1px solid rgba(255,255,255,0.06)'
                                 : '1px solid rgba(99, 102, 241, 0.2)',
                             borderRadius: '16px',
                             padding: '0.875rem',
-                            color: logs.length === 0 && metrics.length === 0 
-                                ? 'var(--text-tertiary)' 
+                            color: logs.length === 0 && metrics.length === 0
+                                ? 'var(--text-tertiary)'
                                 : '#818cf8',
                             fontWeight: 600,
                             display: 'flex',
@@ -355,7 +355,7 @@ export const TrainingConfig = () => {
                             zIndex: 10000,
                             animation: 'fadeIn 0.3s ease'
                         }}
-                        onClick={() => setShowExportSuccess(false)}
+                            onClick={() => setShowExportSuccess(false)}
                         >
                             <div style={{
                                 background: 'linear-gradient(135deg, rgba(22, 27, 34, 0.98), rgba(13, 17, 23, 0.98))',
@@ -367,7 +367,7 @@ export const TrainingConfig = () => {
                                 boxShadow: '0 0 40px rgba(99, 102, 241, 0.2), 0 25px 50px -12px rgba(0, 0, 0, 0.5)',
                                 animation: 'scaleInBounce 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)'
                             }}
-                            onClick={e => e.stopPropagation()}
+                                onClick={e => e.stopPropagation()}
                             >
                                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '1.5rem' }}>
                                     <div style={{
@@ -389,7 +389,7 @@ export const TrainingConfig = () => {
                                         日志导出成功
                                     </h3>
                                 </div>
-                                
+
                                 <div style={{
                                     background: 'rgba(0, 0, 0, 0.25)',
                                     borderRadius: '12px',
@@ -504,6 +504,12 @@ export const TrainingConfig = () => {
                         status={status}
                     />
 
+                    <RemoteForm
+                        config={config}
+                        updateConfig={updateConfig}
+                        status={status}
+                    />
+
                     <StrategyForm
                         config={config}
                         updateConfig={updateConfig}
@@ -542,6 +548,15 @@ export const TrainingConfig = () => {
                         transform: scale(1.05); 
                         box-shadow: 0 0 20px 5px rgba(99, 102, 241, 0.2);
                     }
+                }
+                .remote-input:focus {
+                    outline: none !important;
+                    border-color: rgba(99, 102, 241, 0.5) !important;
+                    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1) !important;
+                    background: rgba(0,0,0,0.35) !important;
+                }
+                .remote-input {
+                    transition: all 0.2s ease-in-out;
                 }
             `}</style>
         </div>
