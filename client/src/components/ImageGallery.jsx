@@ -667,515 +667,526 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
     React.useEffect(() => { setPage(0); }, [annotatedFilter, bboxesMax, bboxesMin, images, keypointsMax, keypointsMin, search]);
 
     return (
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflowY: 'auto', overflowX: 'hidden' }} className="custom-scrollbar">
-            {/* Search & Info Bar */}
-            <div style={{ marginBottom: '1.75rem' }}>
-                <div
-                    className="glass-panel"
-                    style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        gap: '1rem',
-                        flexWrap: 'wrap',
-                        flexShrink: 0,
-                        padding: '0.75rem 1rem',
-                        borderRadius: '18px',
-                        borderColor: 'rgba(255,255,255,0.1)',
-                        boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
-                        background: 'rgba(23, 23, 23, 0.4)'
-                    }}
-                >
-                    {/* Left Group: Status & Project Actions */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                        <div style={{
-                            background: 'linear-gradient(135deg, rgba(77, 161, 255, 0.15), rgba(77, 161, 255, 0.05))',
-                            padding: '6px 14px',
-                            borderRadius: '10px',
-                            color: '#4da1ff',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px',
-                            border: '1px solid rgba(77, 161, 255, 0.25)',
-                            fontSize: '13.5px',
-                            fontWeight: 600,
-                            boxShadow: '0 2px 10px rgba(77, 161, 255, 0.1)'
-                        }}>
-                            <ImageIcon size={16} />
-                            <span>{filtered.length} 资源</span>
-                        </div>
-
-                        <div style={{ width: '1px', height: '24px', background: 'rgba(255,255,255,0.1)', margin: '0 4px' }} />
-
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <button
-                                onClick={() => {
-                                    setShowStats(true);
-                                    fetchStats();
-                                }}
-                                className="icon-btn hover-card"
-                                title="项目详情"
-                                style={{
-                                    background: 'rgba(255, 255, 255, 0.03)',
-                                    padding: '9px',
-                                    borderRadius: '10px',
-                                    border: '1px solid rgba(255, 255, 255, 0.08)',
-                                    color: 'var(--text-secondary)'
-                                }}
-                            >
-                                <AlertCircle size={17} />
-                            </button>
-                            <button
-                                onClick={onUpload}
-                                className="icon-btn hover-card"
-                                title="刷新图库"
-                                style={{
-                                    background: 'rgba(255,255,255,0.03)',
-                                    padding: '9px',
-                                    borderRadius: '10px',
-                                    border: '1px solid rgba(255,255,255,0.08)'
-                                }}
-                            >
-                                <RefreshCw size={17} />
-                            </button>
-                            <button
-                                onClick={() => setShowDiscovery(true)}
-                                className="icon-btn hover-card"
-                                title="从文件夹导入"
-                                style={{
-                                    background: 'rgba(77, 161, 255, 0.08)',
-                                    padding: '9px',
-                                    borderRadius: '10px',
-                                    border: '1px solid rgba(77, 161, 255, 0.2)',
-                                    color: '#4da1ff'
-                                }}
-                            >
-                                <FolderOpen size={17} />
-                            </button>
-                            <button
-                                onClick={() => setShowHistory(true)}
-                                className="icon-btn hover-card"
-                                title="导入历史"
-                                style={{
-                                    background: 'rgba(255,255,255,0.03)',
-                                    padding: '9px',
-                                    borderRadius: '10px',
-                                    border: '1px solid rgba(255,255,255,0.08)'
-                                }}
-                            >
-                                <Clock size={17} />
-                            </button>
-                        </div>
-                    </div>
-
-                    {/* Middle Group: AI Tools */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                        <div style={{ width: '1px', height: '24px', background: 'rgba(255,255,255,0.1)', margin: '0 4px' }} />
-
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(255,255,255,0.02)', padding: '4px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                            <button
-                                onClick={() => setShowModelSettings(true)}
-                                className="icon-btn hover-card"
-                                title="模型设置"
-                                style={{
-                                    background: modelPath ? 'rgba(16, 185, 129, 0.1)' : 'transparent',
-                                    padding: '8px',
-                                    borderRadius: '8px',
-                                    border: modelPath ? '1px solid rgba(16, 185, 129, 0.2)' : '1px solid transparent',
-                                    color: modelPath ? '#10b981' : 'var(--text-tertiary)'
-                                }}
-                            >
-                                <Settings size={17} />
-                            </button>
-                            <button
-                                onClick={() => setShowPreannotateDialog(true)}
-                                disabled={!modelPath}
-                                className="icon-btn hover-card"
-                                title={!modelPath ? '请先配置模型' : '一键预标注'}
-                                style={{
-                                    background: modelPath ? 'rgba(139, 92, 246, 0.12)' : 'transparent',
-                                    padding: '6px 14px',
-                                    borderRadius: '8px',
-                                    border: modelPath ? '1px solid rgba(139, 92, 246, 0.25)' : '1px solid transparent',
-                                    color: modelPath ? '#a78bfa' : 'var(--text-tertiary)',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '8px',
-                                    cursor: modelPath ? 'pointer' : 'not-allowed',
-                                    opacity: modelPath ? 1 : 0.4
-                                }}
-                            >
-                                <Wand2 size={16} />
-                                <span style={{ fontSize: '13px', fontWeight: 600 }}>智能预标注</span>
-                            </button>
-                        </div>
-                    </div>
-
-                    {/* Right Group: Search & Global Filter */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, maxWidth: '420px', justifyContent: 'flex-end' }}>
-                        <div style={{ position: 'relative', flex: 1 }}>
-                            <input
-                                type="text"
-                                placeholder="搜索图片..."
-                                value={search}
-                                onChange={(e) => updateGalleryFilters({ search: e.target.value })}
-                                className="input-modern"
-                                style={{
-                                    height: '40px',
-                                    paddingLeft: '38px',
-                                    paddingRight: '12px',
-                                    fontSize: '0.88rem',
-                                    borderRadius: '10px',
-                                    background: 'rgba(0,0,0,0.2)',
-                                    border: '1px solid rgba(255,255,255,0.08)',
-                                    width: '100%'
-                                }}
-                            />
-                            <div style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-tertiary)', pointerEvents: 'none' }}>
-                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-                            </div>
-                        </div>
-
-                        <button
-                            onClick={() => {
-                                if (filtersOpen) {
-                                    setFiltersOpen(false);
-                                    setFilterPanelPos(null);
-                                    return;
-                                }
-                                const pos = computeFilterPanelPos();
-                                if (pos) setFilterPanelPos(pos);
-                                setFiltersOpen(true);
-                            }}
-                            ref={filterButtonRef}
-                            className="icon-btn hover-card"
-                            title="高级筛选"
+        <>
+            <div style={{ display: 'flex', flexDirection: 'column', height: '100%', position: 'relative' }}>
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflowY: 'auto', overflowX: 'hidden' }} className="custom-scrollbar">
+                    {/* Search & Info Bar */}
+                    <div style={{ marginBottom: '1.75rem' }}>
+                        <div
+                            className="glass-panel"
                             style={{
-                                background: activeFiltersCount > 0 ? 'rgba(77, 161, 255, 0.15)' : 'rgba(255,255,255,0.04)',
-                                padding: '0 14px',
-                                height: '40px',
-                                borderRadius: '10px',
-                                border: activeFiltersCount > 0 ? '1px solid rgba(77, 161, 255, 0.3)' : '1px solid rgba(255,255,255,0.1)',
-                                color: activeFiltersCount > 0 ? '#4da1ff' : 'var(--text-primary)',
                                 display: 'flex',
+                                justifyContent: 'space-between',
                                 alignItems: 'center',
-                                gap: '8px',
-                                fontWeight: 600,
-                                fontSize: '13px'
+                                gap: '1rem',
+                                flexWrap: 'wrap',
+                                flexShrink: 0,
+                                padding: '0.75rem 1rem',
+                                borderRadius: '18px',
+                                borderColor: 'rgba(255,255,255,0.1)',
+                                boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
+                                background: 'rgba(23, 23, 23, 0.4)'
                             }}
                         >
-                            <Filter size={16} />
-                            <span>筛选</span>
-                            {activeFiltersCount > 0 && (
-                                <span style={{
-                                    background: '#4da1ff',
-                                    color: 'white',
-                                    minWidth: '18px',
-                                    height: '18px',
-                                    borderRadius: '50%',
+                            {/* Left Group: Status & Project Actions */}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                <div style={{
+                                    background: 'linear-gradient(135deg, rgba(77, 161, 255, 0.15), rgba(77, 161, 255, 0.05))',
+                                    padding: '6px 14px',
+                                    borderRadius: '10px',
+                                    color: '#4da1ff',
                                     display: 'flex',
                                     alignItems: 'center',
-                                    justifyContent: 'center',
-                                    fontSize: '10px',
-                                    fontWeight: 800,
-                                    boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+                                    gap: '8px',
+                                    border: '1px solid rgba(77, 161, 255, 0.25)',
+                                    fontSize: '13.5px',
+                                    fontWeight: 600,
+                                    boxShadow: '0 2px 10px rgba(77, 161, 255, 0.1)'
                                 }}>
-                                    {activeFiltersCount}
-                                </span>
-                            )}
-                        </button>
-                    </div>
-                </div>
-            </div>
+                                    <ImageIcon size={16} />
+                                    <span>{filtered.length} 资源</span>
+                                </div>
 
-            {filtersOpen && filterPanelPos && createPortal(
-                <div
-                    style={{ position: 'fixed', inset: 0, zIndex: 10000 }}
-                    onMouseDown={() => { setFiltersOpen(false); setFilterPanelPos(null); }}
-                >
-                    <div style={{ position: 'absolute', inset: 0 }} />
-                    <div
-                        className="glass-panel"
-                        style={{
-                            position: 'fixed',
-                            top: filterPanelPos.top,
-                            left: filterPanelPos.left,
-                            width: `${filterPanelPos.width}px`,
-                            maxWidth: 'calc(100vw - 24px)',
-                            padding: '12px',
-                            borderRadius: '14px',
-                            background: 'rgba(22, 27, 34, 0.92)',
-                            border: '1px solid rgba(255,255,255,0.12)',
-                            boxShadow: '0 18px 40px rgba(0,0,0,0.55)',
-                            backdropFilter: 'blur(12px)'
-                        }}
-                        onMouseDown={(e) => e.stopPropagation()}
-                    >
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', marginBottom: '10px' }}>
-                            <div style={{ color: 'var(--text-primary)', fontWeight: 900, fontSize: '13px', letterSpacing: '0.02em' }}>筛选条件</div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <div style={{ width: '1px', height: '24px', background: 'rgba(255,255,255,0.1)', margin: '0 4px' }} />
+
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <button
+                                        onClick={() => {
+                                            setShowStats(true);
+                                            fetchStats();
+                                        }}
+                                        className="icon-btn hover-card"
+                                        title="项目详情"
+                                        style={{
+                                            background: 'rgba(255, 255, 255, 0.03)',
+                                            padding: '9px',
+                                            borderRadius: '10px',
+                                            border: '1px solid rgba(255, 255, 255, 0.08)',
+                                            color: 'var(--text-secondary)'
+                                        }}
+                                    >
+                                        <AlertCircle size={17} />
+                                    </button>
+                                    <button
+                                        onClick={onUpload}
+                                        className="icon-btn hover-card"
+                                        title="刷新图库"
+                                        style={{
+                                            background: 'rgba(255,255,255,0.03)',
+                                            padding: '9px',
+                                            borderRadius: '10px',
+                                            border: '1px solid rgba(255,255,255,0.08)'
+                                        }}
+                                    >
+                                        <RefreshCw size={17} />
+                                    </button>
+                                    <button
+                                        onClick={() => setShowDiscovery(true)}
+                                        className="icon-btn hover-card"
+                                        title="从文件夹导入"
+                                        style={{
+                                            background: 'rgba(77, 161, 255, 0.08)',
+                                            padding: '9px',
+                                            borderRadius: '10px',
+                                            border: '1px solid rgba(77, 161, 255, 0.2)',
+                                            color: '#4da1ff'
+                                        }}
+                                    >
+                                        <FolderOpen size={17} />
+                                    </button>
+                                    <button
+                                        onClick={() => setShowHistory(true)}
+                                        className="icon-btn hover-card"
+                                        title="导入历史"
+                                        style={{
+                                            background: 'rgba(255,255,255,0.03)',
+                                            padding: '9px',
+                                            borderRadius: '10px',
+                                            border: '1px solid rgba(255,255,255,0.08)'
+                                        }}
+                                    >
+                                        <Clock size={17} />
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Middle Group: AI Tools */}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                <div style={{ width: '1px', height: '24px', background: 'rgba(255,255,255,0.1)', margin: '0 4px' }} />
+
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(255,255,255,0.02)', padding: '4px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                                    <button
+                                        onClick={() => setShowModelSettings(true)}
+                                        className="icon-btn hover-card"
+                                        title="模型设置"
+                                        style={{
+                                            background: modelPath ? 'rgba(16, 185, 129, 0.1)' : 'transparent',
+                                            padding: '8px',
+                                            borderRadius: '8px',
+                                            border: modelPath ? '1px solid rgba(16, 185, 129, 0.2)' : '1px solid transparent',
+                                            color: modelPath ? '#10b981' : 'var(--text-tertiary)'
+                                        }}
+                                    >
+                                        <Settings size={17} />
+                                    </button>
+                                    <button
+                                        onClick={() => setShowPreannotateDialog(true)}
+                                        disabled={!modelPath}
+                                        className="icon-btn hover-card"
+                                        title={!modelPath ? '请先配置模型' : '一键预标注'}
+                                        style={{
+                                            background: modelPath ? 'rgba(139, 92, 246, 0.12)' : 'transparent',
+                                            padding: '6px 14px',
+                                            borderRadius: '8px',
+                                            border: modelPath ? '1px solid rgba(139, 92, 246, 0.25)' : '1px solid transparent',
+                                            color: modelPath ? '#a78bfa' : 'var(--text-tertiary)',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '8px',
+                                            cursor: modelPath ? 'pointer' : 'not-allowed',
+                                            opacity: modelPath ? 1 : 0.4
+                                        }}
+                                    >
+                                        <Wand2 size={16} />
+                                        <span style={{ fontSize: '13px', fontWeight: 600 }}>智能预标注</span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Right Group: Search & Global Filter */}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, maxWidth: '420px', justifyContent: 'flex-end' }}>
+                                <div style={{ position: 'relative', flex: 1 }}>
+                                    <input
+                                        type="text"
+                                        placeholder="搜索图片..."
+                                        value={search}
+                                        onChange={(e) => updateGalleryFilters({ search: e.target.value })}
+                                        className="input-modern"
+                                        style={{
+                                            height: '40px',
+                                            paddingLeft: '38px',
+                                            paddingRight: '12px',
+                                            fontSize: '0.88rem',
+                                            borderRadius: '10px',
+                                            background: 'rgba(0,0,0,0.2)',
+                                            border: '1px solid rgba(255,255,255,0.08)',
+                                            width: '100%'
+                                        }}
+                                    />
+                                    <div style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-tertiary)', pointerEvents: 'none' }}>
+                                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                                    </div>
+                                </div>
+
                                 <button
-                                    className="icon-btn hover-card"
                                     onClick={() => {
-                                        updateGalleryFilters({
-                                            annotated: 'all',
-                                            keypointsMin: '',
-                                            keypointsMax: '',
-                                            bboxesMin: '',
-                                            bboxesMax: ''
-                                        });
+                                        if (filtersOpen) {
+                                            setFiltersOpen(false);
+                                            setFilterPanelPos(null);
+                                            return;
+                                        }
+                                        const pos = computeFilterPanelPos();
+                                        if (pos) setFilterPanelPos(pos);
+                                        setFiltersOpen(true);
                                     }}
-                                    title="清空筛选"
-                                    style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '8px' }}
-                                >
-                                    <RefreshCw size={16} />
-                                </button>
-                                <button
+                                    ref={filterButtonRef}
                                     className="icon-btn hover-card"
-                                    onClick={() => setFiltersOpen(false)}
-                                    title="关闭"
-                                    style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '8px' }}
+                                    title="高级筛选"
+                                    style={{
+                                        background: activeFiltersCount > 0 ? 'rgba(77, 161, 255, 0.15)' : 'rgba(255,255,255,0.04)',
+                                        padding: '0 14px',
+                                        height: '40px',
+                                        borderRadius: '10px',
+                                        border: activeFiltersCount > 0 ? '1px solid rgba(77, 161, 255, 0.3)' : '1px solid rgba(255,255,255,0.1)',
+                                        color: activeFiltersCount > 0 ? '#4da1ff' : 'var(--text-primary)',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '8px',
+                                        fontWeight: 600,
+                                        fontSize: '13px'
+                                    }}
                                 >
-                                    <X size={16} />
+                                    <Filter size={16} />
+                                    <span>筛选</span>
+                                    {activeFiltersCount > 0 && (
+                                        <span style={{
+                                            background: '#4da1ff',
+                                            color: 'white',
+                                            minWidth: '18px',
+                                            height: '18px',
+                                            borderRadius: '50%',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            fontSize: '10px',
+                                            fontWeight: 800,
+                                            boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+                                        }}>
+                                            {activeFiltersCount}
+                                        </span>
+                                    )}
                                 </button>
                             </div>
                         </div>
-
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
-                                <div style={{ color: 'var(--text-tertiary)', fontSize: '12px', fontWeight: 800 }}>是否标注</div>
-                                <div style={{ display: 'flex', gap: '6px' }}>
-                                    <button
-                                        onClick={() => updateGalleryFilters({ annotated: 'all' })}
-                                        className={`icon-btn ${annotatedFilter === 'all' ? 'active' : ''}`}
-                                        style={{ padding: '8px 10px', borderRadius: '10px' }}
-                                    >
-                                        <span style={{ fontSize: '12px', fontWeight: 800 }}>全部</span>
-                                    </button>
-                                    <button
-                                        onClick={() => updateGalleryFilters({ annotated: 'annotated' })}
-                                        className={`icon-btn ${annotatedFilter === 'annotated' ? 'active' : ''}`}
-                                        style={{ padding: '8px 10px', borderRadius: '10px' }}
-                                    >
-                                        <span style={{ fontSize: '12px', fontWeight: 800 }}>已标注</span>
-                                    </button>
-                                    <button
-                                        onClick={() => updateGalleryFilters({ annotated: 'unannotated' })}
-                                        className={`icon-btn ${annotatedFilter === 'unannotated' ? 'active' : ''}`}
-                                        style={{ padding: '8px 10px', borderRadius: '10px' }}
-                                    >
-                                        <span style={{ fontSize: '12px', fontWeight: 800 }}>未标注</span>
-                                    </button>
-                                </div>
-                            </div>
-
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
-                                <div style={{ color: 'var(--text-tertiary)', fontSize: '12px', fontWeight: 800 }}>关键点数量</div>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        placeholder="最少"
-                                        value={keypointsMin}
-                                        onChange={(e) => updateGalleryFilters({ keypointsMin: e.target.value })}
-                                        className="input-modern"
-                                        style={{ height: '40px', width: '90px', borderRadius: '12px', padding: '0 10px', fontSize: '0.9rem' }}
-                                    />
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        placeholder="最多"
-                                        value={keypointsMax}
-                                        onChange={(e) => updateGalleryFilters({ keypointsMax: e.target.value })}
-                                        className="input-modern"
-                                        style={{ height: '40px', width: '90px', borderRadius: '12px', padding: '0 10px', fontSize: '0.9rem' }}
-                                    />
-                                </div>
-                            </div>
-
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
-                                <div style={{ color: 'var(--text-tertiary)', fontSize: '12px', fontWeight: 800 }}>BBox 数量</div>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        placeholder="最少"
-                                        value={bboxesMin}
-                                        onChange={(e) => updateGalleryFilters({ bboxesMin: e.target.value })}
-                                        className="input-modern"
-                                        style={{ height: '40px', width: '90px', borderRadius: '12px', padding: '0 10px', fontSize: '0.9rem' }}
-                                    />
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        placeholder="最多"
-                                        value={bboxesMax}
-                                        onChange={(e) => updateGalleryFilters({ bboxesMax: e.target.value })}
-                                        className="input-modern"
-                                        style={{ height: '40px', width: '90px', borderRadius: '12px', padding: '0 10px', fontSize: '0.9rem' }}
-                                    />
-                                </div>
-                            </div>
-
-                            {(wantsKeypointFilter && !hasKeypointCount) && (
-                                <div style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '8px',
-                                    padding: '8px 10px',
-                                    borderRadius: '12px',
-                                    background: 'rgba(245, 158, 11, 0.12)',
-                                    border: '1px solid rgba(245, 158, 11, 0.25)',
-                                    color: '#f59e0b',
-                                    fontSize: '12px',
-                                    fontWeight: 800
-                                }}>
-                                    <AlertTriangle size={14} />
-                                    <span>后端未返回 keypointCount</span>
-                                </div>
-                            )}
-
-                            {(wantsBboxFilter && !hasBboxCount) && (
-                                <div style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '8px',
-                                    padding: '8px 10px',
-                                    borderRadius: '12px',
-                                    background: 'rgba(245, 158, 11, 0.12)',
-                                    border: '1px solid rgba(245, 158, 11, 0.25)',
-                                    color: '#f59e0b',
-                                    fontSize: '12px',
-                                    fontWeight: 800
-                                }}>
-                                    <AlertTriangle size={14} />
-                                    <span>后端未返回 bboxCount</span>
-                                </div>
-                            )}
-                        </div>
                     </div>
-                </div>,
-                document.body
-            )}
 
-            {/* Image Grid */}
-            <div className="image-grid" style={{ paddingBottom: '2rem' }}>
-                {pageItems.map((item, index) => {
-                    if (item === '__UPLOAD__') {
-                        return (
-                            <div key="__UPLOAD__" style={{ height: '100%' }}>
-                                <ImageUpload
-                                    projectId={projectId}
-                                    onUploadComplete={onUpload}
-                                    variant="card"
-                                />
-                            </div>
-                        );
-                    }
-
-                    return (
-                        <ThumbnailCard
-                            key={typeof item === 'string' ? item : item.name}
-                            imageObj={item}
-                            projectId={projectId}
-                            index={index}
-                            onSelectImage={(img) => onSelectImage(img, { navImages: filtered })}
-                            isSelected={selectedImage === (typeof item === 'string' ? item : item.name)}
-                            onDelete={handleDeleteImage}
-                        />
-                    );
-                })}
-            </div>
-
-            {/* Pagination Floating Pill */}
-            {
-                totalPages > 1 && (
-                    <div style={{
-                        display: 'flex',
-                        justifyContent: 'center',
-                        padding: '1rem 0 1rem 0'
-                    }}>
-                        <div className="glass-panel" style={{
-                            pointerEvents: 'auto',
-                            padding: '8px 12px',
-                            borderRadius: '20px',
-                            background: 'rgba(22, 27, 34, 0.85)',
-                            backdropFilter: 'blur(12px)',
-                            border: '1px solid rgba(255, 255, 255, 0.1)',
-                            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '1rem',
-                            zIndex: 10
-                        }}>
-                            <button
-                                className="icon-btn"
-                                onClick={() => setPage(p => Math.max(0, p - 1))}
-                                disabled={page === 0}
+                    {filtersOpen && filterPanelPos && createPortal(
+                        <div
+                            style={{ position: 'fixed', inset: 0, zIndex: 10000 }}
+                            onMouseDown={() => { setFiltersOpen(false); setFilterPanelPos(null); }}
+                        >
+                            <div style={{ position: 'absolute', inset: 0 }} />
+                            <div
+                                className="glass-panel"
                                 style={{
-                                    borderRadius: '12px', width: '36px', height: '36px',
-                                    background: page === 0 ? 'transparent' : 'rgba(255,255,255,0.05)',
-                                    color: page === 0 ? 'var(--text-tertiary)' : 'var(--text-primary)'
+                                    position: 'fixed',
+                                    top: filterPanelPos.top,
+                                    left: filterPanelPos.left,
+                                    width: `${filterPanelPos.width}px`,
+                                    maxWidth: 'calc(100vw - 24px)',
+                                    padding: '12px',
+                                    borderRadius: '14px',
+                                    background: 'rgba(22, 27, 34, 0.92)',
+                                    border: '1px solid rgba(255,255,255,0.12)',
+                                    boxShadow: '0 18px 40px rgba(0,0,0,0.55)',
+                                    backdropFilter: 'blur(12px)'
                                 }}
+                                onMouseDown={(e) => e.stopPropagation()}
                             >
-                                <ChevronLeft size={18} />
-                            </button>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', marginBottom: '10px' }}>
+                                    <div style={{ color: 'var(--text-primary)', fontWeight: 900, fontSize: '13px', letterSpacing: '0.02em' }}>筛选条件</div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        <button
+                                            className="icon-btn hover-card"
+                                            onClick={() => {
+                                                updateGalleryFilters({
+                                                    annotated: 'all',
+                                                    keypointsMin: '',
+                                                    keypointsMax: '',
+                                                    bboxesMin: '',
+                                                    bboxesMax: ''
+                                                });
+                                            }}
+                                            title="清空筛选"
+                                            style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '8px' }}
+                                        >
+                                            <RefreshCw size={16} />
+                                        </button>
+                                        <button
+                                            className="icon-btn hover-card"
+                                            onClick={() => setFiltersOpen(false)}
+                                            title="关闭"
+                                            style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '8px' }}
+                                        >
+                                            <X size={16} />
+                                        </button>
+                                    </div>
+                                </div>
 
-                            <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-                                {Array.from({ length: totalPages }, (_, i) => {
-                                    if (totalPages <= 7 || i === 0 || i === totalPages - 1 ||
-                                        Math.abs(i - page) <= 1) {
-                                        const isActive = i === page;
-                                        return (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+                                        <div style={{ color: 'var(--text-tertiary)', fontSize: '12px', fontWeight: 800 }}>是否标注</div>
+                                        <div style={{ display: 'flex', gap: '6px' }}>
                                             <button
-                                                key={i}
-                                                onClick={() => setPage(i)}
-                                                style={{
-                                                    width: '32px', height: '32px', borderRadius: '10px',
-                                                    border: isActive ? '1px solid rgba(77, 161, 255, 0.3)' : 'none',
-                                                    background: isActive ? 'rgba(77, 161, 255, 0.15)' : 'transparent',
-                                                    color: isActive ? '#4da1ff' : 'var(--text-secondary)',
-                                                    cursor: 'pointer',
-                                                    fontSize: '13px',
-                                                    fontWeight: isActive ? '700' : '500',
-                                                    transition: 'all 0.2s'
-                                                }}
-                                                className={!isActive ? "hover-text-primary" : ""}
+                                                onClick={() => updateGalleryFilters({ annotated: 'all' })}
+                                                className={`icon-btn ${annotatedFilter === 'all' ? 'active' : ''}`}
+                                                style={{ padding: '8px 10px', borderRadius: '10px' }}
                                             >
-                                                {i + 1}
+                                                <span style={{ fontSize: '12px', fontWeight: 800 }}>全部</span>
                                             </button>
-                                        );
-                                    } else if (i === 1 || i === totalPages - 2) {
-                                        return <span key={i} style={{ color: 'var(--text-tertiary)', padding: '0 2px', fontSize: '12px' }}>•••</span>;
-                                    }
-                                    return null;
-                                })}
+                                            <button
+                                                onClick={() => updateGalleryFilters({ annotated: 'annotated' })}
+                                                className={`icon-btn ${annotatedFilter === 'annotated' ? 'active' : ''}`}
+                                                style={{ padding: '8px 10px', borderRadius: '10px' }}
+                                            >
+                                                <span style={{ fontSize: '12px', fontWeight: 800 }}>已标注</span>
+                                            </button>
+                                            <button
+                                                onClick={() => updateGalleryFilters({ annotated: 'unannotated' })}
+                                                className={`icon-btn ${annotatedFilter === 'unannotated' ? 'active' : ''}`}
+                                                style={{ padding: '8px 10px', borderRadius: '10px' }}
+                                            >
+                                                <span style={{ fontSize: '12px', fontWeight: 800 }}>未标注</span>
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+                                        <div style={{ color: 'var(--text-tertiary)', fontSize: '12px', fontWeight: 800 }}>关键点数量</div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                placeholder="最少"
+                                                value={keypointsMin}
+                                                onChange={(e) => updateGalleryFilters({ keypointsMin: e.target.value })}
+                                                className="input-modern"
+                                                style={{ height: '40px', width: '90px', borderRadius: '12px', padding: '0 10px', fontSize: '0.9rem' }}
+                                            />
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                placeholder="最多"
+                                                value={keypointsMax}
+                                                onChange={(e) => updateGalleryFilters({ keypointsMax: e.target.value })}
+                                                className="input-modern"
+                                                style={{ height: '40px', width: '90px', borderRadius: '12px', padding: '0 10px', fontSize: '0.9rem' }}
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+                                        <div style={{ color: 'var(--text-tertiary)', fontSize: '12px', fontWeight: 800 }}>BBox 数量</div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                placeholder="最少"
+                                                value={bboxesMin}
+                                                onChange={(e) => updateGalleryFilters({ bboxesMin: e.target.value })}
+                                                className="input-modern"
+                                                style={{ height: '40px', width: '90px', borderRadius: '12px', padding: '0 10px', fontSize: '0.9rem' }}
+                                            />
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                placeholder="最多"
+                                                value={bboxesMax}
+                                                onChange={(e) => updateGalleryFilters({ bboxesMax: e.target.value })}
+                                                className="input-modern"
+                                                style={{ height: '40px', width: '90px', borderRadius: '12px', padding: '0 10px', fontSize: '0.9rem' }}
+                                            />
+                                        </div>
+                                    </div>
+
+                                    {(wantsKeypointFilter && !hasKeypointCount) && (
+                                        <div style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '8px',
+                                            padding: '8px 10px',
+                                            borderRadius: '12px',
+                                            background: 'rgba(245, 158, 11, 0.12)',
+                                            border: '1px solid rgba(245, 158, 11, 0.25)',
+                                            color: '#f59e0b',
+                                            fontSize: '12px',
+                                            fontWeight: 800
+                                        }}>
+                                            <AlertTriangle size={14} />
+                                            <span>后端未返回 keypointCount</span>
+                                        </div>
+                                    )}
+
+                                    {(wantsBboxFilter && !hasBboxCount) && (
+                                        <div style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '8px',
+                                            padding: '8px 10px',
+                                            borderRadius: '12px',
+                                            background: 'rgba(245, 158, 11, 0.12)',
+                                            border: '1px solid rgba(245, 158, 11, 0.25)',
+                                            color: '#f59e0b',
+                                            fontSize: '12px',
+                                            fontWeight: 800
+                                        }}>
+                                            <AlertTriangle size={14} />
+                                            <span>后端未返回 bboxCount</span>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
+                        </div>,
+                        document.body
+                    )}
 
-                            <button
-                                className="icon-btn"
-                                onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
-                                disabled={page === totalPages - 1}
-                                style={{
-                                    borderRadius: '12px', width: '36px', height: '36px',
-                                    background: page === totalPages - 1 ? 'transparent' : 'rgba(255,255,255,0.05)',
-                                    color: page === totalPages - 1 ? 'var(--text-tertiary)' : 'var(--text-primary)'
-                                }}
-                            >
-                                <ChevronRight size={18} />
-                            </button>
+                    {/* Image Grid */}
+                    <div className="image-grid" style={{ paddingBottom: '120px' }}>
+                        {pageItems.map((item, index) => {
+                            if (item === '__UPLOAD__') {
+                                return (
+                                    <div key="__UPLOAD__" style={{ height: '100%' }}>
+                                        <ImageUpload
+                                            projectId={projectId}
+                                            onUploadComplete={onUpload}
+                                            variant="card"
+                                        />
+                                    </div>
+                                );
+                            }
+
+                            return (
+                                <ThumbnailCard
+                                    key={typeof item === 'string' ? item : item.name}
+                                    imageObj={item}
+                                    projectId={projectId}
+                                    index={index}
+                                    onSelectImage={(img) => onSelectImage(img, { navImages: filtered })}
+                                    isSelected={selectedImage === (typeof item === 'string' ? item : item.name)}
+                                    onDelete={handleDeleteImage}
+                                />
+                            );
+                        })}
+                    </div>
+
+                    {
+                        filtered.length === 0 && search && (
+                            <div style={{ margin: 'auto', textAlign: 'center', color: 'var(--text-secondary)', padding: '4rem' }}>
+                                <p>没有找到匹配 "{search}" 的图片</p>
+                            </div>
+                        )
+                    }
+                </div>
+
+                {/* Pagination Floating Pill */}
+                {
+                    totalPages > 1 && (
+                        <div style={{
+                            position: 'absolute',
+                            bottom: '32px',
+                            left: 0,
+                            right: 0,
+                            display: 'flex',
+                            justifyContent: 'center',
+                            zIndex: 100,
+                            pointerEvents: 'none',
+                            flexShrink: 0,
+                            marginTop: 'auto'
+                        }}>
+                            <div className="glass-panel" style={{
+                                pointerEvents: 'auto',
+                                padding: '8px 12px',
+                                borderRadius: '20px',
+                                background: 'rgba(22, 27, 34, 0.95)',
+                                backdropFilter: 'blur(16px)',
+                                border: '1px solid rgba(255, 255, 255, 0.12)',
+                                boxShadow: '0 12px 40px rgba(0, 0, 0, 0.5)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '1rem',
+                                zIndex: 10
+                            }}>
+                                <button
+                                    className="icon-btn"
+                                    onClick={() => setPage(p => Math.max(0, p - 1))}
+                                    disabled={page === 0}
+                                    style={{
+                                        borderRadius: '12px', width: '36px', height: '36px',
+                                        background: page === 0 ? 'transparent' : 'rgba(255,255,255,0.05)',
+                                        color: page === 0 ? 'var(--text-tertiary)' : 'var(--text-primary)'
+                                    }}
+                                >
+                                    <ChevronLeft size={18} />
+                                </button>
+
+                                <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                                    {Array.from({ length: totalPages }, (_, i) => {
+                                        if (totalPages <= 7 || i === 0 || i === totalPages - 1 ||
+                                            Math.abs(i - page) <= 1) {
+                                            const isActive = i === page;
+                                            return (
+                                                <button
+                                                    key={i}
+                                                    onClick={() => setPage(i)}
+                                                    style={{
+                                                        width: '32px', height: '32px', borderRadius: '10px',
+                                                        border: isActive ? '1px solid rgba(77, 161, 255, 0.3)' : 'none',
+                                                        background: isActive ? 'rgba(77, 161, 255, 0.15)' : 'transparent',
+                                                        color: isActive ? '#4da1ff' : 'var(--text-secondary)',
+                                                        cursor: 'pointer',
+                                                        fontSize: '13px',
+                                                        fontWeight: isActive ? '700' : '500',
+                                                        transition: 'all 0.2s'
+                                                    }}
+                                                    className={!isActive ? "hover-text-primary" : ""}
+                                                >
+                                                    {i + 1}
+                                                </button>
+                                            );
+                                        } else if (i === 1 || i === totalPages - 2) {
+                                            return <span key={i} style={{ color: 'var(--text-tertiary)', padding: '0 2px', fontSize: '12px' }}>•••</span>;
+                                        }
+                                        return null;
+                                    })}
+                                </div>
+
+                                <button
+                                    className="icon-btn"
+                                    onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
+                                    disabled={page === totalPages - 1}
+                                    style={{
+                                        borderRadius: '12px', width: '36px', height: '36px',
+                                        background: page === totalPages - 1 ? 'transparent' : 'rgba(255,255,255,0.05)',
+                                        color: page === totalPages - 1 ? 'var(--text-tertiary)' : 'var(--text-primary)'
+                                    }}
+                                >
+                                    <ChevronRight size={18} />
+                                </button>
+                            </div>
                         </div>
-                    </div>
-                )
-            }
-
-            {
-                filtered.length === 0 && search && (
-                    <div style={{ margin: 'auto', textAlign: 'center', color: 'var(--text-secondary)', padding: '4rem' }}>
-                        <p>没有找到匹配 "{search}" 的图片</p>
-                    </div>
-                )
-            }
+                    )
+                }
+            </div>
 
             {
                 showDiscovery && (
@@ -1975,6 +1986,6 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
                     document.body
                 )
             }
-        </div >
+        </>
     );
 };

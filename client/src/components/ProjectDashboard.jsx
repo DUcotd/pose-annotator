@@ -110,13 +110,7 @@ export const ProjectDashboard = ({ projects = [], onCreateProject, onSelectProje
                 </div>
             </div>
 
-            <div style={{
-                height: '1px',
-                background: 'linear-gradient(to right, transparent, var(--border-subtle), transparent)',
-                width: '100%',
-                opacity: 0.5,
-                marginTop: 'auto'
-            }} />
+            <div className="dashboard-spacer" style={{ marginTop: 'auto', height: '24px' }} />
 
             <CreateProjectModal
                 isOpen={isCreating}

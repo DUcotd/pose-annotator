@@ -2402,18 +2402,23 @@ button {
 
 .dashboard-stat-card {
   border-radius: 14px;
-  padding: 1rem 1.25rem;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 1.25rem 1.5rem; /* Slightly more padding for breathability */
+  border: 1px solid rgba(255, 255, 255, 0.03); /* Extremely subtle border */
   display: flex;
   align-items: center;
-  gap: 1rem;
-  transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+  gap: 1.25rem;
+  background: rgba(22, 27, 34, 0.4); /* Base glass background */
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.02);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .dashboard-stat-card:hover {
-  transform: translateY(-2px);
-  border-color: rgba(255, 255, 255, 0.14);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+  transform: translateY(-4px);
+  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(33, 38, 45, 0.6);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
 .hero-section {
@@ -2548,15 +2553,18 @@ button {
   justify-content: center;
   padding: 80px 40px;
   text-align: center;
-  background: rgba(22, 27, 34, 0.2);
-  border: 2px dashed var(--border-subtle);
+  background: rgba(22, 27, 34, 0.4);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.05); /* Soft glass border instead of dashed */
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
   border-radius: 24px;
-  transition: all 0.3s ease;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .empty-state-container:hover {
-  border-color: var(--accent-primary);
-  background: rgba(88, 166, 255, 0.02);
+  border-color: rgba(77, 161, 255, 0.15);
+  background: rgba(22, 27, 34, 0.6);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(77, 161, 255, 0.05);
 }
 
 .empty-state-icon {
@@ -3106,22 +3114,38 @@ button {
 .dashboard-shell::before {
   content: '';
   position: fixed;
-  top: -200px;
-  right: -100px;
+  top: -250px;
+  right: -150px;
+  width: 800px;
+  height: 800px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(139, 92, 246, 0.06) 0%, rgba(59, 130, 246, 0.06) 30%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+  filter: blur(40px);
+}
+
+.dashboard-shell::after {
+  content: '';
+  position: fixed;
+  bottom: -200px;
+  left: -100px;
   width: 600px;
   height: 600px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(88, 166, 255, 0.04) 0%, transparent 70%);
+  background: radial-gradient(circle, rgba(16, 185, 129, 0.03) 0%, transparent 70%);
   pointer-events: none;
   z-index: 0;
+  filter: blur(40px);
 }
 
 /* Improved hero title gradient */
 .hero-title-kicker.text-gradient {
-  background: linear-gradient(135deg, #a78bfa 0%, #60a5fa 50%, #34d399 100%);
+  background: linear-gradient(135deg, #c084fc 0%, #60a5fa 50%, #34d399 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
+  text-shadow: 0 2px 10px rgba(96, 165, 250, 0.2);
 }
 
 /* Stat card value animation */

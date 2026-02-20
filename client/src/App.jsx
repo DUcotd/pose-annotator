@@ -40,7 +40,7 @@ const AppContent = () => {
 
   if (view === 'gallery') {
     return (
-      <div className="page-gallery" style={{ padding: '2rem 3rem', height: '100%', display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden' }}>
+      <div className="page-gallery" style={{ padding: '2rem 3rem 3rem 3rem', height: '100%', display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden' }}>
         {/* Background Decorative Blobs */}
         {images.length === 0 && (
           <>

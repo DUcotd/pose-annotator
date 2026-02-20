@@ -46,7 +46,7 @@ export const DashboardStats = ({ projects }) => {
                 label="项目总数"
                 value={projects.length}
                 color="99,102,241"
-                gradient="linear-gradient(135deg, rgba(99,102,241,0.15), rgba(139,92,246,0.05))"
+                gradient="linear-gradient(135deg, rgba(99,102,241,0.08), rgba(139,92,246,0.02))"
                 icon={<Layers size={20} strokeWidth={2} />}
                 iconBg="rgba(99,102,241,0.15)"
                 iconColor="#818cf8"
@@ -55,7 +55,7 @@ export const DashboardStats = ({ projects }) => {
                 label="图片总数"
                 value={totalImages}
                 color="77,161,255"
-                gradient="linear-gradient(135deg, rgba(77,161,255,0.15), rgba(96,165,250,0.05))"
+                gradient="linear-gradient(135deg, rgba(77,161,255,0.08), rgba(96,165,250,0.02))"
                 icon={<ImageIcon size={20} strokeWidth={2} />}
                 iconBg="rgba(77,161,255,0.15)"
                 iconColor="#4da1ff"
@@ -64,7 +64,7 @@ export const DashboardStats = ({ projects }) => {
                 label="已标注"
                 value={totalAnnotated}
                 color="34,197,94"
-                gradient="linear-gradient(135deg, rgba(34,197,94,0.15), rgba(74,222,128,0.05))"
+                gradient="linear-gradient(135deg, rgba(34,197,94,0.08), rgba(74,222,128,0.02))"
                 icon={<CheckCircle size={20} strokeWidth={2} />}
                 iconBg="rgba(34,197,94,0.15)"
                 iconColor="#34d399"
@@ -73,7 +73,7 @@ export const DashboardStats = ({ projects }) => {
                 label="标注率"
                 value={annotationRate + '%'}
                 color="251,191,36"
-                gradient="linear-gradient(135deg, rgba(251,191,36,0.15), rgba(252,211,77,0.05))"
+                gradient="linear-gradient(135deg, rgba(251,191,36,0.08), rgba(252,211,77,0.02))"
                 icon={<TrendingUp size={20} strokeWidth={2} />}
                 iconBg="rgba(251,191,36,0.15)"
                 iconColor="#fbbf24"
@@ -86,7 +86,7 @@ export const DashboardStats = ({ projects }) => {
 };
 
 const StatCard = ({ label, value, color, gradient, icon, iconBg, iconColor, showProgress, progressValue, progressColor }) => (
-    <div className="dashboard-stat-card" style={{ background: gradient, borderColor: `rgba(${color}, 0.2)` }}>
+    <div className="dashboard-stat-card" style={{ background: gradient }}>
         <div className="stat-card-icon" style={{ background: iconBg, color: iconColor }}>
             {icon}
         </div>
