@@ -1065,35 +1065,15 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                     </div>
                     <button
                         onClick={() => setShowStatusPanel(v => !v)}
-                        className="icon-btn"
+                        className={`icon-btn editor-status-toggle ${showStatusPanel ? 'active' : ''}`}
                         title="状态/错误面板"
-                        style={{
-                            marginRight: '10px',
-                            border: showStatusPanel ? '1px solid rgba(99,102,241,0.6)' : undefined
-                        }}
                     >
                         <Layers size={18} />
                     </button>
                     <button
                         onClick={handleCompleteAnnotation}
                         disabled={navLocked}
-                        className={`complete-btn-pulse`}
-                        style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '6px',
-                            padding: '8px 18px',
-                            background: 'linear-gradient(135deg, #22c55e, #4ade80)',
-                            border: 'none',
-                            borderRadius: '10px',
-                            color: 'white',
-                            fontSize: '0.85rem',
-                            fontWeight: 700,
-                            cursor: navLocked ? 'not-allowed' : 'pointer',
-                            opacity: navLocked ? 0.6 : 1,
-                            transition: 'all 0.2s ease',
-                            letterSpacing: '0.2px'
-                        }}
+                        className="complete-btn-pulse editor-complete-btn"
                     >
                         <CheckCircle size={16} strokeWidth={2.5} />
                         完成标注
@@ -1104,101 +1084,67 @@ export function AnnotationEditor({ image, projectId, onBack }) {
             <div className="editor-body">
                 {showStatusPanel && (
                     <div
-                        style={{
-                            position: 'absolute',
-                            top: 70,
-                            right: 16,
-                            width: 360,
-                            maxWidth: 'calc(100vw - 32px)',
-                            zIndex: 50,
-                            background: 'rgba(15, 23, 42, 0.92)',
-                            border: '1px solid rgba(148, 163, 184, 0.25)',
-                            borderRadius: 12,
-                            padding: 12,
-                            backdropFilter: 'blur(10px)',
-                            color: 'var(--text-primary)'
-                        }}
+                        className="editor-status-panel"
                     >
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-                            <div style={{ fontSize: 13, fontWeight: 700, opacity: 0.95 }}>状态/错误</div>
+                        <div className="editor-status-panel-header">
+                            <div className="editor-status-panel-title">状态/错误</div>
                             <button
                                 onClick={() => setShowStatusPanel(false)}
-                                className="icon-btn"
+                                className="icon-btn editor-status-panel-close"
                                 title="关闭"
-                                style={{ width: 30, height: 30 }}
                             >
                                 <X size={16} />
                             </button>
                         </div>
 
-                        <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', rowGap: 6, columnGap: 10, fontSize: 12 }}>
-                            <div style={{ color: 'var(--text-secondary)' }}>imageId</div>
+                        <div className="editor-status-grid">
+                            <div className="editor-status-key">imageId</div>
                             <div style={{ wordBreak: 'break-all' }}>{image}</div>
 
-                            <div style={{ color: 'var(--text-secondary)' }}>isLoaded</div>
+                            <div className="editor-status-key">isLoaded</div>
                             <div>{String(isLoaded)}</div>
 
-                            <div style={{ color: 'var(--text-secondary)' }}>saveStatus</div>
+                            <div className="editor-status-key">saveStatus</div>
                             <div>{saveStatus}</div>
 
-                            <div style={{ color: 'var(--text-secondary)' }}>hasUnsavedChanges</div>
+                            <div className="editor-status-key">hasUnsavedChanges</div>
                             <div>{String(hasUnsavedChanges)}</div>
 
-                            <div style={{ color: 'var(--text-secondary)' }}>annotationEtag</div>
+                            <div className="editor-status-key">annotationEtag</div>
                             <div style={{ wordBreak: 'break-all' }}>{annotationEtag || '-'}</div>
 
-                            <div style={{ color: 'var(--text-secondary)' }}>conflictEtag</div>
+                            <div className="editor-status-key">conflictEtag</div>
                             <div style={{ wordBreak: 'break-all', color: conflictInfo?.serverEtag ? '#fca5a5' : 'var(--text-secondary)' }}>
                                 {conflictInfo?.serverEtag || '-'}
                             </div>
 
-                            <div style={{ color: 'var(--text-secondary)' }}>最近加载时间</div>
+                            <div className="editor-status-key">最近加载时间</div>
                             <div>{formatTime(lastLoadTime)}</div>
 
-                            <div style={{ color: 'var(--text-secondary)' }}>最近保存时间</div>
+                            <div className="editor-status-key">最近保存时间</div>
                             <div>{formatTime(lastSaveTime)}</div>
 
-                            <div style={{ color: 'var(--text-secondary)' }}>最近加载错误</div>
+                            <div className="editor-status-key">最近加载错误</div>
                             <div style={{ color: lastLoadError ? '#fca5a5' : 'var(--text-secondary)', wordBreak: 'break-word' }}>
                                 {lastLoadError || '-'}
                             </div>
 
-                            <div style={{ color: 'var(--text-secondary)' }}>最近保存错误</div>
+                            <div className="editor-status-key">最近保存错误</div>
                             <div style={{ color: lastSaveError ? '#fca5a5' : 'var(--text-secondary)', wordBreak: 'break-word' }}>
                                 {lastSaveError || '-'}
                             </div>
                         </div>
 
-                        <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                        <div className="editor-status-actions">
                             <button
                                 onClick={retryLoad}
-                                style={{
-                                    flex: 1,
-                                    padding: '8px 10px',
-                                    borderRadius: 10,
-                                    border: '1px solid rgba(148, 163, 184, 0.25)',
-                                    background: 'rgba(255,255,255,0.06)',
-                                    color: 'var(--text-primary)',
-                                    cursor: 'pointer',
-                                    fontSize: 12,
-                                    fontWeight: 600
-                                }}
+                                className="editor-status-action-btn"
                             >
                                 重试加载
                             </button>
                             <button
                                 onClick={retrySave}
-                                style={{
-                                    flex: 1,
-                                    padding: '8px 10px',
-                                    borderRadius: 10,
-                                    border: '1px solid rgba(148, 163, 184, 0.25)',
-                                    background: 'rgba(255,255,255,0.06)',
-                                    color: 'var(--text-primary)',
-                                    cursor: 'pointer',
-                                    fontSize: 12,
-                                    fontWeight: 600
-                                }}
+                                className="editor-status-action-btn"
                             >
                                 重试保存
                             </button>
@@ -1208,42 +1154,18 @@ export function AnnotationEditor({ image, projectId, onBack }) {
 
                 {lastLoadError && (
                     <div
-                        style={{
-                            position: 'absolute',
-                            top: 70,
-                            left: 16,
-                            right: showStatusPanel ? 392 : 16,
-                            zIndex: 40,
-                            background: 'rgba(239, 68, 68, 0.12)',
-                            border: '1px solid rgba(239, 68, 68, 0.35)',
-                            borderRadius: 12,
-                            padding: '10px 12px',
-                            color: '#fecaca',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            gap: 12
-                        }}
+                        className="editor-load-error-banner"
+                        style={{ right: showStatusPanel ? 392 : 16 }}
                     >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                        <div className="editor-load-error-content">
                             <AlertTriangle size={18} />
-                            <div style={{ fontSize: 12, fontWeight: 600, wordBreak: 'break-word' }}>
+                            <div className="editor-load-error-text">
                                 加载失败：{lastLoadError}
                             </div>
                         </div>
                         <button
                             onClick={retryLoad}
-                            style={{
-                                padding: '6px 10px',
-                                borderRadius: 10,
-                                border: '1px solid rgba(239, 68, 68, 0.4)',
-                                background: 'rgba(239, 68, 68, 0.18)',
-                                color: '#fecaca',
-                                cursor: 'pointer',
-                                fontSize: 12,
-                                fontWeight: 700,
-                                whiteSpace: 'nowrap'
-                            }}
+                            className="editor-load-error-retry-btn"
                         >
                             重试加载
                         </button>
@@ -1272,7 +1194,6 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                         disabled={historyIndex <= 0}
                         title="撤销 (Ctrl/Cmd+Z)"
                         className="tool-btn"
-                        style={{ opacity: historyIndex <= 0 ? 0.4 : 1 }}
                     >
                         <Undo2 size={20} />
                     </button>
@@ -1281,7 +1202,6 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                         disabled={historyIndex >= history.length - 1}
                         title="重做 (Ctrl/Cmd+Shift+Z / Ctrl/Cmd+Y)"
                         className="tool-btn"
-                        style={{ opacity: historyIndex >= history.length - 1 ? 0.4 : 1 }}
                     >
                         <Redo2 size={20} />
                     </button>
@@ -1312,7 +1232,6 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                         onClick={() => setShowGrid(prev => !prev)}
                         title="切换网格 (G)"
                         className={`tool-btn ${showGrid ? 'active' : ''}`}
-                        style={{ opacity: showGrid ? 1 : 0.6 }}
                     >
                         <Grid3X3 size={20} />
                     </button>
@@ -1320,7 +1239,6 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                         onClick={() => setShowConnections(prev => !prev)}
                         title="切换连接线 (H)"
                         className={`tool-btn ${showConnections ? 'active' : ''}`}
-                        style={{ opacity: showConnections ? 1 : 0.6 }}
                     >
                         <Link size={20} />
                     </button>
@@ -1328,8 +1246,7 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                     <button
                         onClick={() => setIsConfigModalOpen(true)}
                         title="类别管理器"
-                        className="tool-btn"
-                        style={{ color: 'var(--accent-primary)' }}
+                        className="tool-btn tool-btn-accent"
                     >
                         <Tag size={20} />
                     </button>
@@ -1339,7 +1256,6 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                         disabled={isPredicting || !predictionModelPath}
                         title={predictionModelPath ? "模型预标注当前图片" : "请先在图库配置预标注模型"}
                         className={`tool-btn tool-btn-ai`}
-                        style={{ opacity: predictionModelPath ? 1 : 0.35 }}
                     >
                         {isPredicting ? <RefreshCw size={20} className="spin" /> : <Wand2 size={20} />}
                     </button>
@@ -1353,8 +1269,7 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                     <button
                         onClick={() => setShowHelpPanel(prev => !prev)}
                         title="快捷键帮助 (?)"
-                        className="tool-btn"
-                        style={{ color: showHelpPanel ? 'var(--accent-primary)' : 'inherit' }}
+                        className={`tool-btn tool-btn-help ${showHelpPanel ? 'active' : ''}`}
                     >
                         <HelpCircle size={20} />
                     </button>
@@ -1539,15 +1454,15 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                     {/* Stats mini-bar */}
                     <div className="editor-sidebar-stats">
                         <div className="editor-sidebar-stat">
-                            <div className="editor-sidebar-stat-value" style={{ color: 'var(--accent-primary)' }}>{annotationStats.bboxes}</div>
+                            <div className="editor-sidebar-stat-value stat-bboxes">{annotationStats.bboxes}</div>
                             <div className="editor-sidebar-stat-label">标注框</div>
                         </div>
                         <div className="editor-sidebar-stat">
-                            <div className="editor-sidebar-stat-value" style={{ color: '#ffbd2e' }}>{annotationStats.keypoints}</div>
+                            <div className="editor-sidebar-stat-value stat-keypoints">{annotationStats.keypoints}</div>
                             <div className="editor-sidebar-stat-label">关键点</div>
                         </div>
                         <div className="editor-sidebar-stat">
-                            <div className="editor-sidebar-stat-value" style={{ color: '#34d399' }}>{annotationStats.labeled}</div>
+                            <div className="editor-sidebar-stat-value stat-labeled">{annotationStats.labeled}</div>
                             <div className="editor-sidebar-stat-label">已标类</div>
                         </div>
                     </div>
@@ -1583,30 +1498,16 @@ export function AnnotationEditor({ image, projectId, onBack }) {
                                             </div>
                                             <div
                                                 className="layer-class-chip"
-                                                style={{
-                                                    background: `linear-gradient(135deg, ${chipColor}, ${chipColor}dd)`,
-                                                    boxShadow: `0 0 12px ${chipColor}40`,
-                                                    width: '10px',
-                                                    height: '10px',
-                                                    borderRadius: '3px'
-                                                }}
+                                                style={{ '--chip-color': chipColor }}
                                             />
-                                            <span className="layer-group-name" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                            <span className="layer-group-name layer-group-name-row">
                                                 {classDisplayName}
-                                                <span style={{
-                                                    background: 'rgba(255, 255, 255, 0.05)',
-                                                    padding: '1px 6px',
-                                                    borderRadius: '4px',
-                                                    color: 'var(--text-tertiary)',
-                                                    fontWeight: 500,
-                                                    fontSize: '10px'
-                                                }}>#{idx + 1}</span>
+                                                <span className="layer-group-index-badge">#{idx + 1}</span>
                                             </span>
                                         </div>
                                         <button
                                             onClick={(e) => { e.stopPropagation(); handleDelete(group.id); }}
-                                            className="icon-btn trash-btn"
-                                            style={{ opacity: 0.6, transition: 'all 0.2s' }}
+                                            className="icon-btn trash-btn layer-delete-btn"
                                             title="删除"
                                         >
                                             <Trash2 size={13} />

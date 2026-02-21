@@ -22,7 +22,7 @@ function App() {
 }
 
 const AppContent = () => {
-  const { view, projects, createProject, selectProject, deleteProject, currentProject, images, selectedImage, editorReloadToken, openEditor, goBack, refreshImages, openSettings } = useProject();
+  const { view, projects, createProject, selectProject, deleteProject, currentProject, images, selectedImage, editorReloadToken, openEditor, goBack, refreshImages } = useProject();
 
   if (view === 'dashboard') {
     return (
@@ -40,7 +40,7 @@ const AppContent = () => {
 
   if (view === 'gallery') {
     return (
-      <div className="page-gallery" style={{ padding: '2rem 3rem 3rem 3rem', height: '100%', display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden' }}>
+      <div className="page-gallery">
         {/* Background Decorative Blobs */}
         {images.length === 0 && (
           <>
@@ -49,34 +49,22 @@ const AppContent = () => {
           </>
         )}
 
-        <div className="page-gallery-header" style={{ marginBottom: '2rem', flexShrink: 0, position: 'relative', zIndex: 2 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '6px' }}>
-            <h2 style={{ fontSize: '1.6rem', fontWeight: 800, letterSpacing: '-0.03em', color: 'var(--text-primary)', margin: 0 }}>
+        <div className="page-gallery-header">
+          <div className="page-gallery-title-row">
+            <h2 className="page-gallery-project">
               {currentProject}
             </h2>
-            <span style={{ color: 'var(--text-tertiary)', fontSize: '1.2rem', fontWeight: 300, transform: 'translateY(1px)' }}>/</span>
-            <div style={{
-              background: 'rgba(88, 166, 255, 0.1)',
-              color: '#4da1ff',
-              padding: '4px 10px',
-              borderRadius: '8px',
-              fontSize: '0.85rem',
-              fontWeight: 700,
-              letterSpacing: '0.02em',
-              textTransform: 'uppercase',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px'
-            }}>
+            <span className="page-gallery-divider">/</span>
+            <div className="page-gallery-tag">
               GALLERY
             </div>
           </div>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', fontWeight: 500, margin: 0, paddingLeft: '2px' }}>
+          <p className="page-gallery-meta">
             管理项目资源 · {images.length} 张图片
           </p>
         </div>
 
-        <div className="page-gallery-body" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative', zIndex: 2 }}>
+        <div className="page-gallery-body">
           <ImageGallery
             images={images}
             projectId={currentProject}

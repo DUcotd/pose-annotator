@@ -73,6 +73,10 @@ export const ProjectDashboard = ({ projects = [], onCreateProject, onSelectProje
         onCreateProject(name, customPath);
     };
 
+    const totalImages = projects.reduce((acc, p) => acc + (p.imageCount || 0), 0);
+    const totalAnnotated = projects.reduce((acc, p) => acc + (p.annotatedCount || 0), 0);
+    const annotationRate = totalImages > 0 ? Math.round((totalAnnotated / totalImages) * 100) : 0;
+
     const closeNotification = () => setNotification(null);
 
     return (
@@ -82,9 +86,25 @@ export const ProjectDashboard = ({ projects = [], onCreateProject, onSelectProje
                     onCreate={() => setIsCreating(true)}
                     onImport={() => setIsImporting(true)}
                     onGuide={() => setIsGuideOpen(true)}
+                    summary={{
+                        projects: projects.length,
+                        images: totalImages,
+                        rate: annotationRate
+                    }}
                 />
 
                 <DashboardStats projects={projects} />
+            </div>
+
+            <div className="dashboard-content-header">
+                <div>
+                    <h2 className="dashboard-content-title">项目工作区</h2>
+                    <p className="dashboard-content-subtitle">
+                        {projects.length === 0
+                            ? '当前没有项目，先创建一个开始标注。'
+                            : `共 ${projects.length} 个项目，已标注 ${totalAnnotated}/${totalImages} 张图片。`}
+                    </p>
+                </div>
             </div>
 
             <div className="dashboard-scroll custom-scrollbar">

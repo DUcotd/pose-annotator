@@ -211,7 +211,7 @@ export const ProjectCard = ({ project, onClick, onDelete, onRenumber, index, isD
 
 export const CreateProjectCard = ({ onClick }) => (
     <div
-        className="glass-card glass-card-hover"
+        className="glass-card glass-card-hover create-project-card"
         style={{
             display: 'flex',
             flexDirection: 'column',

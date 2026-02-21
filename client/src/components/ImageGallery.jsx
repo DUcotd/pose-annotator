@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { ChevronLeft, ChevronRight, Image as ImageIcon, CheckCircle, RefreshCw, FolderOpen, Clock, Trash2, X, AlertTriangle, Settings, Wand2, Play, Pause, Check, AlertCircle, Filter } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Image as ImageIcon, CheckCircle, RefreshCw, FolderOpen, Clock, Trash2, X, AlertTriangle, Settings, Wand2, Play, Pause, Check, AlertCircle, Filter, Search } from 'lucide-react';
 import { ImageUpload } from './ImageUpload';
 import { ImageDiscovery } from './ImageDiscovery';
 import { ImportHistory } from './ImportHistory';
@@ -76,41 +76,13 @@ const ThumbnailCard = ({ imageObj, projectId, index, onSelectImage, isSelected, 
                     />
 
                     {hasAnnotation && (
-                        <div style={{
-                            position: 'absolute',
-                            top: '8px',
-                            right: '8px',
-                            zIndex: 10,
-                            background: 'rgba(16, 185, 129, 0.9)',
-                            color: 'white',
-                            padding: '4px',
-                            borderRadius: '50%',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-                            backdropFilter: 'blur(4px)',
-                            border: '1px solid rgba(255,255,255,0.2)'
-                        }} title="已标注">
+                        <div className="thumb-annotated-badge" title="已标注">
                             <CheckCircle size={14} fill="currentColor" />
                         </div>
                     )}
 
                     {imageSize && (
-                        <div style={{
-                            position: 'absolute',
-                            bottom: '32px',
-                            left: '8px',
-                            zIndex: 10,
-                            background: 'rgba(0, 0, 0, 0.7)',
-                            color: 'rgba(255, 255, 255, 0.8)',
-                            padding: '2px 6px',
-                            borderRadius: '6px',
-                            fontSize: '10px',
-                            fontWeight: 600,
-                            backdropFilter: 'blur(4px)',
-                            border: '1px solid rgba(255,255,255,0.1)'
-                        }}>
+                        <div className="thumb-size-badge">
                             {formatSize(imageSize)}
                         </div>
                     )}
@@ -118,43 +90,15 @@ const ThumbnailCard = ({ imageObj, projectId, index, onSelectImage, isSelected, 
                     <button
                         onClick={handleDelete}
                         title="删除图片"
-                        style={{
-                            position: 'absolute',
-                            top: '8px',
-                            left: '8px',
-                            zIndex: 10,
-                            background: 'rgba(239, 68, 68, 0.9)',
-                            color: 'white',
-                            padding: '6px',
-                            borderRadius: '8px',
-                            border: 'none',
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            opacity: 0,
-                            transition: 'opacity 0.2s, transform 0.2s',
-                            transform: 'scale(0.9)'
-                        }}
-                        className="delete-btn"
+                        className="thumb-delete-btn"
                     >
                         <Trash2 size={14} />
                     </button>
                 </div>
-                <div className="image-card-label" style={{ opacity: 1, transform: 'translateY(0)' }}>
+                <div className="image-card-label thumb-card-label">
                     <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{img}</span>
                 </div>
             </div>
-
-            <style>{`
-                .image-card:hover .delete-btn {
-                    opacity: 1 !important;
-                    transform: scale(1) !important;
-                }
-                .delete-btn:hover {
-                    background: rgba(220, 38, 38, 1) !important;
-                }
-            `}</style>
 
             {showDeleteConfirm && createPortal(
                 <div style={{
@@ -305,7 +249,7 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
     const [modelPath, setModelPath] = useState('');
     const [preannotateRange, setPreannotateRange] = useState('unannotated');
     const [confidenceThreshold, setConfidenceThreshold] = useState(0.5);
-    const [preannotating, setPreannotating] = useState(false);
+    const [_preannotating, setPreannotating] = useState(false);
     const [preannotateProgress, setPreannotateProgress] = useState({ current: 0, total: 0, currentImage: '' });
     const [preannotateResult, setPreannotateResult] = useState(null);
     const [showPreannotateProgress, setShowPreannotateProgress] = useState(false);
@@ -668,102 +612,49 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
 
     return (
         <>
-            <div style={{ display: 'flex', flexDirection: 'column', height: '100%', position: 'relative' }}>
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflowY: 'auto', overflowX: 'hidden' }} className="custom-scrollbar">
+            <div className="gallery-view">
+                <div className="gallery-scroll-area custom-scrollbar">
                     {/* Search & Info Bar */}
-                    <div style={{ marginBottom: '1.75rem' }}>
-                        <div
-                            className="glass-panel"
-                            style={{
-                                display: 'flex',
-                                justifyContent: 'space-between',
-                                alignItems: 'center',
-                                gap: '1rem',
-                                flexWrap: 'wrap',
-                                flexShrink: 0,
-                                padding: '0.75rem 1rem',
-                                borderRadius: '18px',
-                                borderColor: 'rgba(255,255,255,0.1)',
-                                boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
-                                background: 'rgba(23, 23, 23, 0.4)'
-                            }}
-                        >
+                    <div className="gallery-toolbar-wrap">
+                        <div className="glass-panel gallery-toolbar">
                             {/* Left Group: Status & Project Actions */}
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                                <div style={{
-                                    background: 'linear-gradient(135deg, rgba(77, 161, 255, 0.15), rgba(77, 161, 255, 0.05))',
-                                    padding: '6px 14px',
-                                    borderRadius: '10px',
-                                    color: '#4da1ff',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '8px',
-                                    border: '1px solid rgba(77, 161, 255, 0.25)',
-                                    fontSize: '13.5px',
-                                    fontWeight: 600,
-                                    boxShadow: '0 2px 10px rgba(77, 161, 255, 0.1)'
-                                }}>
+                            <div className="gallery-toolbar-left">
+                                <div className="gallery-resource-pill">
                                     <ImageIcon size={16} />
                                     <span>{filtered.length} 资源</span>
                                 </div>
 
-                                <div style={{ width: '1px', height: '24px', background: 'rgba(255,255,255,0.1)', margin: '0 4px' }} />
+                                <div className="gallery-toolbar-divider" />
 
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <div className="gallery-toolbar-actions">
                                     <button
                                         onClick={() => {
                                             setShowStats(true);
                                             fetchStats();
                                         }}
-                                        className="icon-btn hover-card"
+                                        className="icon-btn hover-card gallery-tool-btn"
                                         title="项目详情"
-                                        style={{
-                                            background: 'rgba(255, 255, 255, 0.03)',
-                                            padding: '9px',
-                                            borderRadius: '10px',
-                                            border: '1px solid rgba(255, 255, 255, 0.08)',
-                                            color: 'var(--text-secondary)'
-                                        }}
                                     >
                                         <AlertCircle size={17} />
                                     </button>
                                     <button
                                         onClick={onUpload}
-                                        className="icon-btn hover-card"
+                                        className="icon-btn hover-card gallery-tool-btn"
                                         title="刷新图库"
-                                        style={{
-                                            background: 'rgba(255,255,255,0.03)',
-                                            padding: '9px',
-                                            borderRadius: '10px',
-                                            border: '1px solid rgba(255,255,255,0.08)'
-                                        }}
                                     >
                                         <RefreshCw size={17} />
                                     </button>
                                     <button
                                         onClick={() => setShowDiscovery(true)}
-                                        className="icon-btn hover-card"
+                                        className="icon-btn hover-card gallery-tool-btn is-primary"
                                         title="从文件夹导入"
-                                        style={{
-                                            background: 'rgba(77, 161, 255, 0.08)',
-                                            padding: '9px',
-                                            borderRadius: '10px',
-                                            border: '1px solid rgba(77, 161, 255, 0.2)',
-                                            color: '#4da1ff'
-                                        }}
                                     >
                                         <FolderOpen size={17} />
                                     </button>
                                     <button
                                         onClick={() => setShowHistory(true)}
-                                        className="icon-btn hover-card"
+                                        className="icon-btn hover-card gallery-tool-btn"
                                         title="导入历史"
-                                        style={{
-                                            background: 'rgba(255,255,255,0.03)',
-                                            padding: '9px',
-                                            borderRadius: '10px',
-                                            border: '1px solid rgba(255,255,255,0.08)'
-                                        }}
                                     >
                                         <Clock size={17} />
                                     </button>
@@ -771,70 +662,41 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
                             </div>
 
                             {/* Middle Group: AI Tools */}
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                                <div style={{ width: '1px', height: '24px', background: 'rgba(255,255,255,0.1)', margin: '0 4px' }} />
+                            <div className="gallery-toolbar-center">
+                                <div className="gallery-toolbar-divider" />
 
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(255,255,255,0.02)', padding: '4px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                                <div className="gallery-ai-tools">
                                     <button
                                         onClick={() => setShowModelSettings(true)}
-                                        className="icon-btn hover-card"
+                                        className={`icon-btn hover-card gallery-ai-btn ${modelPath ? 'is-ready' : ''}`}
                                         title="模型设置"
-                                        style={{
-                                            background: modelPath ? 'rgba(16, 185, 129, 0.1)' : 'transparent',
-                                            padding: '8px',
-                                            borderRadius: '8px',
-                                            border: modelPath ? '1px solid rgba(16, 185, 129, 0.2)' : '1px solid transparent',
-                                            color: modelPath ? '#10b981' : 'var(--text-tertiary)'
-                                        }}
                                     >
                                         <Settings size={17} />
                                     </button>
                                     <button
                                         onClick={() => setShowPreannotateDialog(true)}
                                         disabled={!modelPath}
-                                        className="icon-btn hover-card"
+                                        className={`icon-btn hover-card gallery-ai-btn gallery-ai-action ${modelPath ? 'is-ready' : ''}`}
                                         title={!modelPath ? '请先配置模型' : '一键预标注'}
-                                        style={{
-                                            background: modelPath ? 'rgba(139, 92, 246, 0.12)' : 'transparent',
-                                            padding: '6px 14px',
-                                            borderRadius: '8px',
-                                            border: modelPath ? '1px solid rgba(139, 92, 246, 0.25)' : '1px solid transparent',
-                                            color: modelPath ? '#a78bfa' : 'var(--text-tertiary)',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: '8px',
-                                            cursor: modelPath ? 'pointer' : 'not-allowed',
-                                            opacity: modelPath ? 1 : 0.4
-                                        }}
                                     >
                                         <Wand2 size={16} />
-                                        <span style={{ fontSize: '13px', fontWeight: 600 }}>智能预标注</span>
+                                        <span>智能预标注</span>
                                     </button>
                                 </div>
                             </div>
 
                             {/* Right Group: Search & Global Filter */}
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, maxWidth: '420px', justifyContent: 'flex-end' }}>
-                                <div style={{ position: 'relative', flex: 1 }}>
+                            <div className="gallery-toolbar-right">
+                                <div className="gallery-search-box">
                                     <input
                                         type="text"
                                         placeholder="搜索图片..."
                                         value={search}
                                         onChange={(e) => updateGalleryFilters({ search: e.target.value })}
-                                        className="input-modern"
-                                        style={{
-                                            height: '40px',
-                                            paddingLeft: '38px',
-                                            paddingRight: '12px',
-                                            fontSize: '0.88rem',
-                                            borderRadius: '10px',
-                                            background: 'rgba(0,0,0,0.2)',
-                                            border: '1px solid rgba(255,255,255,0.08)',
-                                            width: '100%'
-                                        }}
+                                        className="input-modern gallery-search-input"
                                     />
-                                    <div style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-tertiary)', pointerEvents: 'none' }}>
-                                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                                    <div className="gallery-search-icon">
+                                        <Search size={15} />
                                     </div>
                                 </div>
 
@@ -850,38 +712,13 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
                                         setFiltersOpen(true);
                                     }}
                                     ref={filterButtonRef}
-                                    className="icon-btn hover-card"
+                                    className={`icon-btn hover-card gallery-filter-btn ${activeFiltersCount > 0 ? 'has-active' : ''}`}
                                     title="高级筛选"
-                                    style={{
-                                        background: activeFiltersCount > 0 ? 'rgba(77, 161, 255, 0.15)' : 'rgba(255,255,255,0.04)',
-                                        padding: '0 14px',
-                                        height: '40px',
-                                        borderRadius: '10px',
-                                        border: activeFiltersCount > 0 ? '1px solid rgba(77, 161, 255, 0.3)' : '1px solid rgba(255,255,255,0.1)',
-                                        color: activeFiltersCount > 0 ? '#4da1ff' : 'var(--text-primary)',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: '8px',
-                                        fontWeight: 600,
-                                        fontSize: '13px'
-                                    }}
                                 >
                                     <Filter size={16} />
                                     <span>筛选</span>
                                     {activeFiltersCount > 0 && (
-                                        <span style={{
-                                            background: '#4da1ff',
-                                            color: 'white',
-                                            minWidth: '18px',
-                                            height: '18px',
-                                            borderRadius: '50%',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                            fontSize: '10px',
-                                            fontWeight: 800,
-                                            boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
-                                        }}>
+                                        <span className="gallery-filter-badge">
                                             {activeFiltersCount}
                                         </span>
                                     )}
@@ -892,32 +729,24 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
 
                     {filtersOpen && filterPanelPos && createPortal(
                         <div
-                            style={{ position: 'fixed', inset: 0, zIndex: 10000 }}
+                            className="gallery-filter-overlay"
                             onMouseDown={() => { setFiltersOpen(false); setFilterPanelPos(null); }}
                         >
-                            <div style={{ position: 'absolute', inset: 0 }} />
+                            <div className="gallery-filter-backdrop" />
                             <div
-                                className="glass-panel"
+                                className="glass-panel gallery-filter-panel"
                                 style={{
-                                    position: 'fixed',
                                     top: filterPanelPos.top,
                                     left: filterPanelPos.left,
-                                    width: `${filterPanelPos.width}px`,
-                                    maxWidth: 'calc(100vw - 24px)',
-                                    padding: '12px',
-                                    borderRadius: '14px',
-                                    background: 'rgba(22, 27, 34, 0.92)',
-                                    border: '1px solid rgba(255,255,255,0.12)',
-                                    boxShadow: '0 18px 40px rgba(0,0,0,0.55)',
-                                    backdropFilter: 'blur(12px)'
+                                    width: `${filterPanelPos.width}px`
                                 }}
                                 onMouseDown={(e) => e.stopPropagation()}
                             >
-                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', marginBottom: '10px' }}>
-                                    <div style={{ color: 'var(--text-primary)', fontWeight: 900, fontSize: '13px', letterSpacing: '0.02em' }}>筛选条件</div>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <div className="gallery-filter-header">
+                                    <div className="gallery-filter-title">筛选条件</div>
+                                    <div className="gallery-filter-header-actions">
                                         <button
-                                            className="icon-btn hover-card"
+                                            className="icon-btn hover-card gallery-filter-head-btn"
                                             onClick={() => {
                                                 updateGalleryFilters({
                                                     annotated: 'all',
@@ -928,60 +757,54 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
                                                 });
                                             }}
                                             title="清空筛选"
-                                            style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '8px' }}
                                         >
                                             <RefreshCw size={16} />
                                         </button>
                                         <button
-                                            className="icon-btn hover-card"
+                                            className="icon-btn hover-card gallery-filter-head-btn"
                                             onClick={() => setFiltersOpen(false)}
                                             title="关闭"
-                                            style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '8px' }}
                                         >
                                             <X size={16} />
                                         </button>
                                     </div>
                                 </div>
 
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
-                                        <div style={{ color: 'var(--text-tertiary)', fontSize: '12px', fontWeight: 800 }}>是否标注</div>
-                                        <div style={{ display: 'flex', gap: '6px' }}>
+                                <div className="gallery-filter-body">
+                                    <div className="gallery-filter-row">
+                                        <div className="gallery-filter-label">是否标注</div>
+                                        <div className="gallery-filter-chip-group">
                                             <button
                                                 onClick={() => updateGalleryFilters({ annotated: 'all' })}
-                                                className={`icon-btn ${annotatedFilter === 'all' ? 'active' : ''}`}
-                                                style={{ padding: '8px 10px', borderRadius: '10px' }}
+                                                className={`gallery-filter-chip ${annotatedFilter === 'all' ? 'active' : ''}`}
                                             >
-                                                <span style={{ fontSize: '12px', fontWeight: 800 }}>全部</span>
+                                                全部
                                             </button>
                                             <button
                                                 onClick={() => updateGalleryFilters({ annotated: 'annotated' })}
-                                                className={`icon-btn ${annotatedFilter === 'annotated' ? 'active' : ''}`}
-                                                style={{ padding: '8px 10px', borderRadius: '10px' }}
+                                                className={`gallery-filter-chip ${annotatedFilter === 'annotated' ? 'active' : ''}`}
                                             >
-                                                <span style={{ fontSize: '12px', fontWeight: 800 }}>已标注</span>
+                                                已标注
                                             </button>
                                             <button
                                                 onClick={() => updateGalleryFilters({ annotated: 'unannotated' })}
-                                                className={`icon-btn ${annotatedFilter === 'unannotated' ? 'active' : ''}`}
-                                                style={{ padding: '8px 10px', borderRadius: '10px' }}
+                                                className={`gallery-filter-chip ${annotatedFilter === 'unannotated' ? 'active' : ''}`}
                                             >
-                                                <span style={{ fontSize: '12px', fontWeight: 800 }}>未标注</span>
+                                                未标注
                                             </button>
                                         </div>
                                     </div>
 
-                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
-                                        <div style={{ color: 'var(--text-tertiary)', fontSize: '12px', fontWeight: 800 }}>关键点数量</div>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <div className="gallery-filter-row">
+                                        <div className="gallery-filter-label">关键点数量</div>
+                                        <div className="gallery-filter-range">
                                             <input
                                                 type="number"
                                                 min="0"
                                                 placeholder="最少"
                                                 value={keypointsMin}
                                                 onChange={(e) => updateGalleryFilters({ keypointsMin: e.target.value })}
-                                                className="input-modern"
-                                                style={{ height: '40px', width: '90px', borderRadius: '12px', padding: '0 10px', fontSize: '0.9rem' }}
+                                                className="input-modern gallery-filter-input"
                                             />
                                             <input
                                                 type="number"
@@ -989,23 +812,21 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
                                                 placeholder="最多"
                                                 value={keypointsMax}
                                                 onChange={(e) => updateGalleryFilters({ keypointsMax: e.target.value })}
-                                                className="input-modern"
-                                                style={{ height: '40px', width: '90px', borderRadius: '12px', padding: '0 10px', fontSize: '0.9rem' }}
+                                                className="input-modern gallery-filter-input"
                                             />
                                         </div>
                                     </div>
 
-                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
-                                        <div style={{ color: 'var(--text-tertiary)', fontSize: '12px', fontWeight: 800 }}>BBox 数量</div>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <div className="gallery-filter-row">
+                                        <div className="gallery-filter-label">BBox 数量</div>
+                                        <div className="gallery-filter-range">
                                             <input
                                                 type="number"
                                                 min="0"
                                                 placeholder="最少"
                                                 value={bboxesMin}
                                                 onChange={(e) => updateGalleryFilters({ bboxesMin: e.target.value })}
-                                                className="input-modern"
-                                                style={{ height: '40px', width: '90px', borderRadius: '12px', padding: '0 10px', fontSize: '0.9rem' }}
+                                                className="input-modern gallery-filter-input"
                                             />
                                             <input
                                                 type="number"
@@ -1013,43 +834,20 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
                                                 placeholder="最多"
                                                 value={bboxesMax}
                                                 onChange={(e) => updateGalleryFilters({ bboxesMax: e.target.value })}
-                                                className="input-modern"
-                                                style={{ height: '40px', width: '90px', borderRadius: '12px', padding: '0 10px', fontSize: '0.9rem' }}
+                                                className="input-modern gallery-filter-input"
                                             />
                                         </div>
                                     </div>
 
                                     {(wantsKeypointFilter && !hasKeypointCount) && (
-                                        <div style={{
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: '8px',
-                                            padding: '8px 10px',
-                                            borderRadius: '12px',
-                                            background: 'rgba(245, 158, 11, 0.12)',
-                                            border: '1px solid rgba(245, 158, 11, 0.25)',
-                                            color: '#f59e0b',
-                                            fontSize: '12px',
-                                            fontWeight: 800
-                                        }}>
+                                        <div className="gallery-filter-warning">
                                             <AlertTriangle size={14} />
                                             <span>后端未返回 keypointCount</span>
                                         </div>
                                     )}
 
                                     {(wantsBboxFilter && !hasBboxCount) && (
-                                        <div style={{
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: '8px',
-                                            padding: '8px 10px',
-                                            borderRadius: '12px',
-                                            background: 'rgba(245, 158, 11, 0.12)',
-                                            border: '1px solid rgba(245, 158, 11, 0.25)',
-                                            color: '#f59e0b',
-                                            fontSize: '12px',
-                                            fontWeight: 800
-                                        }}>
+                                        <div className="gallery-filter-warning">
                                             <AlertTriangle size={14} />
                                             <span>后端未返回 bboxCount</span>
                                         </div>
@@ -1061,7 +859,7 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
                     )}
 
                     {/* Image Grid */}
-                    <div className="image-grid" style={{ paddingBottom: '120px' }}>
+                    <div className="image-grid gallery-image-grid">
                         {pageItems.map((item, index) => {
                             if (item === '__UPLOAD__') {
                                 return (
@@ -1091,7 +889,7 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
 
                     {
                         filtered.length === 0 && search && (
-                            <div style={{ margin: 'auto', textAlign: 'center', color: 'var(--text-secondary)', padding: '4rem' }}>
+                            <div className="gallery-empty-search">
                                 <p>没有找到匹配 "{search}" 的图片</p>
                             </div>
                         )
@@ -1101,45 +899,17 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
                 {/* Pagination Floating Pill */}
                 {
                     totalPages > 1 && (
-                        <div style={{
-                            position: 'absolute',
-                            bottom: '32px',
-                            left: 0,
-                            right: 0,
-                            display: 'flex',
-                            justifyContent: 'center',
-                            zIndex: 100,
-                            pointerEvents: 'none',
-                            flexShrink: 0,
-                            marginTop: 'auto'
-                        }}>
-                            <div className="glass-panel" style={{
-                                pointerEvents: 'auto',
-                                padding: '8px 12px',
-                                borderRadius: '20px',
-                                background: 'rgba(22, 27, 34, 0.95)',
-                                backdropFilter: 'blur(16px)',
-                                border: '1px solid rgba(255, 255, 255, 0.12)',
-                                boxShadow: '0 12px 40px rgba(0, 0, 0, 0.5)',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '1rem',
-                                zIndex: 10
-                            }}>
+                        <div className="gallery-pagination-wrap">
+                            <div className="glass-panel gallery-pagination-pill">
                                 <button
-                                    className="icon-btn"
+                                    className="icon-btn gallery-page-arrow"
                                     onClick={() => setPage(p => Math.max(0, p - 1))}
                                     disabled={page === 0}
-                                    style={{
-                                        borderRadius: '12px', width: '36px', height: '36px',
-                                        background: page === 0 ? 'transparent' : 'rgba(255,255,255,0.05)',
-                                        color: page === 0 ? 'var(--text-tertiary)' : 'var(--text-primary)'
-                                    }}
                                 >
                                     <ChevronLeft size={18} />
                                 </button>
 
-                                <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                                <div className="gallery-page-list">
                                     {Array.from({ length: totalPages }, (_, i) => {
                                         if (totalPages <= 7 || i === 0 || i === totalPages - 1 ||
                                             Math.abs(i - page) <= 1) {
@@ -1148,37 +918,22 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
                                                 <button
                                                     key={i}
                                                     onClick={() => setPage(i)}
-                                                    style={{
-                                                        width: '32px', height: '32px', borderRadius: '10px',
-                                                        border: isActive ? '1px solid rgba(77, 161, 255, 0.3)' : 'none',
-                                                        background: isActive ? 'rgba(77, 161, 255, 0.15)' : 'transparent',
-                                                        color: isActive ? '#4da1ff' : 'var(--text-secondary)',
-                                                        cursor: 'pointer',
-                                                        fontSize: '13px',
-                                                        fontWeight: isActive ? '700' : '500',
-                                                        transition: 'all 0.2s'
-                                                    }}
-                                                    className={!isActive ? "hover-text-primary" : ""}
+                                                    className={`gallery-page-number ${isActive ? 'active' : ''}`}
                                                 >
                                                     {i + 1}
                                                 </button>
                                             );
                                         } else if (i === 1 || i === totalPages - 2) {
-                                            return <span key={i} style={{ color: 'var(--text-tertiary)', padding: '0 2px', fontSize: '12px' }}>•••</span>;
+                                            return <span key={i} className="gallery-page-ellipsis">•••</span>;
                                         }
                                         return null;
                                     })}
                                 </div>
 
                                 <button
-                                    className="icon-btn"
+                                    className="icon-btn gallery-page-arrow"
                                     onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
                                     disabled={page === totalPages - 1}
-                                    style={{
-                                        borderRadius: '12px', width: '36px', height: '36px',
-                                        background: page === totalPages - 1 ? 'transparent' : 'rgba(255,255,255,0.05)',
-                                        color: page === totalPages - 1 ? 'var(--text-tertiary)' : 'var(--text-primary)'
-                                    }}
                                 >
                                     <ChevronRight size={18} />
                                 </button>
@@ -1213,40 +968,35 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
             {
                 showStats && (
                     <div className="modal-overlay" onClick={() => setShowStats(false)}>
-                        <div className="modal-panel animate-scale-in" style={{ maxWidth: '400px' }} onClick={e => e.stopPropagation()}>
-                            <div style={{ padding: '24px' }}>
-                                <div className="modal-header-between" style={{ marginBottom: '24px' }}>
-                                    <h3 style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                        <div style={{
-                                            background: 'rgba(77, 161, 255, 0.1)',
-                                            padding: '8px',
-                                            borderRadius: '10px',
-                                            color: '#4da1ff'
-                                        }}>
-                                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+                        <div className="modal-panel animate-scale-in gallery-stats-modal" onClick={e => e.stopPropagation()}>
+                            <div className="gallery-stats-content">
+                                <div className="modal-header-between gallery-stats-header">
+                                    <h3 className="gallery-stats-title">
+                                        <div className="gallery-stats-title-icon">
+                                            <AlertCircle size={20} />
                                         </div>
                                         项目详细信息
                                     </h3>
-                                    <button className="icon-btn" onClick={() => setShowStats(false)}>
+                                    <button className="icon-btn gallery-stats-close" onClick={() => setShowStats(false)}>
                                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                                     </button>
                                 </div>
 
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                                    <div className="glass-card" style={{ padding: '16px', background: 'rgba(255,255,255,0.02)' }}>
-                                        <div style={{ color: 'var(--text-tertiary)', fontSize: '0.8rem', marginBottom: '4px', fontWeight: 600 }}>项目 ID</div>
-                                        <div style={{ color: 'var(--text-primary)', fontWeight: 700, fontSize: '1.1rem' }}>{projectId}</div>
+                                <div className="gallery-stats-body">
+                                    <div className="glass-card gallery-stats-info-card">
+                                        <div className="gallery-stats-info-label">项目 ID</div>
+                                        <div className="gallery-stats-info-value">{projectId}</div>
                                     </div>
 
                                     {stats?.projectPath && (
-                                        <div className="glass-card" style={{ padding: '16px', background: 'rgba(255,255,255,0.02)', position: 'relative' }}>
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                        <div className="glass-card gallery-stats-info-card">
+                                            <div className="gallery-stats-path-row">
                                                 <div>
-                                                    <div style={{ color: 'var(--text-tertiary)', fontSize: '0.8rem', marginBottom: '4px', fontWeight: 600 }}>项目路径</div>
-                                                    <div style={{ color: 'var(--text-primary)', fontWeight: 500, fontSize: '0.9rem', wordBreak: 'break-all', paddingRight: '40px' }}>{stats.projectPath}</div>
+                                                    <div className="gallery-stats-info-label">项目路径</div>
+                                                    <div className="gallery-stats-path-text">{stats.projectPath}</div>
                                                 </div>
                                                 <button
-                                                    className="icon-btn hover-card"
+                                                    className="icon-btn hover-card gallery-stats-open-btn"
                                                     title="在资源管理器中打开"
                                                     onClick={async () => {
                                                         try {
@@ -1259,14 +1009,6 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
                                                             console.error('Failed to open folder:', e);
                                                         }
                                                     }}
-                                                    style={{
-                                                        background: 'rgba(77, 161, 255, 0.1)',
-                                                        padding: '8px',
-                                                        borderRadius: '8px',
-                                                        color: '#4da1ff',
-                                                        border: '1px solid rgba(77, 161, 255, 0.2)',
-                                                        flexShrink: 0
-                                                    }}
                                                 >
                                                     <FolderOpen size={16} />
                                                 </button>
@@ -1275,50 +1017,49 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
                                     )}
 
                                     {loadingStats ? (
-                                        <div style={{ padding: '40px', textAlign: 'center' }}>
-                                            <RefreshCw className="animate-spin" size={24} style={{ color: 'var(--accent-primary)', opacity: 0.5 }} />
+                                        <div className="gallery-stats-loading">
+                                            <RefreshCw className="animate-spin" size={24} />
                                         </div>
                                     ) : stats ? (
-                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                                                <div className="glass-card" style={{ padding: '16px', background: 'rgba(255,255,255,0.02)' }}>
-                                                    <div style={{ color: 'var(--text-tertiary)', fontSize: '0.75rem', marginBottom: '4px' }}>图片总数</div>
-                                                    <div style={{ color: 'var(--text-primary)', fontWeight: 700, fontSize: '1.2rem' }}>{stats.total}</div>
+                                        <div className="gallery-stats-grid-wrap">
+                                            <div className="gallery-stats-grid">
+                                                <div className="glass-card gallery-stats-metric-card">
+                                                    <div className="gallery-stats-metric-label">图片总数</div>
+                                                    <div className="gallery-stats-metric-value">{stats.total}</div>
                                                 </div>
-                                                <div className="glass-card" style={{ padding: '16px', background: 'rgba(255,255,255,0.02)' }}>
-                                                    <div style={{ color: 'var(--text-tertiary)', fontSize: '0.75rem', marginBottom: '4px' }}>存储占用</div>
-                                                    <div style={{ color: 'var(--text-primary)', fontWeight: 700, fontSize: '1.2rem' }}>{formatBytes(stats.totalSize || 0)}</div>
+                                                <div className="glass-card gallery-stats-metric-card">
+                                                    <div className="gallery-stats-metric-label">存储占用</div>
+                                                    <div className="gallery-stats-metric-value">{formatBytes(stats.totalSize || 0)}</div>
                                                 </div>
-                                                <div className="glass-card" style={{ padding: '16px', background: 'rgba(16, 185, 129, 0.05)', borderColor: 'rgba(16, 185, 129, 0.1)' }}>
-                                                    <div style={{ color: '#10b981', fontSize: '0.75rem', marginBottom: '4px' }}>已标注图片</div>
-                                                    <div style={{ color: '#10b981', fontWeight: 700, fontSize: '1.2rem' }}>{stats.annotated}</div>
+                                                <div className="glass-card gallery-stats-metric-card is-success">
+                                                    <div className="gallery-stats-metric-label">已标注图片</div>
+                                                    <div className="gallery-stats-metric-value">{stats.annotated}</div>
                                                 </div>
-                                                <div className="glass-card" style={{ padding: '16px', background: 'rgba(245, 158, 11, 0.05)', borderColor: 'rgba(245, 158, 11, 0.1)' }}>
-                                                    <div style={{ color: '#f59e0b', fontSize: '0.75rem', marginBottom: '4px' }}>未标注图片</div>
-                                                    <div style={{ color: '#f59e0b', fontWeight: 700, fontSize: '1.2rem' }}>{stats.unannotated}</div>
+                                                <div className="glass-card gallery-stats-metric-card is-warning">
+                                                    <div className="gallery-stats-metric-label">未标注图片</div>
+                                                    <div className="gallery-stats-metric-value">{stats.unannotated}</div>
                                                 </div>
                                             </div>
 
-                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                                                <div className="glass-card" style={{ padding: '16px', background: 'rgba(77, 161, 255, 0.05)', border: '1px solid rgba(77, 161, 255, 0.1)' }}>
-                                                    <div style={{ color: '#4da1ff', fontSize: '0.75rem', marginBottom: '4px' }}>总标注框 (BBox)</div>
-                                                    <div style={{ color: '#4da1ff', fontWeight: 700, fontSize: '1.2rem' }}>{stats.bboxes || 0}</div>
+                                            <div className="gallery-stats-grid">
+                                                <div className="glass-card gallery-stats-metric-card is-info">
+                                                    <div className="gallery-stats-metric-label">总标注框 (BBox)</div>
+                                                    <div className="gallery-stats-metric-value">{stats.bboxes || 0}</div>
                                                 </div>
-                                                <div className="glass-card" style={{ padding: '16px', background: 'rgba(139, 92, 246, 0.05)', border: '1px solid rgba(139, 92, 246, 0.1)' }}>
-                                                    <div style={{ color: '#8b5cf6', fontSize: '0.75rem', marginBottom: '4px' }}>总关键点 (Keypoints)</div>
-                                                    <div style={{ color: '#8b5cf6', fontWeight: 700, fontSize: '1.2rem' }}>{stats.keypoints || 0}</div>
+                                                <div className="glass-card gallery-stats-metric-card is-purple">
+                                                    <div className="gallery-stats-metric-label">总关键点 (Keypoints)</div>
+                                                    <div className="gallery-stats-metric-value">{stats.keypoints || 0}</div>
                                                 </div>
                                             </div>
                                         </div>
                                     ) : (
-                                        <div style={{ color: 'var(--text-tertiary)', textAlign: 'center', padding: '20px' }}>无法获取统计信息</div>
+                                        <div className="gallery-stats-empty">无法获取统计信息</div>
                                     )}
                                 </div>
 
-                                <div style={{ marginTop: '32px' }}>
+                                <div className="gallery-stats-footer">
                                     <button
-                                        className="btn-modern-primary"
-                                        style={{ width: '100%' }}
+                                        className="btn-modern-primary gallery-stats-close-btn"
                                         onClick={() => setShowStats(false)}
                                     >
                                         关闭
