@@ -1,0 +1,30 @@
+.editor-canvas-area.mode-pan {
+  cursor: grab;
+}
+
+.editor-canvas-area.mode-pan-active {
+  cursor: grabbing;
+}
+
+.editor-image-viewport {
+  position: relative;
+  transform-origin: top left;
+  will-change: transform;
+}
+
+.editor-grid-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.editor-connection-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  z-index: 5;
+}
+

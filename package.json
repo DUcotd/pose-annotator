@@ -4,7 +4,8 @@
   "description": "",
   "main": "electron-main.js",
   "scripts": {
-    "test": "node --test server/test/*.test.js client/src/utils/*.test.js",
+    "test": "node --test server/test/*.test.js client/src/utils/*.test.js client/src/editor/core/*.test.js client/src/hooks/*.test.js client/src/components/*.interactions.test.js",
+    "test:ui": "npm --prefix client run test:ui",
     "start": "node server/index.js",
     "electron:dev": "concurrently \"npm run client:dev\" \"electron .\"",
     "client:dev": "npm run dev --prefix client",

@@ -6,6 +6,7 @@ import { ImportHistory } from './ImportHistory';
 import { useProject } from '../context/ProjectContext';
 import { createPortal } from 'react-dom';
 import { filterImagesAdvanced } from '../utils/galleryFilters';
+import { apiUrl } from '../api';
 
 const PAGE_SIZE = 60;
 
@@ -19,8 +20,8 @@ const ThumbnailCard = ({ imageObj, projectId, index, onSelectImage, isSelected, 
     const hasAnnotation = typeof imageObj === 'string' ? false : imageObj.hasAnnotation;
     const imageSize = typeof imageObj === 'string' ? null : imageObj.size;
 
-    const thumbnailUrl = `http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/thumbnails/${encodeURIComponent(img)}`;
-    const fallbackUrl = `http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/uploads/${encodeURIComponent(img)}`;
+    const thumbnailUrl = apiUrl(`/api/projects/${encodeURIComponent(projectId)}/thumbnails/${encodeURIComponent(img)}`);
+    const fallbackUrl = apiUrl(`/api/projects/${encodeURIComponent(projectId)}/uploads/${encodeURIComponent(img)}`);
 
     const currentSrc = errorCount > 0 ? fallbackUrl : thumbnailUrl;
 
@@ -266,7 +267,7 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
 
     const fetchModelConfig = async () => {
         try {
-            const resp = await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/prediction-settings`);
+            const resp = await fetch(apiUrl(`/api/projects/${encodeURIComponent(projectId)}/prediction-settings`));
             if (resp.ok) {
                 const data = await resp.json();
                 setModelPath(data.modelPath || '');
@@ -278,7 +279,7 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
 
     const handleSelectModel = async () => {
         try {
-            const resp = await fetch('http://localhost:5000/api/utils/select-file', {
+            const resp = await fetch(apiUrl('/api/utils/select-file'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -287,7 +288,7 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
             });
             const data = await resp.json();
             if (data.path) {
-                const saveResp = await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/prediction-settings`, {
+                const saveResp = await fetch(apiUrl(`/api/projects/${encodeURIComponent(projectId)}/prediction-settings`), {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ modelPath: data.path })
@@ -331,7 +332,7 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
 
         // 启动预标注任务
         try {
-            const resp = await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/predict`, {
+            const resp = await fetch(apiUrl(`/api/projects/${encodeURIComponent(projectId)}/predict`), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -346,14 +347,6 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
                 throw new Error('预标注任务启动失败');
             }
 
-            if (targetImages.length > 0) {
-                setPreannotateProgress({
-                    current: 1,
-                    total: targetImages.length,
-                    currentImage: `正在处理: ${targetImages[0]}`
-                });
-            }
-
             // 清理之前的轮询（如果有）
             if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
             if (checkCancelIntervalRef.current) clearInterval(checkCancelIntervalRef.current);
@@ -362,21 +355,32 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
             // 立即执行一次状态查询，然后开始轮询
             const checkStatus = async () => {
                 try {
-                    const statusResp = await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/predict/status`);
+                    const statusResp = await fetch(apiUrl(`/api/projects/${encodeURIComponent(projectId)}/predict/status`));
                     if (statusResp.ok) {
                         const status = await statusResp.json();
 
-                        // 更新进度 - 确保total不为0
-                        const total = status.total || targetImages.length;
-                        const completed = status.current || 0;
-                        const active = status.active || completed;
-                        const displayCurrent = status.status === 'running' ? active : completed;
+                        const toNumber = (value, fallback = 0) => {
+                            const n = Number(value);
+                            return Number.isFinite(n) ? n : fallback;
+                        };
 
-                        setPreannotateProgress({
-                            current: displayCurrent,
+                        const total = Math.max(0, toNumber(status.total, targetImages.length)) || targetImages.length;
+                        const completed = Math.max(0, toNumber(status.current, 0));
+                        const active = Math.max(completed, toNumber(status.active, completed));
+                        const activeFromPercent = total > 0
+                            ? Math.round((Math.max(
+                                toNumber(status.activeProgress, 0),
+                                toNumber(status.progress, 0)
+                            ) / 100) * total)
+                            : 0;
+                        const runningCurrent = Math.max(active, activeFromPercent);
+                        const displayCurrent = status.status === 'running' ? runningCurrent : completed;
+
+                        setPreannotateProgress(prev => ({
+                            current: Math.min(total, Math.max(prev?.current || 0, displayCurrent)),
                             total: total,
-                            currentImage: status.message || '正在处理...'
-                        });
+                            currentImage: status.message || prev?.currentImage || '正在处理...'
+                        }));
 
                         // 检查任务是否完成
                         if (status.status === 'completed' || status.status === 'failed' || status.status === 'stopped') {
@@ -490,7 +494,7 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
             ...(prev || { current: 0, total: 0, currentImage: '' }),
             currentImage: '正在取消预标注任务...'
         }));
-        fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/predict/cancel`, {
+        fetch(apiUrl(`/api/projects/${encodeURIComponent(projectId)}/predict/cancel`), {
             method: 'POST'
         }).catch(e => console.error('Failed to cancel prediction:', e));
     };
@@ -514,7 +518,7 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
     const fetchStats = async () => {
         setLoadingStats(true);
         try {
-            const resp = await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/dataset/stats`);
+            const resp = await fetch(apiUrl(`/api/projects/${encodeURIComponent(projectId)}/dataset/stats`));
             const data = await resp.json();
             setStats(data);
         } catch (e) {
@@ -1000,7 +1004,7 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
                                                     title="在资源管理器中打开"
                                                     onClick={async () => {
                                                         try {
-                                                            await fetch('http://localhost:5000/api/utils/open-folder', {
+                                                            await fetch(apiUrl('/api/utils/open-folder'), {
                                                                 method: 'POST',
                                                                 headers: { 'Content-Type': 'application/json' },
                                                                 body: JSON.stringify({ path: stats.projectPath })

@@ -69,8 +69,12 @@ export const ProjectDashboard = ({ projects = [], onCreateProject, onSelectProje
         return result;
     };
 
-    const handleCreateProject = (name, customPath) => {
-        onCreateProject(name, customPath);
+    const handleCreateProject = async (name, customPath) => {
+        const result = await onCreateProject(name, customPath);
+        if (result && typeof result === 'object' && !result.success) {
+            setNotification({ type: 'error', message: result.message || '项目创建失败' });
+        }
+        return result;
     };
 
     const totalImages = projects.reduce((acc, p) => acc + (p.imageCount || 0), 0);

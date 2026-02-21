@@ -398,7 +398,7 @@ class PredictionService {
       throw new Error('预标注任务正在进行中');
     }
 
-    const { modelPath, images, confidenceThreshold, mode, projectsDir } = options;
+    const { modelPath, images, confidenceThreshold, mode, projectsDir, waitForCompletion = true } = options;
 
     const modelValidation = await this.validateModel(modelPath);
     if (!modelValidation.valid) {
@@ -561,7 +561,7 @@ class PredictionService {
       });
     });
 
-    return new Promise((resolve, reject) => {
+    const completionPromise = new Promise((resolve, reject) => {
       child.on('close', async (code) => {
         // 等待一小段时间确保所有输出都被捕获
         await new Promise(resolve => setTimeout(resolve, 100));
@@ -720,6 +720,20 @@ class PredictionService {
         reject(err);
       });
     });
+
+    if (!waitForCompletion) {
+      completionPromise.catch((err) => {
+        logger.error(`Background prediction task failed for ${projectId}:`, err);
+      });
+      return {
+        success: true,
+        message: '预标注任务已启动',
+        pid: child.pid,
+        totalImages: images.length
+      };
+    }
+
+    return completionPromise;
   }
 
   handlePredictionProgress(projectId, data, projectsDir) {

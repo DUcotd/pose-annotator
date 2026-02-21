@@ -878,14 +878,15 @@ function createProjectRouter(projectsDir) {
     const { modelPath, images, confidenceThreshold, mode, device, imgsz } = req.body;
 
     try {
-      const result = await PredictionService.runPredictionOnImages(projectId, {
+      await PredictionService.runPredictionOnImages(projectId, {
         modelPath,
         images,
         confidenceThreshold: confidenceThreshold || 0.25,
         mode: mode || 'all',
         device,
         imgsz,
-        projectsDir
+        projectsDir,
+        waitForCompletion: false
       });
 
       res.json({

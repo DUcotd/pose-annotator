@@ -1,16 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Folder, X, FolderOpen } from 'lucide-react';
+import { apiUrl } from '../../api';
 
 export const CreateProjectModal = ({ isOpen, onClose, onSubmit }) => {
     const [name, setName] = useState('');
     const [customPath, setCustomPath] = useState('');
     const [defaultPath, setDefaultPath] = useState('');
     const [useCustomPath, setUseCustomPath] = useState(false);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [submitError, setSubmitError] = useState('');
 
     useEffect(() => {
         if (isOpen) {
-            fetch('http://localhost:5000/api/settings/projects-dir')
+            setSubmitError('');
+            fetch(apiUrl('/api/settings/projects-dir'))
                 .then(res => res.json())
                 .then(data => {
                     setDefaultPath(data.projectsDir || '使用默认位置');
@@ -23,7 +27,7 @@ export const CreateProjectModal = ({ isOpen, onClose, onSubmit }) => {
 
     const handleSelectFolder = async () => {
         try {
-            const res = await fetch('http://localhost:5000/api/utils/select-folder', {
+            const res = await fetch(apiUrl('/api/utils/select-folder'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' }
             });
@@ -39,20 +43,33 @@ export const CreateProjectModal = ({ isOpen, onClose, onSubmit }) => {
 
     if (!isOpen) return null;
 
-    const handleSubmit = (e) => {
+    const handleSubmit = async (e) => {
         e.preventDefault();
-        if (name.trim()) {
-            if (useCustomPath) {
-                onSubmit(name, customPath);
-            } else if (defaultPath && defaultPath !== '使用默认位置') {
-                onSubmit(name, defaultPath);
+        if (!name.trim() || isSubmitting) return;
+
+        setSubmitError('');
+        setIsSubmitting(true);
+
+        const targetPath = useCustomPath
+            ? customPath
+            : (defaultPath && defaultPath !== '使用默认位置' ? defaultPath : null);
+
+        try {
+            const result = await onSubmit(name, targetPath);
+            const success = typeof result === 'string' || !!result?.success;
+
+            if (success) {
+                setName('');
+                setCustomPath('');
+                setUseCustomPath(false);
+                onClose();
             } else {
-                onSubmit(name, null);
+                setSubmitError(result?.message || '创建失败，请检查项目名是否重复或路径是否可写');
             }
-            setName('');
-            setCustomPath('');
-            setUseCustomPath(false);
-            onClose();
+        } catch (err) {
+            setSubmitError(err?.message ? String(err.message) : '创建失败，请稍后重试');
+        } finally {
+            setIsSubmitting(false);
         }
     };
 
@@ -269,10 +286,22 @@ export const CreateProjectModal = ({ isOpen, onClose, onSubmit }) => {
                         justifyContent: 'flex-end',
                         gap: '1.2rem'
                     }}>
+                        {submitError ? (
+                            <div style={{
+                                marginRight: 'auto',
+                                maxWidth: '52%',
+                                color: '#fca5a5',
+                                fontSize: '0.85rem',
+                                lineHeight: 1.4
+                            }}>
+                                {submitError}
+                            </div>
+                        ) : null}
                         <button
                             type="button"
                             className="btn-modern-secondary"
                             onClick={onClose}
+                            disabled={isSubmitting}
                             style={{ height: '52px', padding: '0 2rem' }}
                         >
                             取消
@@ -285,9 +314,9 @@ export const CreateProjectModal = ({ isOpen, onClose, onSubmit }) => {
                                 padding: '0 2.5rem',
                                 minWidth: '140px'
                             }}
-                            disabled={!name.trim()}
+                            disabled={!name.trim() || isSubmitting}
                         >
-                            创建项目
+                            {isSubmitting ? '创建中...' : '创建项目'}
                         </button>
                     </div>
                 </form>

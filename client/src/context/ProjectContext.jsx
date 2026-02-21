@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { getImageName, validateSequentialNumbering } from '../utils/imageNumbering';
+import { apiUrl } from '../api';
 
 const ProjectContext = createContext();
 
@@ -56,7 +57,7 @@ export const ProjectProvider = ({ children }) => {
     const fetchProjects = useCallback(async () => {
         setLoading(true);
         try {
-            const res = await fetch('http://localhost:5000/api/projects');
+            const res = await fetch(apiUrl('/api/projects'));
             const data = await res.json();
             setProjects(data);
         } catch (err) {
@@ -70,7 +71,7 @@ export const ProjectProvider = ({ children }) => {
         if (!projectId) return;
         setLoading(true);
         try {
-            const res = await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/images`);
+            const res = await fetch(apiUrl(`/api/projects/${encodeURIComponent(projectId)}/images`));
             const data = await res.json();
             setImages(data);
 
@@ -91,7 +92,7 @@ export const ProjectProvider = ({ children }) => {
         if (!projectId) return;
         setConfigLoading(true);
         try {
-            const res = await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/config`);
+            const res = await fetch(apiUrl(`/api/projects/${encodeURIComponent(projectId)}/config`));
             const data = await res.json();
             setProjectConfig(data);
         } catch (err) {
@@ -110,7 +111,7 @@ export const ProjectProvider = ({ children }) => {
             if (updateTimeoutRef.current) clearTimeout(updateTimeoutRef.current);
             updateTimeoutRef.current = setTimeout(async () => {
                 try {
-                    await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/config`, {
+                    await fetch(apiUrl(`/api/projects/${encodeURIComponent(projectId)}/config`), {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(next)
@@ -126,7 +127,7 @@ export const ProjectProvider = ({ children }) => {
 
     const createProject = async (name, customPath = null) => {
         try {
-            const res = await fetch('http://localhost:5000/api/projects', {
+            const res = await fetch(apiUrl('/api/projects'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ name, customPath })
@@ -134,14 +135,26 @@ export const ProjectProvider = ({ children }) => {
             const data = await res.json();
             if (res.ok) {
                 await fetchProjects();
-                return data.id;
+                return {
+                    success: true,
+                    id: data.id,
+                    message: data.message || '项目创建成功'
+                };
             } else {
                 console.error("Failed to create project:", data.error);
+                return {
+                    success: false,
+                    message: data.error || '创建项目失败',
+                    details: data.details
+                };
             }
         } catch (err) {
             console.error("Failed to create project", err);
+            return {
+                success: false,
+                message: '创建项目失败：网络错误'
+            };
         }
-        return null;
     };
 
     const deleteProject = async (projectId) => {
@@ -152,7 +165,7 @@ export const ProjectProvider = ({ children }) => {
         setDeletingProjects(prev => new Set([...prev, projectId]));
 
         try {
-            const res = await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}`, {
+            const res = await fetch(apiUrl(`/api/projects/${encodeURIComponent(projectId)}`), {
                 method: 'DELETE'
             });
             const data = await res.json();
@@ -263,7 +276,7 @@ export const ProjectProvider = ({ children }) => {
 
     const exportProject = async (projectId, options) => {
         try {
-            const res = await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/export/yolo`, {
+            const res = await fetch(apiUrl(`/api/projects/${encodeURIComponent(projectId)}/export/yolo`), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(options)
@@ -283,7 +296,7 @@ export const ProjectProvider = ({ children }) => {
 
     const exportDatasetZip = async (projectId, options) => {
         try {
-            const res = await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/export/yolo-zip`, {
+            const res = await fetch(apiUrl(`/api/projects/${encodeURIComponent(projectId)}/export/yolo-zip`), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(options)
@@ -306,7 +319,7 @@ export const ProjectProvider = ({ children }) => {
     const exportCollaboration = async (projectId) => {
         try {
             if (window.electronAPI) {
-                const saveDialogRes = await fetch('http://localhost:5000/api/utils/save-file-dialog', {
+                const saveDialogRes = await fetch(apiUrl('/api/utils/save-file-dialog'), {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -318,7 +331,7 @@ export const ProjectProvider = ({ children }) => {
                 const dialogData = await saveDialogRes.json();
 
                 if (dialogData.path) {
-                    const exportRes = await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/collaboration/export-to-path`, {
+                    const exportRes = await fetch(apiUrl(`/api/projects/${encodeURIComponent(projectId)}/collaboration/export-to-path`), {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ savePath: dialogData.path })
@@ -338,7 +351,7 @@ export const ProjectProvider = ({ children }) => {
                 return { success: false, message: '已取消导出' };
             }
 
-            const url = `http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/collaboration/export`;
+            const url = apiUrl(`/api/projects/${encodeURIComponent(projectId)}/collaboration/export`);
             const link = document.createElement('a');
             link.href = url;
             link.setAttribute('download', `${projectId}_collaboration.zip`);
@@ -357,7 +370,7 @@ export const ProjectProvider = ({ children }) => {
 
     const inspectCollaboration = async (zipPath) => {
         try {
-            const res = await fetch('http://localhost:5000/api/projects/collaboration/inspect', {
+            const res = await fetch(apiUrl('/api/projects/collaboration/inspect'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ path: zipPath })
@@ -373,7 +386,7 @@ export const ProjectProvider = ({ children }) => {
     const importCollaboration = async (zipPath, customPath = null) => {
         try {
             if (!zipPath) {
-                const resDir = await fetch('http://localhost:5000/api/utils/select-file', {
+                const resDir = await fetch(apiUrl('/api/utils/select-file'), {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -385,7 +398,7 @@ export const ProjectProvider = ({ children }) => {
             }
 
             if (zipPath) {
-                const res = await fetch('http://localhost:5000/api/projects/collaboration/import', {
+                const res = await fetch(apiUrl('/api/projects/collaboration/import'), {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ path: zipPath, customPath })
@@ -407,7 +420,7 @@ export const ProjectProvider = ({ children }) => {
 
     const renumberProject = async (projectId) => {
         try {
-            const res = await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/renumber-all`, {
+            const res = await fetch(apiUrl(`/api/projects/${encodeURIComponent(projectId)}/renumber-all`), {
                 method: 'POST'
             });
             const data = await res.json();
@@ -434,7 +447,7 @@ export const ProjectProvider = ({ children }) => {
 
         console.log('deleteImage called:', { projectId, imageId, navigateToNext, currentIndex: effectiveCurrentIndex, renumberAfterDelete });
         try {
-            const res = await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/images/${encodeURIComponent(imageId)}`, {
+            const res = await fetch(apiUrl(`/api/projects/${encodeURIComponent(projectId)}/images/${encodeURIComponent(imageId)}`), {
                 method: 'DELETE'
             });
             const data = await res.json();
@@ -447,7 +460,7 @@ export const ProjectProvider = ({ children }) => {
 
                         if (renumberAfterDelete) {
                             try {
-                                const renumberRes = await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/renumber-all`, {
+                                const renumberRes = await fetch(apiUrl(`/api/projects/${encodeURIComponent(projectId)}/renumber-all`), {
                                     method: 'POST'
                                 });
                                 renumberInfo = await renumberRes.json();
@@ -459,7 +472,7 @@ export const ProjectProvider = ({ children }) => {
                             }
                         }
 
-                        const imagesRes = await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/images`);
+                        const imagesRes = await fetch(apiUrl(`/api/projects/${encodeURIComponent(projectId)}/images`));
                         const newImages = await imagesRes.json();
                         console.log('New images list:', newImages);
 
@@ -517,7 +530,7 @@ export const ProjectProvider = ({ children }) => {
 
     const selectFolder = async () => {
         try {
-            const res = await fetch('http://localhost:5000/api/utils/select-folder', {
+            const res = await fetch(apiUrl('/api/utils/select-folder'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' }
             });
@@ -531,7 +544,7 @@ export const ProjectProvider = ({ children }) => {
 
     const scanImages = async (folderPath, maxResults = 5000) => {
         try {
-            const res = await fetch('http://localhost:5000/api/utils/scan-images', {
+            const res = await fetch(apiUrl('/api/utils/scan-images'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ folderPath, maxResults })
@@ -550,7 +563,7 @@ export const ProjectProvider = ({ children }) => {
 
     const importImages = async (projectId, images, mode = 'copy') => {
         try {
-            const res = await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/import-images`, {
+            const res = await fetch(apiUrl(`/api/projects/${encodeURIComponent(projectId)}/import-images`), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ images, mode })
@@ -569,7 +582,7 @@ export const ProjectProvider = ({ children }) => {
 
     const getImportHistory = async (projectId) => {
         try {
-            const res = await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/import-history`);
+            const res = await fetch(apiUrl(`/api/projects/${encodeURIComponent(projectId)}/import-history`));
             const data = await res.json();
             return data.history || [];
         } catch (err) {
@@ -580,7 +593,7 @@ export const ProjectProvider = ({ children }) => {
 
     const getPredictionSettings = async (projectId) => {
         try {
-            const res = await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/prediction-settings`);
+            const res = await fetch(apiUrl(`/api/projects/${encodeURIComponent(projectId)}/prediction-settings`));
             const data = await res.json();
             return data;
         } catch (err) {
@@ -591,7 +604,7 @@ export const ProjectProvider = ({ children }) => {
 
     const savePredictionSettings = async (projectId, settings) => {
         try {
-            const res = await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/prediction-settings`, {
+            const res = await fetch(apiUrl(`/api/projects/${encodeURIComponent(projectId)}/prediction-settings`), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(settings)
@@ -606,7 +619,7 @@ export const ProjectProvider = ({ children }) => {
 
     const runPrediction = async (projectId, options) => {
         try {
-            const res = await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/predict`, {
+            const res = await fetch(apiUrl(`/api/projects/${encodeURIComponent(projectId)}/predict`), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(options)
@@ -621,7 +634,7 @@ export const ProjectProvider = ({ children }) => {
 
     const getPredictionStatus = async (projectId) => {
         try {
-            const res = await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/predict/status`);
+            const res = await fetch(apiUrl(`/api/projects/${encodeURIComponent(projectId)}/predict/status`));
             const data = await res.json();
             return data;
         } catch (err) {
@@ -632,7 +645,7 @@ export const ProjectProvider = ({ children }) => {
 
     const cancelPrediction = async (projectId) => {
         try {
-            const res = await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/predict/cancel`, {
+            const res = await fetch(apiUrl(`/api/projects/${encodeURIComponent(projectId)}/predict/cancel`), {
                 method: 'POST'
             });
             const data = await res.json();
@@ -645,7 +658,7 @@ export const ProjectProvider = ({ children }) => {
 
     const validateModel = async (projectId, modelPath) => {
         try {
-            const res = await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/predict/validate-model`, {
+            const res = await fetch(apiUrl(`/api/projects/${encodeURIComponent(projectId)}/predict/validate-model`), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ modelPath })
@@ -660,7 +673,7 @@ export const ProjectProvider = ({ children }) => {
 
     const predictSingleImage = async (projectId, imageName, modelPath, confidenceThreshold = 0.25) => {
         try {
-            const res = await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/predict/single`, {
+            const res = await fetch(apiUrl(`/api/projects/${encodeURIComponent(projectId)}/predict/single`), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ imageName, modelPath, confidenceThreshold })

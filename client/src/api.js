@@ -9,6 +9,11 @@ export function getApiBaseUrl() {
     return fromEnv.replace(/\/+$/, '');
   }
 
+  // In Electron (including dev mode with Vite at :5173), backend is served by local Node on :5000.
+  if (typeof window !== 'undefined' && window.electronAPI) {
+    return 'http://localhost:5000';
+  }
+
   if (typeof window !== 'undefined') {
     const protocol = window.location?.protocol;
     if (protocol === 'http:' || protocol === 'https:') {
