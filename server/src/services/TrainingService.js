@@ -535,7 +535,6 @@ class TrainingService {
       /^\s*Epoch\s+GPU_mem\s+box_loss/,
       /^[\d.]+it\/s/,
       /^\d+%\s*[━─╸]+/,
-      /^\s*all\s+\d+\s+\d+\s+[\d.]+\s+[\d.]+\s+[\d.]+\s+[\d.]+\s+[\d.]+\s+[\d.]+\s+[\d.]+\s+[\d.]+\s+[\d.]+\s+[\d.]+$/,
       /^optimizer/,
       /^albumentations/,
       /^Scanning/,
@@ -730,6 +729,54 @@ class TrainingService {
     return this.toFiniteNumber(match[1]);
   }
 
+  parseMetricNumber(value) {
+    if (value === null || value === undefined || value === '') return undefined;
+    const raw = String(value).trim();
+    if (!raw || /^nan$/i.test(raw) || /^[-+]?inf(?:inity)?$/i.test(raw)) {
+      return undefined;
+    }
+    return this.toFiniteNumber(raw);
+  }
+
+  mapResultsCsvColumn(columnName) {
+    const raw = String(columnName || '').trim();
+    if (!raw) return null;
+    const key = raw.toLowerCase();
+
+    const aliasMap = {
+      epoch: 'epoch',
+      epochs: 'totalEpochs',
+      'train/box_loss': 'box_loss',
+      'train/pose_loss': 'pose_loss',
+      'train/kobj_loss': 'kobj_loss',
+      'train/cls_loss': 'cls_loss',
+      'train/dfl_loss': 'dfl_loss',
+      'val/box_loss': 'val_box_loss',
+      'val/pose_loss': 'val_pose_loss',
+      'val/kobj_loss': 'val_kobj_loss',
+      'val/cls_loss': 'val_cls_loss',
+      'val/dfl_loss': 'val_dfl_loss',
+      'metrics/precision(b)': 'box_precision',
+      'metrics/recall(b)': 'box_recall',
+      'metrics/map50(b)': 'mAP50',
+      'metrics/map50-95(b)': 'mAP50_95',
+      'metrics/precision(p)': 'pose_precision',
+      'metrics/recall(p)': 'pose_recall',
+      'metrics/map50(p)': 'pose_mAP50',
+      'metrics/map50-95(p)': 'pose_mAP50_95',
+      'metrics/precision': 'box_precision',
+      'metrics/recall': 'box_recall',
+      'metrics/map50': 'mAP50',
+      'metrics/map50-95': 'mAP50_95',
+      'metrics/map': 'mAP50_95',
+      'lr/pg0': 'learning_rate',
+      'lr/pg1': 'lr_pg1',
+      'lr/pg2': 'lr_pg2'
+    };
+
+    return aliasMap[key] || null;
+  }
+
   normalizeMetricPayload(metricPayload = {}) {
     const root = metricPayload && typeof metricPayload === 'object' ? metricPayload : {};
     const details = root.details && typeof root.details === 'object' ? root.details : {};
@@ -777,6 +824,11 @@ class TrainingService {
       'kobj_loss',
       'cls_loss',
       'dfl_loss',
+      'val_box_loss',
+      'val_pose_loss',
+      'val_kobj_loss',
+      'val_cls_loss',
+      'val_dfl_loss',
       'train_loss',
       'mAP50',
       'mAP50_95',
@@ -800,13 +852,52 @@ class TrainingService {
       'max_memory_percent',
       'avg_utilization_percent',
       'max_utilization_percent',
-      'realtime_fps'
+      'realtime_fps',
+      'lr_pg1',
+      'lr_pg2'
     ];
 
     numericKeys.forEach((key) => {
       const num = this.toFiniteNumber(merged[key]);
       if (num !== undefined) normalized[key] = num;
     });
+
+    const pickAlias = (...keys) => {
+      for (const key of keys) {
+        if (!key) continue;
+        if (Object.prototype.hasOwnProperty.call(merged, key)) {
+          const parsed = this.parseMetricNumber(merged[key]);
+          if (parsed !== undefined) return parsed;
+        }
+      }
+      return undefined;
+    };
+
+    const applyAlias = (targetKey, ...aliasKeys) => {
+      if (normalized[targetKey] !== undefined) return;
+      const value = pickAlias(...aliasKeys);
+      if (value !== undefined) normalized[targetKey] = value;
+    };
+
+    applyAlias('box_loss', 'train/box_loss', 'train_box_loss');
+    applyAlias('pose_loss', 'train/pose_loss', 'train_pose_loss');
+    applyAlias('kobj_loss', 'train/kobj_loss', 'train_kobj_loss');
+    applyAlias('cls_loss', 'train/cls_loss', 'train_cls_loss');
+    applyAlias('dfl_loss', 'train/dfl_loss', 'train_dfl_loss');
+    applyAlias('val_box_loss', 'val/box_loss', 'val_box_loss');
+    applyAlias('val_pose_loss', 'val/pose_loss', 'val_pose_loss');
+    applyAlias('val_kobj_loss', 'val/kobj_loss', 'val_kobj_loss');
+    applyAlias('val_cls_loss', 'val/cls_loss', 'val_cls_loss');
+    applyAlias('val_dfl_loss', 'val/dfl_loss', 'val_dfl_loss');
+    applyAlias('box_precision', 'metrics/precision(B)', 'metrics/precision_b', 'metrics/precision');
+    applyAlias('box_recall', 'metrics/recall(B)', 'metrics/recall_b', 'metrics/recall');
+    applyAlias('mAP50', 'metrics/mAP50(B)', 'metrics/map50(B)', 'metrics/map50_b', 'metrics/map50');
+    applyAlias('mAP50_95', 'metrics/mAP50-95(B)', 'metrics/map50-95(B)', 'metrics/map50-95_b', 'metrics/map50-95', 'metrics/map');
+    applyAlias('pose_precision', 'metrics/precision(P)', 'metrics/precision_p');
+    applyAlias('pose_recall', 'metrics/recall(P)', 'metrics/recall_p');
+    applyAlias('pose_mAP50', 'metrics/mAP50(P)', 'metrics/map50(P)', 'metrics/map50_p');
+    applyAlias('pose_mAP50_95', 'metrics/mAP50-95(P)', 'metrics/map50-95(P)', 'metrics/map50-95_p');
+    applyAlias('learning_rate', 'lr/pg0', 'lr_pg0', 'lr');
 
     if (normalized.totalEpochs === undefined) {
       const fallbackTotal = this.toFiniteNumber(merged.total_epochs) ?? this.toFiniteNumber(merged.epochs);
@@ -818,53 +909,32 @@ class TrainingService {
     }
 
     if (normalized.mAP50 === undefined) {
-      const map50 = this.toFiniteNumber(merged.map50);
+      const map50 = pickAlias('map50', 'mAP50');
       if (map50 !== undefined) normalized.mAP50 = map50;
     }
     if (normalized.mAP50_95 === undefined) {
-      const map5095 = this.toFiniteNumber(merged['mAP50-95'])
-        ?? this.toFiniteNumber(merged['map50_95'])
-        ?? this.toFiniteNumber(merged['map50-95'])
-        ?? this.toFiniteNumber(merged.map);
+      const map5095 = pickAlias('mAP50-95', 'map50_95', 'map50-95', 'map');
       if (map5095 !== undefined) normalized.mAP50_95 = map5095;
     }
+    if (normalized.pose_mAP50 === undefined) {
+      const poseMap50 = pickAlias('pose_map50', 'pose_mAP50');
+      if (poseMap50 !== undefined) normalized.pose_mAP50 = poseMap50;
+    }
     if (normalized.pose_mAP50_95 === undefined) {
-      const poseMap5095 = this.toFiniteNumber(merged['pose_mAP50-95'])
-        ?? this.toFiniteNumber(merged['pose_map50_95'])
-        ?? this.toFiniteNumber(merged.pose_map);
+      const poseMap5095 = pickAlias('pose_mAP50-95', 'pose_map50_95', 'pose_map');
       if (poseMap5095 !== undefined) normalized.pose_mAP50_95 = poseMap5095;
     }
     if (normalized.box_precision === undefined) {
-      const p = this.toFiniteNumber(merged.precision) ?? this.toFiniteNumber(merged.box_p);
+      const p = pickAlias('precision', 'box_p');
       if (p !== undefined) normalized.box_precision = p;
     }
     if (normalized.box_recall === undefined) {
-      const r = this.toFiniteNumber(merged.recall) ?? this.toFiniteNumber(merged.box_r);
+      const r = pickAlias('recall', 'box_r');
       if (r !== undefined) normalized.box_recall = r;
     }
     if (normalized.gpu_memory_used_gb === undefined) {
       const gpuMem = this.parseGpuMemToGb(merged.gpu_mem);
       if (gpuMem !== undefined) normalized.gpu_memory_used_gb = gpuMem;
-    }
-    if (normalized.box_loss === undefined) {
-      const trainBoxLoss = this.toFiniteNumber(merged.train_box_loss);
-      if (trainBoxLoss !== undefined) normalized.box_loss = trainBoxLoss;
-    }
-    if (normalized.pose_loss === undefined) {
-      const trainPoseLoss = this.toFiniteNumber(merged.train_pose_loss);
-      if (trainPoseLoss !== undefined) normalized.pose_loss = trainPoseLoss;
-    }
-    if (normalized.kobj_loss === undefined) {
-      const trainKobjLoss = this.toFiniteNumber(merged.train_kobj_loss);
-      if (trainKobjLoss !== undefined) normalized.kobj_loss = trainKobjLoss;
-    }
-    if (normalized.cls_loss === undefined) {
-      const trainClsLoss = this.toFiniteNumber(merged.train_cls_loss);
-      if (trainClsLoss !== undefined) normalized.cls_loss = trainClsLoss;
-    }
-    if (normalized.dfl_loss === undefined) {
-      const trainDflLoss = this.toFiniteNumber(merged.train_dfl_loss);
-      if (trainDflLoss !== undefined) normalized.dfl_loss = trainDflLoss;
     }
 
     if (merged.latency && typeof merged.latency === 'object') {
@@ -975,10 +1045,48 @@ class TrainingService {
         message: '已启用远程训练模式',
         details: { remoteHost: config.remoteHost, remotePath: config.remotePath }
       });
-      return RemoteTrainingService.start(projectId, {
-        ...config,
-        projectRoot: config.projectRoot || config.project
-      });
+
+      try {
+        const remoteResult = await RemoteTrainingService.start(projectId, {
+          ...config,
+          projectRoot: config.projectRoot || config.project
+        });
+        this.logsV2.setStatus(projectId, 'running');
+        this.logsV2.appendEvent(projectId, {
+          source: 'system',
+          level: 'info',
+          stage: 'train',
+          kind: 'status',
+          code: 'REMOTE_TRAINING_RUNNING',
+          message: '远程训练已进入运行状态',
+          details: { remoteHost: config.remoteHost, remotePath: config.remotePath }
+        });
+        return remoteResult;
+      } catch (err) {
+        this.logsV2.setStatus(projectId, 'failed');
+        this.logsV2.appendEvent(projectId, {
+          source: 'system',
+          level: 'error',
+          stage: 'bootstrap',
+          kind: 'diagnostic',
+          code: 'REMOTE_TRAINING_START_FAILED',
+          message: `远程训练启动失败: ${err.message}`
+        });
+        this.logsV2.updateDiagnosis(projectId, {
+          status: 'failed',
+          stage: 'bootstrap',
+          code: 'REMOTE_TRAINING_START_FAILED',
+          rootCause: '远程训练启动失败',
+          evidence: [err.message],
+          suggestions: [
+            '检查远程主机地址、端口、用户名、密码和远程路径',
+            '确认远程服务器可连接且有目录写入权限',
+            '确认远程 Python 环境已安装 ultralytics'
+          ],
+          rawTail: this.logsV2.getRawTail(projectId)
+        });
+        throw err;
+      }
     }
 
     logger.info(`Starting training for project ${projectId} (attempt ${retryCount + 1}): ${pythonCmd} ${args.join(' ')}`);
@@ -996,7 +1104,7 @@ class TrainingService {
     this.processes.setErrorLogs(projectId, []);
 
     const projectPath = config.project || '';
-    const csvWatcher = this.watchResultsCSV(projectId, projectPath);
+    const csvWatcher = this.watchResultsCSV(projectId, projectPath, config.name || null, config.epochs);
     if (csvWatcher) {
       this.csvWatchers.set(projectId, csvWatcher);
     }
@@ -1036,6 +1144,16 @@ class TrainingService {
       msg: `训练进程已启动，PID: ${child.pid}，Batch Size: ${config.batch}`,
       time: Date.now()
     });
+
+    const numericToken = '([-+]?(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?|nan|NaN|NAN|inf|INF|-inf|-INF)';
+    const progressRegex = new RegExp(
+      `(\\d+)\\/(\\d+)\\s+([\\d.]+(?:[eE][-+]?\\d+)?G)\\s+${numericToken}\\s+${numericToken}\\s+${numericToken}\\s+${numericToken}\\s+${numericToken}`,
+      'i'
+    );
+    const validationRegex = new RegExp(
+      `^all\\s+(\\d+)\\s+(\\d+)\\s+${numericToken}\\s+${numericToken}\\s+${numericToken}\\s+${numericToken}(?:\\s+${numericToken}\\s+${numericToken}\\s+${numericToken}\\s+${numericToken})?$`,
+      'i'
+    );
 
     child.stdout.on('data', (data) => {
       const chunk = data.toString('utf8');
@@ -1130,18 +1248,23 @@ class TrainingService {
             return;
           }
 
-          const progressMatch = trimmed.match(/(\d+)\/(\d+)\s+([\d.]+G)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)/);
+          const progressMatch = trimmed.match(progressRegex);
           if (progressMatch) {
             const [full, epoch, totalEpochs, gpuMem, boxLoss, poseLoss, kobjLoss, clsLoss, dflLoss] = progressMatch;
+            const boxLossValue = this.parseMetricNumber(boxLoss);
+            const poseLossValue = this.parseMetricNumber(poseLoss);
+            const kobjLossValue = this.parseMetricNumber(kobjLoss);
+            const clsLossValue = this.parseMetricNumber(clsLoss);
+            const dflLossValue = this.parseMetricNumber(dflLoss);
             const parsedMetric = {
-              epoch: parseInt(epoch),
-              totalEpochs: parseInt(totalEpochs),
+              epoch: Number.parseInt(epoch, 10),
+              totalEpochs: Number.parseInt(totalEpochs, 10),
               gpu_mem: gpuMem,
-              box_loss: parseFloat(boxLoss),
-              pose_loss: parseFloat(poseLoss),
-              kobj_loss: parseFloat(kobjLoss),
-              cls_loss: parseFloat(clsLoss),
-              dfl_loss: parseFloat(dflLoss),
+              ...(boxLossValue !== undefined ? { box_loss: boxLossValue } : {}),
+              ...(poseLossValue !== undefined ? { pose_loss: poseLossValue } : {}),
+              ...(kobjLossValue !== undefined ? { kobj_loss: kobjLossValue } : {}),
+              ...(clsLossValue !== undefined ? { cls_loss: clsLossValue } : {}),
+              ...(dflLossValue !== undefined ? { dfl_loss: dflLossValue } : {}),
               time: Date.now()
             };
             this.processes.addMetric(projectId, {
@@ -1158,7 +1281,7 @@ class TrainingService {
             return;
           }
 
-          const mapMatch = trimmed.match(/all\s+(\d+)\s+(\d+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)/);
+          const mapMatch = trimmed.match(validationRegex);
           if (mapMatch) {
             const [full, images, instances, boxP, boxR, boxMAP50, boxMAP5095, poseP, poseR, poseMAP50, poseMAP5095] = mapMatch;
             const latestEpochMetric = [...(this.processes.getMetrics(projectId) || [])]
@@ -1167,15 +1290,23 @@ class TrainingService {
             const currentEpoch = this.toFiniteNumber(latestEpochMetric?.epoch);
             const currentTotalEpochs = this.toFiniteNumber(latestEpochMetric?.totalEpochs)
               ?? this.toFiniteNumber(latestEpochMetric?.epochs);
+            const boxPrecision = this.parseMetricNumber(boxP);
+            const boxRecall = this.parseMetricNumber(boxR);
+            const boxMap50 = this.parseMetricNumber(boxMAP50);
+            const boxMap5095 = this.parseMetricNumber(boxMAP5095);
+            const posePrecision = this.parseMetricNumber(poseP);
+            const poseRecall = this.parseMetricNumber(poseR);
+            const poseMap50 = this.parseMetricNumber(poseMAP50);
+            const poseMap5095 = this.parseMetricNumber(poseMAP5095);
             const parsedMetric = {
-              box_precision: parseFloat(boxP),
-              box_recall: parseFloat(boxR),
-              mAP50: parseFloat(boxMAP50),
-              mAP50_95: parseFloat(boxMAP5095),
-              pose_precision: parseFloat(poseP),
-              pose_recall: parseFloat(poseR),
-              pose_mAP50: parseFloat(poseMAP50),
-              pose_mAP50_95: parseFloat(poseMAP5095),
+              ...(boxPrecision !== undefined ? { box_precision: boxPrecision } : {}),
+              ...(boxRecall !== undefined ? { box_recall: boxRecall } : {}),
+              ...(boxMap50 !== undefined ? { mAP50: boxMap50 } : {}),
+              ...(boxMap5095 !== undefined ? { mAP50_95: boxMap5095 } : {}),
+              ...(posePrecision !== undefined ? { pose_precision: posePrecision } : {}),
+              ...(poseRecall !== undefined ? { pose_recall: poseRecall } : {}),
+              ...(poseMap50 !== undefined ? { pose_mAP50: poseMap50 } : {}),
+              ...(poseMap5095 !== undefined ? { pose_mAP50_95: poseMap5095 } : {}),
               ...(currentEpoch !== undefined ? { epoch: currentEpoch } : {}),
               ...(currentTotalEpochs !== undefined ? { totalEpochs: currentTotalEpochs } : {}),
               time: Date.now()
@@ -1194,7 +1325,7 @@ class TrainingService {
 
             this.processes.addLog(projectId, {
               type: 'metric',
-              msg: `📊 验证指标 - Box: P=${boxP} R=${boxR} mAP@50=${(parseFloat(boxMAP50) * 100).toFixed(1)}% | Pose: P=${poseP} R=${poseR} mAP@50=${(parseFloat(poseMAP50) * 100).toFixed(1)}%`,
+              msg: `📊 验证指标 - Box: P=${boxP} R=${boxR} mAP@50=${((boxMap50 || 0) * 100).toFixed(1)}% | Pose: P=${poseP || '--'} R=${poseR || '--'} mAP@50=${((poseMap50 || 0) * 100).toFixed(1)}%`,
               time: Date.now()
             });
             return;
@@ -1500,6 +1631,10 @@ class TrainingService {
 
       if (code === 0) {
         const status = 'completed';
+        const currentV2 = this.logsV2.getStatus(projectId);
+        if (currentV2?.diagnosis?.status === 'failed') {
+          this.logsV2.clearDiagnosis(projectId, { reason: 'train_completed' });
+        }
         this.processes.setStatus(projectId, status);
         this.logsV2.setStatus(projectId, status);
         this.processes.addLog(projectId, {
@@ -1761,7 +1896,7 @@ class TrainingService {
 
   async stop(projectId) {
     const processState = this.processes.get(projectId);
-    if (!processState || processState.status !== 'running' || !processState.pid) {
+    if (!processState || processState.status !== 'running') {
       throw new Error('No running training process found');
     }
 
@@ -1770,6 +1905,24 @@ class TrainingService {
     }
 
     try {
+      if (!processState.pid && RemoteTrainingService.hasConnection(projectId)) {
+        await RemoteTrainingService.stop(projectId);
+        this.logsV2.setStatus(projectId, 'stopped');
+        this.logsV2.appendEvent(projectId, {
+          source: 'system',
+          level: 'warn',
+          stage: 'teardown',
+          kind: 'status',
+          code: 'REMOTE_TRAIN_STOPPED_BY_USER',
+          message: '用户手动停止远程训练'
+        });
+        return { success: true };
+      }
+
+      if (!processState.pid) {
+        throw new Error('Training process pid is missing');
+      }
+
       this.killProcess(processState.pid, true);
       this.processes.setStatus(projectId, 'stopped');
       this.logsV2.setStatus(projectId, 'stopped');
@@ -1855,122 +2008,290 @@ class TrainingService {
     return this.jobQueue.clearCompleted();
   }
 
-  watchResultsCSV(projectId, projectPath) {
-    const csvPath = path.join(projectPath, 'results.csv');
-    let lastSize = 0;
-    let epochTimestamps = [];
-    const WINDOW_SIZE = 5;
-
-    if (!fs.existsSync(csvPath)) {
-      logger.debug(`results.csv not found at ${csvPath}`);
+  watchResultsCSV(projectId, projectPath, runName = null, totalEpochsHint = null) {
+    const baseProjectPath = typeof projectPath === 'string' ? projectPath.trim() : '';
+    if (!baseProjectPath) {
+      logger.debug(`results.csv watcher skipped for ${projectId}: empty project path`);
       return null;
     }
 
-    try {
-      lastSize = fs.statSync(csvPath).size;
-    } catch (e) {
-      logger.debug(`Failed to get initial file size: ${e.message}`);
-    }
+    const targetEpochs = this.toFiniteNumber(totalEpochsHint);
+    const state = {
+      closed: false,
+      fileWatcher: null,
+      dirWatcher: null,
+      pollTimer: null,
+      lastSize: 0,
+      remainder: '',
+      mappedColumns: null,
+      epochTimestamps: [],
+      reading: false,
+      pendingRead: false
+    };
+    const WINDOW_SIZE = 5;
+    let runDirPath = runName ? path.join(baseProjectPath, String(runName).trim()) : baseProjectPath;
+    let csvPath = path.join(runDirPath, 'results.csv');
 
-    const watcher = fs.watch(csvPath, (eventType) => {
-      if (eventType !== 'change') return;
+    const closeHandle = (watcher) => {
+      if (!watcher) return;
+      try {
+        watcher.close();
+      } catch {
+        // noop
+      }
+    };
 
-      setTimeout(() => {
-        try {
-          const stats = fs.statSync(csvPath);
-          const newSize = stats.size;
+    const resetCsvCursor = () => {
+      state.lastSize = 0;
+      state.remainder = '';
+      state.mappedColumns = null;
+      state.epochTimestamps = [];
+    };
 
-          if (newSize > lastSize) {
-            const stream = fs.createReadStream(csvPath, {
-              start: lastSize,
-              end: newSize - 1,
-              encoding: 'utf-8'
-            });
+    const resolvePaths = () => {
+      runDirPath = runName ? path.join(baseProjectPath, String(runName).trim()) : baseProjectPath;
+      csvPath = path.join(runDirPath, 'results.csv');
+    };
 
-            let newData = '';
-            stream.on('data', (chunk) => {
-              newData += chunk;
-            });
+    const estimateEta = (epoch) => {
+      if (!Number.isFinite(epoch) || epoch <= 0) return undefined;
 
-            stream.on('end', () => {
-              if (newData.trim()) {
-                const lines = newData.trim().split('\n');
-
-                for (const line of lines) {
-                  if (line.includes('epoch')) continue;
-
-                  const parts = line.split(',');
-                  if (parts.length < 3) continue;
-
-                  const epochMatch = parts[0].trim();
-                  const epoch = parseInt(epochMatch);
-
-                  if (isNaN(epoch)) continue;
-
-                  const now = Date.now();
-                  if (epochTimestamps.length > 0) {
-                    const lastEpochTime = epochTimestamps[epochTimestamps.length - 1];
-                    const epochDuration = now - lastEpochTime;
-
-                    epochTimestamps.push(now);
-
-                    if (epochTimestamps.length > WINDOW_SIZE + 10) {
-                      epochTimestamps = epochTimestamps.slice(-WINDOW_SIZE);
-                    }
-
-                    const recentDurations = epochTimestamps.slice(-WINDOW_SIZE);
-                    const avgDuration = recentDurations.reduce((a, b) => a + b, 0) / recentDurations.length;
-                    const remainingEpochs = 150 - epoch;
-                    const etaSeconds = Math.round(remainingEpochs * avgDuration / 1000);
-
-                    this.processes.addMetric(projectId, {
-                      epoch,
-                      eta_seconds: etaSeconds,
-                      avg_epoch_time: Math.round(avgDuration),
-                      time: now
-                    });
-                  } else {
-                    epochTimestamps.push(now);
-                  }
-
-                  const metrics = {
-                    epoch,
-                    time: now
-                  };
-
-                  const metricNames = [
-                    'train/box_loss', 'train/cls_loss', 'train/dfl_loss',
-                    'metrics/precision', 'metrics/recall', 'metrics/map50', 'metrics/map50-95',
-                    'val/box_loss', 'val/cls_loss', 'val/dfl_loss'
-                  ];
-
-                  metricNames.forEach((name, idx) => {
-                    const colIdx = idx + 1;
-                    if (parts[colIdx]) {
-                      const val = parseFloat(parts[colIdx].trim());
-                      if (!isNaN(val)) {
-                        metrics[name] = val;
-                      }
-                    }
-                  });
-
-                  this.processes.addMetric(projectId, metrics);
-                }
-              }
-              lastSize = newSize;
-            });
-          }
-        } catch (e) {
-          logger.debug(`Error reading CSV: ${e.message}`);
+      const now = Date.now();
+      const ts = state.epochTimestamps;
+      if (ts.length > 0) {
+        ts.push(now);
+        if (ts.length > WINDOW_SIZE + 2) {
+          state.epochTimestamps = ts.slice(-WINDOW_SIZE);
         }
-      }, 100);
-    });
+      } else {
+        ts.push(now);
+        return undefined;
+      }
 
-    watcher.on('error', (err) => {
-      logger.error(`CSV watcher error: ${err.message}`);
-    });
+      const samples = state.epochTimestamps;
+      if (samples.length < 2) return undefined;
 
-    return watcher;
+      const durations = [];
+      for (let i = 1; i < samples.length; i += 1) {
+        const delta = samples[i] - samples[i - 1];
+        if (delta > 0) durations.push(delta);
+      }
+      if (durations.length === 0) return undefined;
+
+      const avgDuration = durations.reduce((sum, item) => sum + item, 0) / durations.length;
+      let totalEpochs = targetEpochs;
+      if (totalEpochs === undefined) {
+        const latestEpochMetric = [...(this.processes.getMetrics(projectId) || [])]
+          .reverse()
+          .find((metric) => this.toFiniteNumber(metric?.totalEpochs) !== undefined || this.toFiniteNumber(metric?.epochs) !== undefined);
+        totalEpochs = this.toFiniteNumber(latestEpochMetric?.totalEpochs) ?? this.toFiniteNumber(latestEpochMetric?.epochs);
+      }
+      if (!Number.isFinite(totalEpochs) || totalEpochs <= epoch) return undefined;
+
+      const remainingEpochs = totalEpochs - epoch;
+      return Math.round((remainingEpochs * avgDuration) / 1000);
+    };
+
+    const ingestCsvLine = (line) => {
+      if (!line) return;
+      const rawLine = line.trim();
+      if (!rawLine) return;
+
+      if (!state.mappedColumns) {
+        const headerCells = rawLine
+          .split(',')
+          .map((item) => item.trim().replace(/^\uFEFF/, ''));
+        const isHeader = headerCells.some((item) => String(item || '').toLowerCase() === 'epoch');
+        if (!isHeader) return;
+        state.mappedColumns = headerCells.map((name) => this.mapResultsCsvColumn(name));
+        return;
+      }
+
+      const values = rawLine.split(',').map((item) => item.trim());
+      if (values.length < state.mappedColumns.length) return;
+
+      const now = Date.now();
+      const rowMetric = {
+        event: 'results_csv_row',
+        timestamp: new Date(now).toISOString()
+      };
+
+      state.mappedColumns.forEach((mappedKey, index) => {
+        if (!mappedKey) return;
+        const parsed = this.parseMetricNumber(values[index]);
+        if (parsed === undefined) return;
+        rowMetric[mappedKey] = mappedKey === 'epoch' ? Math.round(parsed) : parsed;
+      });
+
+      if (rowMetric.epoch === undefined) return;
+
+      if (rowMetric.totalEpochs === undefined && targetEpochs !== undefined) {
+        rowMetric.totalEpochs = targetEpochs;
+      }
+
+      const etaSeconds = estimateEta(this.toFiniteNumber(rowMetric.epoch));
+      if (etaSeconds !== undefined) {
+        rowMetric.eta_seconds = etaSeconds;
+      }
+
+      const normalizedMetric = this.normalizeMetricPayload(rowMetric);
+      if (normalizedMetric.epoch === undefined) {
+        normalizedMetric.epoch = rowMetric.epoch;
+      }
+      if (normalizedMetric.totalEpochs === undefined && rowMetric.totalEpochs !== undefined) {
+        normalizedMetric.totalEpochs = rowMetric.totalEpochs;
+      }
+
+      this.processes.addMetric(projectId, {
+        ...normalizedMetric,
+        time: now
+      });
+      this.logsV2.appendMetric(projectId, normalizedMetric, {
+        source: 'results_csv',
+        level: 'info',
+        stage: 'train',
+        code: 'RESULTS_CSV_ROW',
+        message: '解析 results.csv 指标行',
+        raw: rawLine
+      });
+    };
+
+    const consumeCsvChunk = (chunk) => {
+      const combined = `${state.remainder}${chunk || ''}`;
+      const lines = combined.split(/\r?\n/);
+      state.remainder = lines.pop() || '';
+      lines.forEach((line) => ingestCsvLine(line));
+    };
+
+    const readCsvDelta = () => {
+      if (state.closed) return;
+      if (state.reading) {
+        state.pendingRead = true;
+        return;
+      }
+      if (!fs.existsSync(csvPath)) return;
+
+      state.reading = true;
+      let newSize = 0;
+      try {
+        newSize = fs.statSync(csvPath).size;
+      } catch (err) {
+        state.reading = false;
+        logger.debug(`Failed to stat results.csv for ${projectId}: ${err.message}`);
+        return;
+      }
+
+      if (newSize < state.lastSize) {
+        resetCsvCursor();
+      }
+
+      if (newSize === state.lastSize) {
+        state.reading = false;
+        return;
+      }
+
+      const stream = fs.createReadStream(csvPath, {
+        start: state.lastSize,
+        end: newSize - 1,
+        encoding: 'utf-8'
+      });
+
+      let chunk = '';
+      stream.on('data', (piece) => {
+        chunk += piece;
+      });
+      stream.on('end', () => {
+        consumeCsvChunk(chunk);
+        state.lastSize = newSize;
+        state.reading = false;
+        if (state.pendingRead) {
+          state.pendingRead = false;
+          readCsvDelta();
+        }
+      });
+      stream.on('error', (err) => {
+        state.reading = false;
+        logger.debug(`Failed to read results.csv delta for ${projectId}: ${err.message}`);
+        if (state.pendingRead) {
+          state.pendingRead = false;
+          readCsvDelta();
+        }
+      });
+    };
+
+    const attachFileWatcher = () => {
+      if (state.closed || state.fileWatcher) return;
+      if (!fs.existsSync(csvPath)) return;
+
+      resetCsvCursor();
+      readCsvDelta();
+
+      try {
+        state.fileWatcher = fs.watch(csvPath, () => {
+          if (state.closed) return;
+          if (!fs.existsSync(csvPath)) {
+            closeHandle(state.fileWatcher);
+            state.fileWatcher = null;
+            resetCsvCursor();
+            return;
+          }
+          setTimeout(readCsvDelta, 80);
+        });
+        state.fileWatcher.on('error', (err) => {
+          logger.error(`CSV watcher error for ${projectId}: ${err.message}`);
+        });
+      } catch (err) {
+        logger.debug(`Failed to attach results.csv watcher for ${projectId}: ${err.message}`);
+      }
+    };
+
+    const attachDirWatcher = () => {
+      if (state.closed || state.dirWatcher) return;
+      if (!fs.existsSync(runDirPath)) return;
+
+      try {
+        state.dirWatcher = fs.watch(runDirPath, (_eventType, filename) => {
+          if (state.closed) return;
+          if (!filename) return;
+          if (String(filename).toLowerCase() === 'results.csv') {
+            setTimeout(attachFileWatcher, 80);
+          }
+        });
+        state.dirWatcher.on('error', (err) => {
+          logger.debug(`Run dir watcher error for ${projectId}: ${err.message}`);
+        });
+      } catch (err) {
+        logger.debug(`Failed to watch run directory ${runDirPath}: ${err.message}`);
+      }
+    };
+
+    const bootstrap = () => {
+      if (state.closed) return;
+      resolvePaths();
+      if (!state.dirWatcher && fs.existsSync(runDirPath)) {
+        attachDirWatcher();
+      }
+      if (!state.fileWatcher && fs.existsSync(csvPath)) {
+        attachFileWatcher();
+      }
+    };
+
+    state.pollTimer = setInterval(bootstrap, 1000);
+    bootstrap();
+
+    return {
+      close: () => {
+        state.closed = true;
+        if (state.pollTimer) {
+          clearInterval(state.pollTimer);
+          state.pollTimer = null;
+        }
+        closeHandle(state.fileWatcher);
+        closeHandle(state.dirWatcher);
+        state.fileWatcher = null;
+        state.dirWatcher = null;
+      }
+    };
   }
 
   async startDryRun(projectId, config) {

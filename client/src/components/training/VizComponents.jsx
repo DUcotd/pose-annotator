@@ -1,8 +1,10 @@
-import React from 'react';
+import React, { useId } from 'react';
 
-const WIDTH = 280;
-const HEIGHT = 102;
-const PADDING = 14;
+const CHART_WIDTH = 280;
+const CHART_HEIGHT = 72;
+const CHART_PADDING_X = 14;
+const CHART_PADDING_Y = 8;
+const DEFAULT_EMA_ALPHA = 0.35;
 
 const panelStyle = {
     background: 'linear-gradient(165deg, rgba(9,18,34,0.82), rgba(14,27,48,0.66))',
@@ -18,26 +20,109 @@ const titleStyle = {
 };
 
 const emptyBodyStyle = {
-    height: HEIGHT - 30,
+    height: CHART_HEIGHT,
     display: 'grid',
     placeItems: 'center',
     color: '#8391ad',
     fontSize: '12px'
 };
 
-export const LineChart = ({ data, dataKey, color, label, unit = '', multiplier = 1 }) => {
-    const series = Array.isArray(data)
-        ? data.filter((entry) => entry && entry[dataKey] !== undefined && entry[dataKey] !== null)
-        : [];
-    const latestValue = series.length > 0 ? series[series.length - 1][dataKey] : undefined;
+const toFiniteNumber = (value) => {
+    const num = Number(value);
+    return Number.isFinite(num) ? num : undefined;
+};
 
-    if (!series || series.length < 2 || latestValue === undefined) {
+const buildEmaSeries = (values, alpha = DEFAULT_EMA_ALPHA) => {
+    if (!Array.isArray(values) || values.length === 0) return [];
+    const clampedAlpha = Math.max(0.01, Math.min(0.99, alpha));
+    const result = [values[0]];
+    for (let i = 1; i < values.length; i += 1) {
+        result.push(clampedAlpha * values[i] + (1 - clampedAlpha) * result[i - 1]);
+    }
+    return result;
+};
+
+const computeDomain = (values, isPercent = false) => {
+    let min = Math.min(...values);
+    let max = Math.max(...values);
+
+    if (isPercent) {
+        min = Math.max(0, Math.min(min, 100));
+        max = Math.min(100, Math.max(max, 0));
+    }
+
+    let range = max - min;
+    const minRange = isPercent ? 1 : Math.max(Math.abs(max) * 0.04, 0.01);
+    if (range < minRange) {
+        const center = (max + min) / 2;
+        min = center - minRange / 2;
+        max = center + minRange / 2;
+        range = max - min;
+    }
+
+    const pad = Math.max(range * 0.12, isPercent ? 0.3 : 0);
+    min -= pad;
+    max += pad;
+
+    if (isPercent) {
+        min = Math.max(0, min);
+        max = Math.min(100, max);
+    }
+
+    if (!Number.isFinite(max - min) || max === min) {
+        max = min + 1;
+    }
+
+    return { min, max, range: max - min };
+};
+
+const buildPolylinePoints = (
+    values,
+    domain,
+    width = CHART_WIDTH,
+    height = CHART_HEIGHT,
+    paddingX = CHART_PADDING_X,
+    paddingY = CHART_PADDING_Y
+) => {
+    const spanX = width - 2 * paddingX;
+    const spanY = height - 2 * paddingY;
+    const count = values.length;
+    return values.map((value, index) => {
+        const x = count === 1
+            ? width / 2
+            : paddingX + (index / (count - 1)) * spanX;
+        const normalized = (value - domain.min) / (domain.range || 1);
+        const y = height - paddingY - normalized * spanY;
+        return { x, y };
+    });
+};
+
+const formatLatestValue = (value, multiplier, unit) => {
+    if (!Number.isFinite(value)) return `--${unit}`;
+    const scaled = value * multiplier;
+    return `${scaled.toFixed(multiplier === 1 ? 4 : 1)}${unit}`;
+};
+
+export const LineChart = ({ data, dataKey, color, label, unit = '', multiplier = 1 }) => {
+    const id = useId();
+    const gradientId = `line-grad-${id}`;
+    const series = Array.isArray(data)
+        ? data
+            .map((entry) => ({
+                entry,
+                value: toFiniteNumber(entry?.[dataKey])
+            }))
+            .filter((item) => item.value !== undefined)
+        : [];
+    const latestValue = series.length > 0 ? series[series.length - 1].value : undefined;
+
+    if (series.length === 0 || latestValue === undefined) {
         return (
             <div style={panelStyle}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.65rem' }}>
                     <span style={titleStyle}>{label}</span>
                     <span style={{ fontSize: '13px', color: `rgb(${color})`, fontWeight: 800 }}>
-                        {latestValue !== undefined ? `${(latestValue * multiplier).toFixed(multiplier === 1 ? 4 : 1)}${unit}` : `--${unit}`}
+                        {formatLatestValue(latestValue, multiplier, unit)}
                     </span>
                 </div>
                 <div style={emptyBodyStyle}>等待训练数据...</div>
@@ -45,19 +130,16 @@ export const LineChart = ({ data, dataKey, color, label, unit = '', multiplier =
         );
     }
 
-    const values = series.map((entry) => Number(entry[dataKey] || 0) * multiplier);
-    const minValue = Math.min(...values) * 0.9;
-    const maxValue = Math.max(...values) * 1.1;
-    const range = maxValue - minValue || 1;
-
-    const points = series.map((entry, index) => {
-        const x = PADDING + (index / (series.length - 1)) * (WIDTH - 2 * PADDING);
-        const y = HEIGHT - PADDING - (((Number(entry[dataKey] || 0) * multiplier) - minValue) / range) * (HEIGHT - 2 * PADDING);
-        return `${x},${y}`;
-    }).join(' ');
-
-    const latestText = `${(latestValue * multiplier).toFixed(multiplier === 1 ? 4 : 1)}${unit}`;
-    const gradientId = `grad-${dataKey}`;
+    const isPercent = unit === '%' || multiplier === 100;
+    const rawValues = series.map((item) => item.value * multiplier);
+    const domain = computeDomain(rawValues, isPercent);
+    const rawPoints = buildPolylinePoints(rawValues, domain);
+    const smoothValues = series.length >= 3 ? buildEmaSeries(rawValues) : rawValues;
+    const smoothPoints = buildPolylinePoints(smoothValues, domain);
+    const rawPolyline = rawPoints.map((point) => `${point.x},${point.y}`).join(' ');
+    const smoothPolyline = smoothPoints.map((point) => `${point.x},${point.y}`).join(' ');
+    const latestText = formatLatestValue(latestValue, multiplier, unit);
+    const chartBaselineY = CHART_HEIGHT - CHART_PADDING_Y;
 
     return (
         <div style={panelStyle}>
@@ -65,25 +147,56 @@ export const LineChart = ({ data, dataKey, color, label, unit = '', multiplier =
                 <span style={titleStyle}>{label}</span>
                 <span style={{ fontSize: '13px', color: `rgb(${color})`, fontWeight: 800 }}>{latestText}</span>
             </div>
-            <svg width="100%" height={HEIGHT - 30} viewBox={`0 0 ${WIDTH} ${HEIGHT - 30}`} preserveAspectRatio="none">
+            <svg width="100%" height={CHART_HEIGHT} viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`} preserveAspectRatio="none">
                 <defs>
                     <linearGradient id={gradientId} x1="0%" y1="0%" x2="0%" y2="100%">
-                        <stop offset="0%" stopColor={`rgb(${color})`} stopOpacity="0.32" />
-                        <stop offset="100%" stopColor={`rgb(${color})`} stopOpacity="0.04" />
+                        <stop offset="0%" stopColor={`rgb(${color})`} stopOpacity="0.30" />
+                        <stop offset="100%" stopColor={`rgb(${color})`} stopOpacity="0.03" />
                     </linearGradient>
                 </defs>
-                <polygon
-                    points={`${PADDING},${HEIGHT - PADDING} ${points} ${WIDTH - PADDING},${HEIGHT - PADDING}`}
-                    fill={`url(#${gradientId})`}
-                />
-                <polyline
-                    fill="none"
-                    stroke={`rgb(${color})`}
-                    strokeWidth="2.3"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    points={points}
-                />
+
+                {series.length > 1 && (
+                    <polygon
+                        points={`${CHART_PADDING_X},${chartBaselineY} ${smoothPolyline} ${CHART_WIDTH - CHART_PADDING_X},${chartBaselineY}`}
+                        fill={`url(#${gradientId})`}
+                    />
+                )}
+
+                {series.length > 1 && (
+                    <polyline
+                        fill="none"
+                        stroke={`rgba(${color},0.38)`}
+                        strokeWidth="1.4"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        points={rawPolyline}
+                    />
+                )}
+
+                {series.length > 1 && (
+                    <polyline
+                        fill="none"
+                        stroke={`rgb(${color})`}
+                        strokeWidth="2.3"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        points={smoothPolyline}
+                    />
+                )}
+
+                {series.length === 1 && (
+                    <>
+                        <line
+                            x1={CHART_PADDING_X}
+                            y1={smoothPoints[0].y}
+                            x2={CHART_WIDTH - CHART_PADDING_X}
+                            y2={smoothPoints[0].y}
+                            stroke={`rgba(${color},0.35)`}
+                            strokeWidth="1.4"
+                        />
+                        <circle cx={smoothPoints[0].x} cy={smoothPoints[0].y} r="3.4" fill={`rgb(${color})`} />
+                    </>
+                )}
             </svg>
         </div>
     );
@@ -224,9 +337,18 @@ export const PerformanceMetrics = ({ latency, fps, meetsRealtime }) => {
 };
 
 export const LearningRateChart = ({ data }) => {
-    const lrData = data.filter((entry) => entry.learning_rate !== undefined);
+    const id = useId();
+    const gradientId = `lr-grad-${id}`;
+    const lrData = Array.isArray(data)
+        ? data
+            .map((entry) => ({
+                ...entry,
+                learning_rate: toFiniteNumber(entry?.learning_rate)
+            }))
+            .filter((entry) => entry.learning_rate !== undefined)
+        : [];
 
-    if (lrData.length < 2) {
+    if (lrData.length === 0) {
         return (
             <div style={panelStyle}>
                 <div style={{ ...titleStyle, marginBottom: '0.5rem', color: '#c4b5fd' }}>学习率曲线</div>
@@ -238,16 +360,16 @@ export const LearningRateChart = ({ data }) => {
     }
 
     const values = lrData.map((entry) => entry.learning_rate);
-    const maxValue = Math.max(...values) * 1.1;
-    const minValue = 0;
-    const range = maxValue - minValue || 1;
     const chartWidth = 250;
     const chartHeight = 66;
-    const points = lrData.map((entry, index) => {
-        const x = 10 + (index / (lrData.length - 1)) * (chartWidth - 20);
-        const y = chartHeight - 10 - ((entry.learning_rate - minValue) / range) * (chartHeight - 20);
-        return `${x},${y}`;
-    }).join(' ');
+    const chartPadding = 10;
+    const domain = computeDomain(values, false);
+    const rawPoints = buildPolylinePoints(values, domain, chartWidth, chartHeight, chartPadding, chartPadding);
+    const smoothValues = lrData.length >= 3 ? buildEmaSeries(values) : values;
+    const smoothPoints = buildPolylinePoints(smoothValues, domain, chartWidth, chartHeight, chartPadding, chartPadding);
+    const rawPolyline = rawPoints.map((point) => `${point.x},${point.y}`).join(' ');
+    const smoothPolyline = smoothPoints.map((point) => `${point.x},${point.y}`).join(' ');
+    const chartBaselineY = chartHeight - chartPadding;
 
     const latest = lrData[lrData.length - 1];
 
@@ -261,13 +383,54 @@ export const LearningRateChart = ({ data }) => {
             </div>
             <svg width="100%" height={chartHeight} viewBox={`0 0 ${chartWidth} ${chartHeight}`} preserveAspectRatio="none">
                 <defs>
-                    <linearGradient id="lr-grad" x1="0%" y1="0%" x2="0%" y2="100%">
+                    <linearGradient id={gradientId} x1="0%" y1="0%" x2="0%" y2="100%">
                         <stop offset="0%" stopColor="rgba(168,85,247,0.35)" />
                         <stop offset="100%" stopColor="rgba(168,85,247,0.03)" />
                     </linearGradient>
                 </defs>
-                <polygon points={`10,${chartHeight - 10} ${points} ${chartWidth - 10},${chartHeight - 10}`} fill="url(#lr-grad)" />
-                <polyline fill="none" stroke="#a78bfa" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" points={points} />
+
+                {lrData.length > 1 && (
+                    <polygon
+                        points={`${chartPadding},${chartBaselineY} ${smoothPolyline} ${chartWidth - chartPadding},${chartBaselineY}`}
+                        fill={`url(#${gradientId})`}
+                    />
+                )}
+
+                {lrData.length > 1 && (
+                    <polyline
+                        fill="none"
+                        stroke="rgba(167,139,250,0.4)"
+                        strokeWidth="1.3"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        points={rawPolyline}
+                    />
+                )}
+
+                {lrData.length > 1 && (
+                    <polyline
+                        fill="none"
+                        stroke="#a78bfa"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        points={smoothPolyline}
+                    />
+                )}
+
+                {lrData.length === 1 && (
+                    <>
+                        <line
+                            x1={chartPadding}
+                            y1={smoothPoints[0].y}
+                            x2={chartWidth - chartPadding}
+                            y2={smoothPoints[0].y}
+                            stroke="rgba(167,139,250,0.42)"
+                            strokeWidth="1.4"
+                        />
+                        <circle cx={smoothPoints[0].x} cy={smoothPoints[0].y} r="3.2" fill="#a78bfa" />
+                    </>
+                )}
             </svg>
             {latest.cos_lr && (
                 <div style={{ fontSize: '10px', color: '#8da0bf', marginTop: '2px', textAlign: 'center' }}>

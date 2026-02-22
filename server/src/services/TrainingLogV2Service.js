@@ -304,6 +304,31 @@ class TrainingLogV2Service extends EventEmitter {
     return next;
   }
 
+  clearDiagnosis(projectId, options = {}) {
+    const state = this.getActiveRun(projectId);
+    if (!state || !state.diagnosis) return null;
+
+    const now = new Date().toISOString();
+    const prev = state.diagnosis;
+    const reason = options.reason || 'cleared';
+
+    if (options.archive !== false) {
+      state.diagnosisHistory.push({
+        ...prev,
+        resolvedAt: now,
+        resolvedBy: reason
+      });
+      state.diagnosisHistory = this.trimToLimit(state.diagnosisHistory, 50);
+    }
+
+    state.diagnosis = null;
+    this.persistDiagnosis(state);
+    this.persistManifest(state);
+
+    this.emit('diagnosis', { projectId, diagnosis: null });
+    return null;
+  }
+
   getStatus(projectId) {
     const state = this.getActiveRun(projectId);
     if (!state) {

@@ -28,6 +28,52 @@ test('normalizeTrainingMetric flattens validation_complete metrics aliases', () 
   assert.equal(metric.pose_mAP50_95, 0.14);
 });
 
+test('normalizeTrainingMetric maps results.csv aliases to canonical fields', () => {
+  const metric = normalizeTrainingMetric({
+    event: 'results_csv_row',
+    epoch: 4,
+    'train/box_loss': 0.83,
+    'train/pose_loss': 0.44,
+    'train/kobj_loss': 0.19,
+    'train/cls_loss': 0.52,
+    'train/dfl_loss': 0.61,
+    'val/box_loss': 0.91,
+    'val/pose_loss': 0.53,
+    'val/kobj_loss': 0.12,
+    'val/cls_loss': 0.41,
+    'val/dfl_loss': 0.57,
+    'metrics/precision(B)': 0.92,
+    'metrics/recall(B)': 0.9,
+    'metrics/mAP50(B)': 0.95,
+    'metrics/mAP50-95(B)': 0.72,
+    'metrics/precision(P)': 0.84,
+    'metrics/recall(P)': 0.8,
+    'metrics/mAP50(P)': 0.89,
+    'metrics/mAP50-95(P)': 0.66,
+    'lr/pg0': 0.00022
+  });
+
+  assert.equal(metric.box_loss, 0.83);
+  assert.equal(metric.pose_loss, 0.44);
+  assert.equal(metric.kobj_loss, 0.19);
+  assert.equal(metric.cls_loss, 0.52);
+  assert.equal(metric.dfl_loss, 0.61);
+  assert.equal(metric.val_box_loss, 0.91);
+  assert.equal(metric.val_pose_loss, 0.53);
+  assert.equal(metric.val_kobj_loss, 0.12);
+  assert.equal(metric.val_cls_loss, 0.41);
+  assert.equal(metric.val_dfl_loss, 0.57);
+  assert.equal(metric.box_precision, 0.92);
+  assert.equal(metric.box_recall, 0.9);
+  assert.equal(metric.mAP50, 0.95);
+  assert.equal(metric.mAP50_95, 0.72);
+  assert.equal(metric.pose_precision, 0.84);
+  assert.equal(metric.pose_recall, 0.8);
+  assert.equal(metric.pose_mAP50, 0.89);
+  assert.equal(metric.pose_mAP50_95, 0.66);
+  assert.equal(metric.learning_rate, 0.00022);
+});
+
 test('buildMetricTimeline merges same epoch records and keeps ordering', () => {
   const timeline = buildMetricTimeline([
     { runId: 'r1', seq: 1, event: 'epoch_end', epoch: 1, totalEpochs: 3, box_loss: 0.5 },
@@ -59,6 +105,23 @@ test('buildMetricTimeline backfills epoch for validation metrics in stream order
   assert.equal(timeline[1].pose_mAP50, 0.77);
 });
 
+test('buildMetricTimeline keeps mAP values when later same-epoch events omit those fields', () => {
+  const timeline = buildMetricTimeline([
+    { runId: 'r1', seq: 1, event: 'results_csv_row', epoch: 1, mAP50: 0.91, mAP50_95: 0.73, pose_mAP50: 0.84, pose_mAP50_95: 0.66, box_precision: 0.95, box_recall: 0.94 },
+    { runId: 'r1', seq: 2, event: 'gpu_warning', epoch: 1, gpu_memory_percent: 75.1 },
+    { runId: 'r1', seq: 3, event: 'results_csv_row', epoch: 2, mAP50: 0.93, mAP50_95: 0.75, pose_mAP50: 0.87, pose_mAP50_95: 0.69, box_precision: 0.97, box_recall: 0.96 }
+  ]);
+
+  assert.equal(timeline.length, 2);
+  assert.equal(timeline[0].epoch, 1);
+  assert.equal(timeline[0].mAP50, 0.91);
+  assert.equal(timeline[0].mAP50_95, 0.73);
+  assert.equal(timeline[0].pose_mAP50, 0.84);
+  assert.equal(timeline[0].pose_mAP50_95, 0.66);
+  assert.equal(timeline[0].box_precision, 0.95);
+  assert.equal(timeline[0].box_recall, 0.94);
+});
+
 test('buildChartSeries excludes rows missing target key', () => {
   const series = buildChartSeries([
     { seq: 1, event: 'epoch_end', epoch: 1, box_loss: 0.4 },
@@ -74,13 +137,16 @@ test('buildChartSeries excludes rows missing target key', () => {
 test('getLatestMetricSnapshot keeps latest core epoch and fills sparse fields', () => {
   const snapshot = getLatestMetricSnapshot([
     { runId: 'r1', seq: 5, event: 'epoch_end', epoch: 3, totalEpochs: 20, box_loss: 0.31, pose_loss: 0.52 },
-    { runId: 'r1', seq: 6, event: 'performance_benchmark', realtime_fps: 29, meets_realtime_requirement: true }
+    { runId: 'r1', seq: 6, event: 'results_csv_row', val_box_loss: 0.77, val_pose_loss: 0.55 },
+    { runId: 'r1', seq: 7, event: 'performance_benchmark', realtime_fps: 29, meets_realtime_requirement: true }
   ]);
 
   assert.equal(snapshot.epoch, 3);
   assert.equal(snapshot.totalEpochs, 20);
   assert.equal(snapshot.box_loss, 0.31);
   assert.equal(snapshot.pose_loss, 0.52);
+  assert.equal(snapshot.val_box_loss, 0.77);
+  assert.equal(snapshot.val_pose_loss, 0.55);
   assert.equal(snapshot.realtime_fps, 29);
 });
 

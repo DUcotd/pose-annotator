@@ -136,6 +136,51 @@ const isMetricLikeEvent = (event) => {
     return METRIC_LIKE_EVENT_KEYS.has(detailEvent) || METRIC_LIKE_EVENT_KEYS.has(code);
 };
 
+const trimString = (value) => (typeof value === 'string' ? value.trim() : '');
+
+const normalizeTrainingConfigForSubmit = (config = {}) => {
+    const normalized = {
+        ...config,
+        name: trimString(config.name) || 'exp_auto'
+    };
+
+    if (normalized.remoteEnabled === true) {
+        const remotePortNum = Number.parseInt(config.remotePort, 10);
+        normalized.remoteHost = trimString(config.remoteHost);
+        normalized.remoteUser = trimString(config.remoteUser);
+        normalized.remotePassword = typeof config.remotePassword === 'string' ? config.remotePassword : '';
+        normalized.remotePath = trimString(config.remotePath) || '/tmp/training';
+        normalized.remotePython = trimString(config.remotePython) || 'python3';
+        normalized.remotePort = Number.isInteger(remotePortNum) ? remotePortNum : 22;
+    }
+
+    return normalized;
+};
+
+const validateRemoteConfigBeforeStart = (config = {}) => {
+    if (config.remoteEnabled !== true) return null;
+
+    const missingFields = [];
+    if (!trimString(config.remoteHost)) missingFields.push('主机');
+    if (!Number.isInteger(Number(config.remotePort)) || Number(config.remotePort) < 1 || Number(config.remotePort) > 65535) {
+        missingFields.push('端口(1-65535)');
+    }
+    if (!trimString(config.remoteUser)) missingFields.push('用户名');
+    if (!trimString(config.remotePassword)) missingFields.push('密码');
+    if (!trimString(config.remotePath)) missingFields.push('远程工作路径');
+    if (!trimString(config.remotePython)) missingFields.push('Python 解释器路径');
+
+    if (missingFields.length > 0) {
+        return `远程训练配置不完整: ${missingFields.join('、')}`;
+    }
+
+    if (!trimString(config.remotePath).startsWith('/')) {
+        return '远程工作路径必须是 Linux 绝对路径（以 / 开头）';
+    }
+
+    return null;
+};
+
 export const useTraining = (projectId) => {
     const { projectConfig, updateProjectConfig } = useProject();
 
@@ -377,7 +422,9 @@ export const useTraining = (projectId) => {
             const data = await res.json();
 
             if (data.status) setStatus(data.status);
-            if (data.diagnosis) setDiagnosisV2(data.diagnosis);
+            if (Object.prototype.hasOwnProperty.call(data, 'diagnosis')) {
+                setDiagnosisV2(data.diagnosis ?? null);
+            }
             if (data.connectionState) setConnectionState(data.connectionState);
             if (data.runId) updateRunId(data.runId);
             if (Array.isArray(data.metrics) && data.metrics.length > 0) {
@@ -520,7 +567,9 @@ export const useTraining = (projectId) => {
             const data = safeParse(evt.data);
             handleAlive();
             if (data?.status) setStatus(data.status);
-            if (data?.diagnosis) setDiagnosisV2(data.diagnosis);
+            if (data && Object.prototype.hasOwnProperty.call(data, 'diagnosis')) {
+                setDiagnosisV2(data.diagnosis ?? null);
+            }
             if (data?.runId) updateRunId(data.runId);
             if (Number.isFinite(data?.cursor) && data.cursor > cursorRef.current) {
                 cursorRef.current = data.cursor;
@@ -563,10 +612,14 @@ export const useTraining = (projectId) => {
         });
 
         source.addEventListener('diagnosis', (evt) => {
-            const diagnosis = safeParse(evt.data);
-            if (!diagnosis) return;
+            let diagnosis;
+            try {
+                diagnosis = JSON.parse(evt.data);
+            } catch {
+                return;
+            }
             handleAlive();
-            setDiagnosisV2(diagnosis);
+            setDiagnosisV2(diagnosis ?? null);
         });
 
         source.addEventListener('replay_gap', async (evt) => {
@@ -649,10 +702,12 @@ export const useTraining = (projectId) => {
                             lastSeenAt: new Date(Number(latestErr.time || Date.now())).toISOString()
                         });
                     }
+                } else {
+                    setDiagnosisV2(null);
                 }
             }
-            if (metrics.length === 0 && Array.isArray(data.metrics)) {
-                setMetrics(data.metrics);
+            if (Array.isArray(data.metrics)) {
+                setMetrics((prev) => (prev.length === 0 ? data.metrics : prev));
             }
 
             if (data.status === 'running') {
@@ -665,7 +720,7 @@ export const useTraining = (projectId) => {
         } catch (err) {
             console.error('Failed to check status', err);
         }
-    }, [projectId, stopPolling, metrics.length]);
+    }, [projectId, stopPolling]);
 
     useEffect(() => {
         if (!projectId) return undefined;
@@ -715,6 +770,13 @@ export const useTraining = (projectId) => {
 
     const handleStart = async () => {
         try {
+            const submitConfig = normalizeTrainingConfigForSubmit(config);
+            const remoteConfigError = validateRemoteConfigBeforeStart(submitConfig);
+            if (remoteConfigError) {
+                setStatus('idle');
+                throw new Error(remoteConfigError);
+            }
+
             setStatus('starting');
             setDiagnosisV2(null);
             setEventsV2([]);
@@ -725,13 +787,17 @@ export const useTraining = (projectId) => {
             const res = await fetch(`http://localhost:5000/api/projects/${projectId}/train`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(config)
+                body: JSON.stringify(submitConfig)
             });
             const data = await res.json();
 
             if (!res.ok) {
                 setStatus('failed');
-                throw new Error(data.error || 'Unknown error');
+                const detailMessage = Array.isArray(data?.details) && data.details.length > 0
+                    ? data.details.join('\n')
+                    : '';
+                const message = data?.error || data?.message || detailMessage || 'Unknown error';
+                throw new Error(message);
             }
 
             setStatus('running');

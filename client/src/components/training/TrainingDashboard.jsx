@@ -36,7 +36,7 @@ const formatDuration = (seconds) => {
     return `${hours}h ${minutes}m`;
 };
 
-const hasValue = (value) => value !== undefined && value !== null && !Number.isNaN(value);
+const hasValue = (value) => Number.isFinite(Number(value));
 
 const buildSeriesFromTimeline = (timeline, key) =>
     timeline.filter((entry) => hasValue(entry[key]));
@@ -155,7 +155,8 @@ export const TrainingDashboard = ({ metrics = [], status }) => {
         runtime: true,
         quality: false,
         loss: false,
-        validation: false
+        validation: false,
+        matrix: false
     });
 
     const timeline = useMemo(() => buildMetricTimeline(metrics), [metrics]);
@@ -182,6 +183,11 @@ export const TrainingDashboard = ({ metrics = [], status }) => {
     const clsLossSeries = useMemo(() => buildSeriesFromTimeline(timeline, 'cls_loss'), [timeline]);
     const dflLossSeries = useMemo(() => buildSeriesFromTimeline(timeline, 'dfl_loss'), [timeline]);
     const kobjLossSeries = useMemo(() => buildSeriesFromTimeline(timeline, 'kobj_loss'), [timeline]);
+    const valBoxLossSeries = useMemo(() => buildSeriesFromTimeline(timeline, 'val_box_loss'), [timeline]);
+    const valPoseLossSeries = useMemo(() => buildSeriesFromTimeline(timeline, 'val_pose_loss'), [timeline]);
+    const valKobjLossSeries = useMemo(() => buildSeriesFromTimeline(timeline, 'val_kobj_loss'), [timeline]);
+    const valClsLossSeries = useMemo(() => buildSeriesFromTimeline(timeline, 'val_cls_loss'), [timeline]);
+    const valDflLossSeries = useMemo(() => buildSeriesFromTimeline(timeline, 'val_dfl_loss'), [timeline]);
 
     const gpuTelemetryAvailable =
         (Number(latest.gpu_memory_total_gb ?? 0) > 0) ||
@@ -212,26 +218,34 @@ export const TrainingDashboard = ({ metrics = [], status }) => {
     const runtimeSignalCount = [
         hasPerformanceData,
         gpuTelemetryAvailable,
-        lrSeries.length > 1
+        lrSeries.length > 0
     ].filter(Boolean).length;
     const qualitySignalCount = [
-        boxPrecisionSeries.length > 1 || boxRecallSeries.length > 1,
-        posePrecisionSeries.length > 1 || poseRecallSeries.length > 1,
+        boxPrecisionSeries.length > 0 || boxRecallSeries.length > 0,
+        posePrecisionSeries.length > 0 || poseRecallSeries.length > 0,
         hasKeypointData
     ].filter(Boolean).length;
     const lossSignalCount = [
-        boxLossSeries.length > 1 || poseLossSeries.length > 1,
-        clsLossSeries.length > 1 || dflLossSeries.length > 1 || kobjLossSeries.length > 1
+        boxLossSeries.length > 0 || poseLossSeries.length > 0,
+        clsLossSeries.length > 0 || dflLossSeries.length > 0 || kobjLossSeries.length > 0
     ].filter(Boolean).length;
     const validationSignalCount = [
         hasVisualData,
         hasKeypointData
     ].filter(Boolean).length;
+    const matrixSignalCount = [
+        boxLossSeries.length > 0 || poseLossSeries.length > 0 || kobjLossSeries.length > 0 || clsLossSeries.length > 0 || dflLossSeries.length > 0,
+        valBoxLossSeries.length > 0 || valPoseLossSeries.length > 0 || valKobjLossSeries.length > 0 || valClsLossSeries.length > 0 || valDflLossSeries.length > 0,
+        boxPrecisionSeries.length > 0 || boxRecallSeries.length > 0 || map50Series.length > 0 || map5095Series.length > 0,
+        posePrecisionSeries.length > 0 || poseRecallSeries.length > 0 || poseMap50Series.length > 0 || poseMap5095Series.length > 0,
+        lrSeries.length > 0
+    ].filter(Boolean).length;
     const availableAdvancedCount = [
         runtimeSignalCount > 0,
         qualitySignalCount > 0,
         lossSignalCount > 0,
-        validationSignalCount > 0
+        validationSignalCount > 0,
+        matrixSignalCount > 0
     ].filter(Boolean).length;
 
     const statusText = status === 'running'
@@ -360,7 +374,8 @@ export const TrainingDashboard = ({ metrics = [], status }) => {
                                     runtime: true,
                                     quality: true,
                                     loss: true,
-                                    validation: true
+                                    validation: true,
+                                    matrix: true
                                 })}
                                 style={{
                                     border: '1px solid rgba(148,163,184,0.26)',
@@ -381,7 +396,8 @@ export const TrainingDashboard = ({ metrics = [], status }) => {
                                     runtime: false,
                                     quality: false,
                                     loss: false,
-                                    validation: false
+                                    validation: false,
+                                    matrix: false
                                 })}
                                 style={{
                                     border: '1px solid rgba(148,163,184,0.26)',
@@ -423,7 +439,7 @@ export const TrainingDashboard = ({ metrics = [], status }) => {
                                 fps={performanceData?.realtime_fps}
                                 meetsRealtime={performanceData?.meets_realtime_requirement}
                             />
-                            <LearningRateChart data={metrics} />
+                            <LearningRateChart data={lrSeries} />
                         </div>
                     </AdvancedGroup>
 
@@ -455,6 +471,52 @@ export const TrainingDashboard = ({ metrics = [], status }) => {
                             <LineChart data={lrSeries} dataKey="learning_rate" color="129,140,248" label="Learning Rate" />
                         </div>
                         <LossSection metrics={latest} />
+                    </AdvancedGroup>
+
+                    <AdvancedGroup
+                        title="完整结果矩阵"
+                        summary={matrixSignalCount > 0 ? `${matrixSignalCount} 组有数据` : '等待数据'}
+                        open={advancedGroups.matrix}
+                        onToggle={() => setAdvancedGroups((prev) => ({ ...prev, matrix: !prev.matrix }))}
+                    >
+                        <div style={{ fontSize: '12px', color: '#9aaccc', fontWeight: 700 }}>Train Loss</div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '0.85rem' }}>
+                            <LineChart data={boxLossSeries} dataKey="box_loss" color="255,123,114" label="Train Box Loss" />
+                            <LineChart data={poseLossSeries} dataKey="pose_loss" color="168,85,247" label="Train Pose Loss" />
+                            <LineChart data={kobjLossSeries} dataKey="kobj_loss" color="250,204,21" label="Train KObj Loss" />
+                            <LineChart data={clsLossSeries} dataKey="cls_loss" color="96,165,250" label="Train Cls Loss" />
+                            <LineChart data={dflLossSeries} dataKey="dfl_loss" color="74,222,128" label="Train DFL Loss" />
+                        </div>
+
+                        <div style={{ fontSize: '12px', color: '#9aaccc', fontWeight: 700 }}>Val Loss</div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '0.85rem' }}>
+                            <LineChart data={valBoxLossSeries} dataKey="val_box_loss" color="253,164,175" label="Val Box Loss" />
+                            <LineChart data={valPoseLossSeries} dataKey="val_pose_loss" color="196,181,253" label="Val Pose Loss" />
+                            <LineChart data={valKobjLossSeries} dataKey="val_kobj_loss" color="254,240,138" label="Val KObj Loss" />
+                            <LineChart data={valClsLossSeries} dataKey="val_cls_loss" color="147,197,253" label="Val Cls Loss" />
+                            <LineChart data={valDflLossSeries} dataKey="val_dfl_loss" color="134,239,172" label="Val DFL Loss" />
+                        </div>
+
+                        <div style={{ fontSize: '12px', color: '#9aaccc', fontWeight: 700 }}>Box Metrics</div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '0.85rem' }}>
+                            <LineChart data={boxPrecisionSeries} dataKey="box_precision" color="56,189,248" label="Box Precision" unit="%" multiplier={100} />
+                            <LineChart data={boxRecallSeries} dataKey="box_recall" color="74,222,128" label="Box Recall" unit="%" multiplier={100} />
+                            <LineChart data={map50Series} dataKey="mAP50" color="34,197,94" label="Box mAP@50" unit="%" multiplier={100} />
+                            <LineChart data={map5095Series} dataKey="mAP50_95" color="59,130,246" label="Box mAP@50-95" unit="%" multiplier={100} />
+                        </div>
+
+                        <div style={{ fontSize: '12px', color: '#9aaccc', fontWeight: 700 }}>Pose Metrics</div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '0.85rem' }}>
+                            <LineChart data={posePrecisionSeries} dataKey="pose_precision" color="167,139,250" label="Pose Precision" unit="%" multiplier={100} />
+                            <LineChart data={poseRecallSeries} dataKey="pose_recall" color="192,132,252" label="Pose Recall" unit="%" multiplier={100} />
+                            <LineChart data={poseMap50Series} dataKey="pose_mAP50" color="168,85,247" label="Pose mAP@50" unit="%" multiplier={100} />
+                            <LineChart data={poseMap5095Series} dataKey="pose_mAP50_95" color="45,212,191" label="Pose mAP@50-95" unit="%" multiplier={100} />
+                        </div>
+
+                        <div style={{ fontSize: '12px', color: '#9aaccc', fontWeight: 700 }}>Learning Rate</div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '0.85rem' }}>
+                            <LineChart data={lrSeries} dataKey="learning_rate" color="129,140,248" label="Learning Rate" />
+                        </div>
                     </AdvancedGroup>
 
                     <AdvancedGroup

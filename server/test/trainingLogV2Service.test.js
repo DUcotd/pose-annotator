@@ -84,3 +84,39 @@ test('TrainingLogV2Service creates run, persists ndjson, and exports structured 
   assert.ok(parsed.events.length >= 2);
   assert.ok(parsed.metrics.length >= 1);
 });
+
+test('TrainingLogV2Service clearDiagnosis archives previous diagnosis and resets current', async (t) => {
+  const tmpRoot = await fsp.mkdtemp(path.join(os.tmpdir(), 'pose-annotator-logv2-clear-'));
+  const projectId = 'logv2_clear_p1';
+  const projectRoot = path.join(tmpRoot, projectId);
+  await fsp.mkdir(projectRoot, { recursive: true });
+
+  t.after(() => {
+    TrainingLogV2Service.activeRuns.delete(projectId);
+  });
+
+  const run = TrainingLogV2Service.createRun(projectId, projectRoot, { epochs: 3 });
+  TrainingLogV2Service.updateDiagnosis(projectId, {
+    status: 'failed',
+    stage: 'train',
+    code: 'UNKNOWN_ERROR',
+    rootCause: '训练错误',
+    evidence: ['traceback line'],
+    suggestions: ['check config']
+  });
+
+  const statusBefore = TrainingLogV2Service.getStatus(projectId);
+  assert.equal(statusBefore.diagnosis.code, 'UNKNOWN_ERROR');
+
+  TrainingLogV2Service.clearDiagnosis(projectId, { reason: 'train_completed' });
+
+  const statusAfter = TrainingLogV2Service.getStatus(projectId);
+  assert.equal(statusAfter.diagnosis, null);
+
+  const diagnosisFile = JSON.parse(await fsp.readFile(run.files.diagnosis, 'utf8'));
+  assert.equal(diagnosisFile.current, null);
+  assert.ok(Array.isArray(diagnosisFile.history));
+  assert.equal(diagnosisFile.history.length, 1);
+  assert.equal(diagnosisFile.history[0].code, 'UNKNOWN_ERROR');
+  assert.equal(diagnosisFile.history[0].resolvedBy, 'train_completed');
+});

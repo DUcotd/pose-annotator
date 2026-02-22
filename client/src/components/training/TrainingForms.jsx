@@ -670,12 +670,15 @@ export const RemoteForm = ({ config, updateConfig, status }) => {
                             placeholder="192.168.1.100"
                             disabled={isRunning || !isEnabled}
                             onChange={(e) => updateConfig({ remoteHost: e.target.value })}
+                            onBlur={(e) => updateConfig({ remoteHost: e.target.value.trim() })}
                         />
                     </div>
                     <div style={FIELD_STYLE}>
                         <label style={FIELD_LABEL_STYLE}>端口</label>
                         <TextInput
                             type="number"
+                            min={1}
+                            max={65535}
                             value={config.remotePort}
                             disabled={isRunning || !isEnabled}
                             onChange={(e) => updateConfig({ remotePort: parseIntOr(e.target.value, config.remotePort) })}
@@ -691,6 +694,7 @@ export const RemoteForm = ({ config, updateConfig, status }) => {
                             value={config.remoteUser}
                             disabled={isRunning || !isEnabled}
                             onChange={(e) => updateConfig({ remoteUser: e.target.value })}
+                            onBlur={(e) => updateConfig({ remoteUser: e.target.value.trim() })}
                         />
                     </div>
                     <div style={FIELD_STYLE}>
@@ -712,6 +716,7 @@ export const RemoteForm = ({ config, updateConfig, status }) => {
                         placeholder="/home/user/training"
                         disabled={isRunning || !isEnabled}
                         onChange={(e) => updateConfig({ remotePath: e.target.value })}
+                        onBlur={(e) => updateConfig({ remotePath: e.target.value.trim() })}
                     />
                 </div>
 
@@ -723,6 +728,7 @@ export const RemoteForm = ({ config, updateConfig, status }) => {
                         placeholder="python3"
                         disabled={isRunning || !isEnabled}
                         onChange={(e) => updateConfig({ remotePython: e.target.value })}
+                        onBlur={(e) => updateConfig({ remotePython: e.target.value.trim() })}
                     />
                 </div>
             </div>

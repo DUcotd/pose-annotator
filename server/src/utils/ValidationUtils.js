@@ -1,5 +1,10 @@
 const logger = require('../utils/logger');
 
+const IPV4_PATTERN = /^(?:25[0-5]|2[0-4]\d|1?\d?\d)(?:\.(?:25[0-5]|2[0-4]\d|1?\d?\d)){3}$/;
+const HOSTNAME_PATTERN = /^(?=.{1,253}$)(?!-)[A-Za-z0-9-]{1,63}(?<!-)(?:\.(?!-)[A-Za-z0-9-]{1,63}(?<!-))*$/;
+
+const toTrimmedString = (value) => (typeof value === 'string' ? value.trim() : '');
+
 const ValidationRules = {
   number: (value, options = {}) => {
     if (typeof value !== 'number' || isNaN(value)) {
@@ -218,12 +223,109 @@ const TrainConfigSchema = {
       required: false,
       pattern: /^[a-z0-9,]*$/i,
       patternMessage: '格式应为逗号分隔的格式名称，如: onnx,tflite'
+    },
+    remoteEnabled: {
+      type: 'boolean',
+      required: false
+    },
+    remoteHost: {
+      type: 'string',
+      required: false,
+      maxLength: 255
+    },
+    remotePort: {
+      type: 'number',
+      required: false,
+      min: 1,
+      max: 65535,
+      integer: true
+    },
+    remoteUser: {
+      type: 'string',
+      required: false,
+      maxLength: 128
+    },
+    remotePassword: {
+      type: 'string',
+      required: false,
+      maxLength: 512
+    },
+    remotePath: {
+      type: 'string',
+      required: false,
+      maxLength: 1024
+    },
+    remotePython: {
+      type: 'string',
+      required: false,
+      maxLength: 256
     }
   }
 };
 
+function validateRemoteTrainConfig(config = {}) {
+  if (!config || config.remoteEnabled !== true) {
+    return { valid: true };
+  }
+
+  const errors = [];
+
+  const remoteHost = toTrimmedString(config.remoteHost);
+  if (!remoteHost) {
+    errors.push({ field: 'remoteHost', error: '启用远程训练时必须填写主机地址' });
+  } else if (!(IPV4_PATTERN.test(remoteHost) || HOSTNAME_PATTERN.test(remoteHost))) {
+    errors.push({ field: 'remoteHost', error: '主机地址格式不正确（支持 IP 或主机名）' });
+  }
+
+  const remotePort = Number(config.remotePort);
+  if (!Number.isInteger(remotePort) || remotePort < 1 || remotePort > 65535) {
+    errors.push({ field: 'remotePort', error: '端口必须是 1-65535 之间的整数' });
+  }
+
+  const remoteUser = toTrimmedString(config.remoteUser);
+  if (!remoteUser) {
+    errors.push({ field: 'remoteUser', error: '启用远程训练时必须填写用户名' });
+  }
+
+  const remotePassword = toTrimmedString(config.remotePassword);
+  if (!remotePassword) {
+    errors.push({ field: 'remotePassword', error: '启用远程训练时必须填写密码' });
+  }
+
+  const remotePath = toTrimmedString(config.remotePath);
+  if (!remotePath) {
+    errors.push({ field: 'remotePath', error: '启用远程训练时必须填写远程工作路径' });
+  } else if (!remotePath.startsWith('/')) {
+    errors.push({ field: 'remotePath', error: '远程工作路径必须使用 Linux 绝对路径（以 / 开头）' });
+  } else if (/[\r\n]/.test(remotePath)) {
+    errors.push({ field: 'remotePath', error: '远程工作路径不能包含换行符' });
+  }
+
+  const remotePython = toTrimmedString(config.remotePython);
+  if (!remotePython) {
+    errors.push({ field: 'remotePython', error: '启用远程训练时必须填写 Python 解释器路径' });
+  } else if (/[\r\n]/.test(remotePython)) {
+    errors.push({ field: 'remotePython', error: 'Python 解释器路径不能包含换行符' });
+  }
+
+  return errors.length > 0 ? { valid: false, errors } : { valid: true };
+}
+
 function validateTrainConfig(config) {
-  return validate(config, TrainConfigSchema);
+  const baseValidation = validate(config, TrainConfigSchema);
+  const remoteValidation = validateRemoteTrainConfig(config);
+
+  if (baseValidation.valid && remoteValidation.valid) {
+    return { valid: true };
+  }
+
+  return {
+    valid: false,
+    errors: [
+      ...(Array.isArray(baseValidation.errors) ? baseValidation.errors : []),
+      ...(Array.isArray(remoteValidation.errors) ? remoteValidation.errors : [])
+    ]
+  };
 }
 
 function formatValidationErrors(validationResult) {
@@ -251,6 +353,7 @@ function formatValidationErrors(validationResult) {
 
 module.exports = {
   validate,
+  validateRemoteTrainConfig,
   validateTrainConfig,
   formatValidationErrors,
   TrainConfigSchema

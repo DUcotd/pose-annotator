@@ -7,6 +7,11 @@ const CORE_NUMERIC_KEYS = [
   'kobj_loss',
   'cls_loss',
   'dfl_loss',
+  'val_box_loss',
+  'val_pose_loss',
+  'val_kobj_loss',
+  'val_cls_loss',
+  'val_dfl_loss',
   'train_loss',
   'mAP50',
   'mAP50_95',
@@ -30,7 +35,9 @@ const CORE_NUMERIC_KEYS = [
   'max_memory_percent',
   'avg_utilization_percent',
   'max_utilization_percent',
-  'realtime_fps'
+  'realtime_fps',
+  'lr_pg1',
+  'lr_pg2'
 ];
 
 const EVENT_KEYS_WITHOUT_EPOCH = new Set([
@@ -71,6 +78,10 @@ const parseGpuMem = (value) => {
 };
 
 const normalizeEventName = (value) => String(value || '').trim().toLowerCase();
+
+const assignIfDefined = (target, key, value) => {
+  if (value !== undefined) target[key] = value;
+};
 
 const tryParseRawJsonLog = (raw) => {
   if (typeof raw !== 'string' || raw.trim().length === 0) return {};
@@ -171,42 +182,87 @@ export const normalizeTrainingMetric = (rawMetric, meta = {}) => {
     if (value !== undefined) normalized[key] = value;
   });
 
+  const pickAlias = (...keys) => {
+    for (const key of keys) {
+      if (!key) continue;
+      if (Object.prototype.hasOwnProperty.call(merged, key)) {
+        const value = toNumber(merged[key]);
+        if (value !== undefined) return value;
+      }
+    }
+    return undefined;
+  };
+
+  const applyAlias = (targetKey, ...aliasKeys) => {
+    if (normalized[targetKey] !== undefined) return;
+    const value = pickAlias(...aliasKeys);
+    if (value !== undefined) normalized[targetKey] = value;
+  };
+
+  applyAlias('box_loss', 'train/box_loss', 'train_box_loss');
+  applyAlias('pose_loss', 'train/pose_loss', 'train_pose_loss');
+  applyAlias('kobj_loss', 'train/kobj_loss', 'train_kobj_loss');
+  applyAlias('cls_loss', 'train/cls_loss', 'train_cls_loss');
+  applyAlias('dfl_loss', 'train/dfl_loss', 'train_dfl_loss');
+  applyAlias('val_box_loss', 'val/box_loss', 'val_box_loss');
+  applyAlias('val_pose_loss', 'val/pose_loss', 'val_pose_loss');
+  applyAlias('val_kobj_loss', 'val/kobj_loss', 'val_kobj_loss');
+  applyAlias('val_cls_loss', 'val/cls_loss', 'val_cls_loss');
+  applyAlias('val_dfl_loss', 'val/dfl_loss', 'val_dfl_loss');
+  applyAlias('box_precision', 'metrics/precision(B)', 'metrics/precision_b', 'metrics/precision');
+  applyAlias('box_recall', 'metrics/recall(B)', 'metrics/recall_b', 'metrics/recall');
+  applyAlias('mAP50', 'metrics/mAP50(B)', 'metrics/map50(B)', 'metrics/map50_b', 'metrics/map50');
+  applyAlias('mAP50_95', 'metrics/mAP50-95(B)', 'metrics/map50-95(B)', 'metrics/map50-95_b', 'metrics/map50-95', 'metrics/map');
+  applyAlias('pose_precision', 'metrics/precision(P)', 'metrics/precision_p');
+  applyAlias('pose_recall', 'metrics/recall(P)', 'metrics/recall_p');
+  applyAlias('pose_mAP50', 'metrics/mAP50(P)', 'metrics/map50(P)', 'metrics/map50_p');
+  applyAlias('pose_mAP50_95', 'metrics/mAP50-95(P)', 'metrics/map50-95(P)', 'metrics/map50-95_p');
+  applyAlias('learning_rate', 'lr/pg0', 'lr_pg0', 'lr');
+
   if (normalized.epoch === undefined) {
-    normalized.epoch = toNumber(merged.current_epoch);
+    assignIfDefined(normalized, 'epoch', toNumber(merged.current_epoch));
   }
   if (normalized.epoch === undefined) {
-    normalized.epoch = toNumber(merged.currentEpoch);
+    assignIfDefined(normalized, 'epoch', toNumber(merged.currentEpoch));
   }
 
   if (normalized.totalEpochs === undefined) {
-    normalized.totalEpochs = toNumber(merged.total_epochs) ?? toNumber(merged.epochs);
+    assignIfDefined(
+      normalized,
+      'totalEpochs',
+      toNumber(merged.total_epochs) ?? toNumber(merged.epochs)
+    );
   }
 
   if (normalized.mAP50 === undefined) {
-    normalized.mAP50 = toNumber(merged.map50);
+    assignIfDefined(normalized, 'mAP50', pickAlias('map50', 'mAP50'));
   }
   if (normalized.mAP50_95 === undefined) {
-    normalized.mAP50_95 =
-      toNumber(merged['mAP50-95']) ??
-      toNumber(merged['map50_95']) ??
-      toNumber(merged['map50-95']) ??
-      toNumber(merged.map);
+    assignIfDefined(
+      normalized,
+      'mAP50_95',
+      pickAlias('mAP50-95', 'map50_95', 'map50-95', 'map')
+    );
+  }
+  if (normalized.pose_mAP50 === undefined) {
+    assignIfDefined(normalized, 'pose_mAP50', pickAlias('pose_map50', 'pose_mAP50'));
   }
   if (normalized.pose_mAP50_95 === undefined) {
-    normalized.pose_mAP50_95 =
-      toNumber(merged['pose_mAP50-95']) ??
-      toNumber(merged['pose_map50_95']) ??
-      toNumber(merged.pose_map);
+    assignIfDefined(
+      normalized,
+      'pose_mAP50_95',
+      pickAlias('pose_mAP50-95', 'pose_map50_95', 'pose_map')
+    );
   }
   if (normalized.box_precision === undefined) {
-    normalized.box_precision = toNumber(merged.precision) ?? toNumber(merged.box_p);
+    assignIfDefined(normalized, 'box_precision', pickAlias('precision', 'box_p'));
   }
   if (normalized.box_recall === undefined) {
-    normalized.box_recall = toNumber(merged.recall) ?? toNumber(merged.box_r);
+    assignIfDefined(normalized, 'box_recall', pickAlias('recall', 'box_r'));
   }
 
   if (normalized.gpu_memory_used_gb === undefined) {
-    normalized.gpu_memory_used_gb = parseGpuMem(merged.gpu_mem);
+    assignIfDefined(normalized, 'gpu_memory_used_gb', parseGpuMem(merged.gpu_mem));
   }
   if (normalized.box_loss === undefined) {
     const trainBoxLoss = toNumber(merged.train_box_loss);
@@ -320,7 +376,12 @@ export const buildMetricTimeline = (metrics = []) => {
   enriched.forEach((metric) => {
     const epochKey = Number(metric.epoch);
     const prev = byEpoch.get(epochKey) || { epoch: epochKey };
-    byEpoch.set(epochKey, { ...prev, ...metric, epoch: epochKey });
+    const mergedMetric = { ...prev };
+    Object.entries(metric).forEach(([key, value]) => {
+      if (value !== undefined) mergedMetric[key] = value;
+    });
+    mergedMetric.epoch = epochKey;
+    byEpoch.set(epochKey, mergedMetric);
   });
 
   return Array.from(byEpoch.values()).sort((a, b) => Number(a.epoch || 0) - Number(b.epoch || 0));
@@ -350,6 +411,11 @@ const SNAPSHOT_KEYS = [
   'kobj_loss',
   'cls_loss',
   'dfl_loss',
+  'val_box_loss',
+  'val_pose_loss',
+  'val_kobj_loss',
+  'val_cls_loss',
+  'val_dfl_loss',
   'mAP50',
   'mAP50_95',
   'pose_mAP50',

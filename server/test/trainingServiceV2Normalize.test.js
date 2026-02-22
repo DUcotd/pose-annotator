@@ -129,3 +129,58 @@ test('TrainingService normalizeMetricPayload flattens gpu stats from nested cont
   assert.equal(metric.gpu_temperature, 69);
   assert.deepEqual(metric.gpu_warnings, ['GPU利用率低: 14.0% (可能存在IO瓶颈)']);
 });
+
+test('TrainingService normalizeMetricPayload maps results.csv aliases to canonical metrics', () => {
+  const metric = TrainingService.normalizeMetricPayload({
+    event: 'results_csv_row',
+    epoch: 2,
+    'train/box_loss': 1.21,
+    'train/pose_loss': 0.92,
+    'train/kobj_loss': 0.44,
+    'train/cls_loss': 0.33,
+    'train/dfl_loss': 0.51,
+    'val/box_loss': 1.03,
+    'val/pose_loss': 0.61,
+    'val/kobj_loss': 0.22,
+    'val/cls_loss': 0.49,
+    'val/dfl_loss': 0.63,
+    'metrics/precision(B)': 0.94,
+    'metrics/recall(B)': 0.91,
+    'metrics/mAP50(B)': 0.97,
+    'metrics/mAP50-95(B)': 0.79,
+    'metrics/precision(P)': 0.88,
+    'metrics/recall(P)': 0.86,
+    'metrics/mAP50(P)': 0.93,
+    'metrics/mAP50-95(P)': 0.74,
+    'lr/pg0': 0.00031
+  });
+
+  assert.equal(metric.box_loss, 1.21);
+  assert.equal(metric.pose_loss, 0.92);
+  assert.equal(metric.kobj_loss, 0.44);
+  assert.equal(metric.cls_loss, 0.33);
+  assert.equal(metric.dfl_loss, 0.51);
+  assert.equal(metric.val_box_loss, 1.03);
+  assert.equal(metric.val_pose_loss, 0.61);
+  assert.equal(metric.val_kobj_loss, 0.22);
+  assert.equal(metric.val_cls_loss, 0.49);
+  assert.equal(metric.val_dfl_loss, 0.63);
+  assert.equal(metric.box_precision, 0.94);
+  assert.equal(metric.box_recall, 0.91);
+  assert.equal(metric.mAP50, 0.97);
+  assert.equal(metric.mAP50_95, 0.79);
+  assert.equal(metric.pose_precision, 0.88);
+  assert.equal(metric.pose_recall, 0.86);
+  assert.equal(metric.pose_mAP50, 0.93);
+  assert.equal(metric.pose_mAP50_95, 0.74);
+  assert.equal(metric.learning_rate, 0.00031);
+});
+
+test('TrainingService mapResultsCsvColumn resolves canonical keys from csv headers', () => {
+  assert.equal(TrainingService.mapResultsCsvColumn('epoch'), 'epoch');
+  assert.equal(TrainingService.mapResultsCsvColumn('train/box_loss'), 'box_loss');
+  assert.equal(TrainingService.mapResultsCsvColumn('val/pose_loss'), 'val_pose_loss');
+  assert.equal(TrainingService.mapResultsCsvColumn('metrics/mAP50(P)'), 'pose_mAP50');
+  assert.equal(TrainingService.mapResultsCsvColumn('metrics/mAP50-95(B)'), 'mAP50_95');
+  assert.equal(TrainingService.mapResultsCsvColumn('lr/pg0'), 'learning_rate');
+});
