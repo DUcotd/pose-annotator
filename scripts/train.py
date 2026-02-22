@@ -1982,12 +1982,12 @@ if __name__ == "__main__":
 
     parser.add_argument('--data', type=str, default='data.yaml', help='Path to data.yaml')
     parser.add_argument('--model', type=str, default='yolov8n-pose.pt', help='Base model')
-    parser.add_argument('--epochs', type=int, default=150, help='Number of epochs')
-    parser.add_argument('--batch', type=int, default=8, help='Batch size')
-    parser.add_argument('--imgsz', type=int, default=1280, help='Image input size')
+    parser.add_argument('--epochs', type=int, default=200, help='Number of epochs')
+    parser.add_argument('--batch', type=int, default=16, help='Batch size')
+    parser.add_argument('--imgsz', type=int, default=640, help='Image input size')
 
     parser.add_argument('--project', type=str, default='fish_run', help='Project directory')
-    parser.add_argument('--name', type=str, default='exp_3', help='Experiment name')
+    parser.add_argument('--name', type=str, default='exp_auto', help='Experiment name')
     parser.add_argument('--models_dir', type=str, default='', help='Directory to store model weights')
 
     parser.add_argument('--device', type=str, default='0', help='Device (0, 1, 2 or cpu)')

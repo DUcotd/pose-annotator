@@ -372,6 +372,45 @@ class TrainingService {
     return { cmd: env.path, info: env };
   }
 
+  resolveExperimentName(config, retryCount = 0) {
+    const rawName = typeof config?.name === 'string' ? config.name.trim() : '';
+    const baseName = rawName || 'exp_auto';
+
+    // Keep a stable run directory name when retrying after OOM or restart logic.
+    if (retryCount > 0) {
+      return baseName;
+    }
+
+    const projectDir = typeof config?.project === 'string' ? config.project.trim() : '';
+    if (!projectDir || !fs.existsSync(projectDir)) {
+      return baseName;
+    }
+
+    try {
+      const escapedBaseName = baseName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const pattern = new RegExp(`^${escapedBaseName}(?:_(\\d+))?$`);
+
+      let maxSuffix = -1;
+      const entries = fs.readdirSync(projectDir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+
+        const match = entry.name.match(pattern);
+        if (!match) continue;
+
+        const suffix = match[1] === undefined ? 0 : Number.parseInt(match[1], 10);
+        if (Number.isNaN(suffix) || suffix < 0) continue;
+
+        maxSuffix = Math.max(maxSuffix, suffix);
+      }
+
+      return maxSuffix < 0 ? baseName : `${baseName}_${maxSuffix + 1}`;
+    } catch (err) {
+      logger.warn(`Failed to resolve experiment name for ${projectDir}: ${err.message}`);
+      return baseName;
+    }
+  }
+
   buildArgs(config) {
     const args = [
       path.join(__dirname, '..', '..', '..', 'scripts', 'train.py'),
@@ -552,6 +591,11 @@ class TrainingService {
     if (existing && existing.status === 'running') {
       throw new Error('Training is already in progress for this project');
     }
+
+    config = {
+      ...config,
+      name: this.resolveExperimentName(config, retryCount)
+    };
 
     this.jsonBuffer.set(projectId, '');
 
@@ -1222,7 +1266,7 @@ class TrainingService {
       ...config,
       epochs: 1,
       batch: Math.min(config.batch || 16, 2),
-      name: (config.name || 'exp') + '_dryrun',
+      name: (config.name || 'exp_auto') + '_dryrun',
       project: config.project || 'dryrun_test'
     };
 

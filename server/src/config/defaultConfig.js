@@ -55,8 +55,8 @@ module.exports = {
   },
   training: {
     defaultModel: 'yolov8n.pt',
-    defaultEpochs: 100,
-    defaultBatch: 8,
+    defaultEpochs: 200,
+    defaultBatch: 16,
     defaultImgsz: 640,
     pollInterval: 2000,
     maxRetries: 3

@@ -1,70 +1,74 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useProject } from '../context/ProjectContext';
 
+const DEFAULT_TRAINING_CONFIG = {
+    model: 'yolov8n-pose.pt',
+    data: '',
+    epochs: 200,
+    batch: 16,
+    imgsz: 640,
+    device: '0',
+    project: '',
+    name: 'exp_auto',
+
+    hardwareEnabled: false,
+    workers: 0,
+    cache_images: false,
+
+    strategyEnabled: false,
+    patience: 60,
+    cos_lr: true,
+    optimizer: 'auto',
+    rect: true,
+
+    augmentationEnabled: false,
+    degrees: 180,
+    translate: 0.2,
+    scale: 0.6,
+    shear: 0,
+    perspective: 0.001,
+    fliplr: 0.5,
+    flipud: 0.5,
+    hsv_h: 0.015,
+    hsv_s: 0.7,
+    hsv_v: 0.4,
+    mosaic: 0.0,
+    close_mosaic: 0,
+    mixup: 0,
+    copy_paste: 0,
+    erasing: 0.4,
+    crop_fraction: 1.0,
+
+    lossEnabled: false,
+    loss_pose: 25.0,
+    loss_box: 7.5,
+    loss_cls: 0.5,
+    resume: false,
+    export_formats: '',
+
+    remoteEnabled: false,
+    remoteHost: '',
+    remotePort: 22,
+    remoteUser: '',
+    remotePassword: '',
+    remotePath: '/tmp/training',
+    remotePython: 'python3'
+};
+
 export const useTraining = (projectId) => {
     const { projectConfig, updateProjectConfig } = useProject();
 
-    const [config, setConfig] = useState({
-        model: 'yolov8n-pose.pt',
-        data: '',
-        epochs: 150,
-        batch: 2,
-        imgsz: 1280,
-        device: '0',
-        project: '',
-        name: 'exp_3',
-
-        hardwareEnabled: false,
-        workers: 0,
-        cache_images: false,
-
-        strategyEnabled: false,
-        patience: 60,
-        cos_lr: true,
-        optimizer: 'auto',
-        rect: true,
-
-        augmentationEnabled: false,
-        degrees: 180,
-        translate: 0.2,
-        scale: 0.6,
-        shear: 0,
-        perspective: 0.001,
-        fliplr: 0.5,
-        flipud: 0.5,
-        hsv_h: 0.015,
-        hsv_s: 0.7,
-        hsv_v: 0.4,
-        mosaic: 0.0,
-        close_mosaic: 0,
-        mixup: 0,
-        copy_paste: 0,
-        erasing: 0.4,
-        crop_fraction: 1.0,
-
-        lossEnabled: false,
-        loss_pose: 25.0,
-        loss_box: 7.5,
-        loss_cls: 0.5,
-        resume: false,
-        export_formats: '',
-
-        remoteEnabled: false,
-        remoteHost: '',
-        remotePort: 22,
-        remoteUser: '',
-        remotePassword: '',
-        remotePath: '/tmp/training',
-        remotePython: 'python3',
-
+    const [config, setConfig] = useState(() => ({
+        ...DEFAULT_TRAINING_CONFIG,
         ...(projectConfig.trainingSettings || {})
-    });
+    }));
 
     // Handle project change or initial load
     useEffect(() => {
-        if (projectConfig.trainingSettings) {
-            setConfig(prev => ({ ...prev, ...projectConfig.trainingSettings }));
-        }
+        setConfig({
+            ...DEFAULT_TRAINING_CONFIG,
+            ...(projectConfig.trainingSettings || {})
+        });
     }, [projectConfig.trainingSettings]);
 
     const [status, setStatus] = useState('idle');

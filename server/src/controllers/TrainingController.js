@@ -275,7 +275,7 @@ function createTrainingRouter(projectsDir) {
     const paths = ExportService.getProjectPaths(projectId, projectsDir);
     const projectDir = paths.run;
     
-    const weightsDir = path.join(projectDir, name || 'exp', 'weights');
+    const weightsDir = path.join(projectDir, name || 'exp_auto', 'weights');
     const lastPtPath = path.join(weightsDir, 'last.pt');
     
     const fs = require('fs');
