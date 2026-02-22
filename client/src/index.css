@@ -1,31 +1,31 @@
 :root {
-  /* Core Palette - Dark Mode Premium */
-  --bg-primary: #0f1117;
-  --bg-secondary: #161b22;
-  --bg-tertiary: #21262d;
+  /* Unified Core Theme */
+  --bg-primary: #081024;
+  --bg-secondary: #0f1b33;
+  --bg-tertiary: #1a2945;
 
   /* Text Colors */
-  --text-primary: #f0f6fc;
-  --text-secondary: #8b949e;
-  --text-tertiary: #6e7681;
+  --text-primary: #e7edf8;
+  --text-secondary: #b6c2d9;
+  --text-tertiary: #8391ad;
 
   /* Accents */
-  --accent-primary: #58a6ff;
-  --accent-hover: #79c0ff;
-  --accent-dim: rgba(88, 166, 255, 0.15);
+  --accent-primary: #2dd4bf;
+  --accent-hover: #5eead4;
+  --accent-dim: rgba(45, 212, 191, 0.16);
 
-  --danger: #f85149;
-  --success: #238636;
-  --success-dim: rgba(35, 134, 54, 0.15);
-  --warning: #d29922;
-  --warning-dim: rgba(210, 153, 34, 0.1);
+  --danger: #f87171;
+  --success: #4ade80;
+  --success-dim: rgba(74, 222, 128, 0.16);
+  --warning: #fbbf24;
+  --warning-dim: rgba(251, 191, 36, 0.14);
 
   /* Borders & Dividers */
-  --border-subtle: #30363d;
-  --border-active: #6e7681;
+  --border-subtle: rgba(148, 163, 184, 0.24);
+  --border-active: rgba(148, 163, 184, 0.42);
 
   /* Typography */
-  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-sans: "Space Grotesk", "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
 
   /* Spacing & Radius */
   --radius-sm: 6px;
@@ -62,12 +62,16 @@ input[type=number] {
 body {
   margin: 0;
   padding: 0;
-  background-color: var(--bg-primary);
+  background:
+    radial-gradient(1200px 420px at 8% -8%, rgba(45, 212, 191, 0.14), transparent 60%),
+    radial-gradient(1000px 500px at 100% 0%, rgba(59, 130, 246, 0.2), transparent 55%),
+    linear-gradient(145deg, var(--bg-primary), var(--bg-secondary));
   color: var(--text-primary);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   min-height: 100vh;
   overflow-x: hidden;
+  line-height: 1.45;
 }
 
 button {
@@ -5150,4 +5154,35 @@ button {
     margin-top: 6px;
     font-size: 11px;
   }
+}
+
+/* ========================================
+   WORKSPACE CONSISTENCY LAYER
+   ======================================== */
+
+.page-workspace {
+  height: 100%;
+  overflow: hidden;
+  background:
+    radial-gradient(900px 320px at 6% -6%, rgba(45, 212, 191, 0.12), transparent 60%),
+    radial-gradient(850px 420px at 100% 0%, rgba(59, 130, 246, 0.16), transparent 55%),
+    linear-gradient(145deg, var(--bg-primary), var(--bg-secondary));
+}
+
+.page-workspace>* {
+  height: 100%;
+}
+
+.page-workspace h1,
+.page-workspace h2,
+.page-workspace h3,
+.page-workspace h4 {
+  letter-spacing: 0.1px;
+}
+
+.page-workspace button,
+.page-workspace input,
+.page-workspace select,
+.page-workspace textarea {
+  font-family: var(--font-sans);
 }

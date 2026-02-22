@@ -96,6 +96,10 @@ function createTrainingRouter(projectsDir) {
       res.json({ message: 'Training started', ...result });
     } catch (err) {
       logger.error(`Failed to start training for ${projectId}:`, err);
+
+      if (String(err.message || '').includes('already starting')) {
+        return res.status(409).json({ error: '训练正在启动中，请勿重复点击', code: 'TRAINING_ALREADY_STARTING' });
+      }
       
       let userFriendlyMessage = err.message;
       if (err.message.includes('CUDA') || err.message.includes('GPU') || err.message.includes('cuda')) {
@@ -166,6 +170,8 @@ function createTrainingRouter(projectsDir) {
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
     res.setHeader('X-Accel-Buffering', 'no');
+    // Hint browser EventSource reconnect delay for transient network issues.
+    res.write('retry: 3000\n\n');
 
     const sendEvent = (event, data) => {
       res.write(`event: ${event}\n`);

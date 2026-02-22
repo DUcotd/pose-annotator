@@ -68,7 +68,15 @@ class TrainingService {
       ]
     },
     memory: {
-      keywords: ['MemoryError', 'cannot allocate memory', 'Unable to allocate', 'killed'],
+      keywords: [
+        'MemoryError',
+        'cannot allocate memory',
+        'Unable to allocate',
+        'killed',
+        'winerror 1455',
+        '页面文件太小',
+        'shm.dll'
+      ],
       type: 'memory',
       title: '系统内存不足',
       icon: '💾',
@@ -76,6 +84,7 @@ class TrainingService {
         '系统内存不足，尝试关闭其他程序',
         '减小 batch_size 参数',
         '减小 workers 参数',
+        '增大 Windows 虚拟内存（页面文件）',
         '检查是否有内存泄漏'
       ]
     },
@@ -156,6 +165,7 @@ class TrainingService {
   constructor() {
     this.processes = ProcessManager;
     this.logsV2 = TrainingLogV2Service;
+    this.startLocks = new Set();
     this.retryState = {};
     this.isShuttingDown = false;
     this.jobQueue = new JobQueue();
@@ -548,7 +558,43 @@ class TrainingService {
     return false;
   }
 
+  isBenignWarningLine(line) {
+    const lower = String(line || '').toLowerCase();
+    if (!lower) return false;
+
+    // Treat Python warning categories as non-fatal diagnostics.
+    if (lower.includes('futurewarning') ||
+      lower.includes('deprecationwarning') ||
+      lower.includes('userwarning') ||
+      lower.includes('runtimewarning')) {
+      return true;
+    }
+
+    // Common NVML deprecation message from torch.cuda init should not fail a run.
+    if (lower.includes('the pynvml package is deprecated') ||
+      lower.includes('please install nvidia-ml-py instead')) {
+      return true;
+    }
+
+    // Source line printed for warnings, e.g. "import pynvml  # type: ignore[import]"
+    if (lower.includes('import pynvml') && !lower.includes('modulenotfounderror')) {
+      return true;
+    }
+
+    return false;
+  }
+
   classifyError(errorMsg) {
+    if (this.isBenignWarningLine(errorMsg)) {
+      return {
+        type: 'unknown',
+        title: '非致命告警',
+        icon: '⚠️',
+        suggestions: [],
+        rawError: String(errorMsg || '').substring(0, 500)
+      };
+    }
+
     const lower = errorMsg.toLowerCase();
 
     for (const [key, mapping] of Object.entries(TrainingService.ERROR_MAPPINGS)) {
@@ -631,11 +677,12 @@ class TrainingService {
   }
 
   normalizeJsonLogToV2(jsonData) {
-    const eventName = String(jsonData?.event || 'unknown');
+    const rawEventName = String(jsonData?.event || 'unknown');
+    const eventName = rawEventName.toLowerCase();
     const stage = jsonData?.stage || this.inferStageFromEvent(eventName);
     const level = String((jsonData?.level || 'INFO')).toLowerCase();
-    const message = jsonData?.message || eventName;
-    const code = jsonData?.code || (eventName ? eventName.toUpperCase() : 'JSON_EVENT');
+    const message = jsonData?.message || rawEventName;
+    const code = jsonData?.code || (rawEventName ? rawEventName.toUpperCase() : 'JSON_EVENT');
 
     const details = {
       ...jsonData,
@@ -648,10 +695,16 @@ class TrainingService {
       'performance_benchmark',
       'per_keypoint_metrics',
       'gpu_summary',
-      'visual_validation'
+      'visual_validation',
+      'gpu_warning'
     ]);
 
-    const kind = jsonData?.kind || (metricEvents.has(eventName) ? 'metric' : (eventName.includes('error') ? 'diagnostic' : 'status'));
+    // Some script events are emitted with kind=raw but carry structured metric payload.
+    // We normalize them to metric to keep dashboard signals real-time.
+    const forceMetricEvents = new Set(['gpu_warning']);
+    const kind = forceMetricEvents.has(eventName)
+      ? 'metric'
+      : (jsonData?.kind || (metricEvents.has(eventName) ? 'metric' : (eventName.includes('error') ? 'diagnostic' : 'status')));
 
     return {
       source: 'py_stdout',
@@ -664,18 +717,207 @@ class TrainingService {
     };
   }
 
-  async start(projectId, config) {
-    const existing = this.processes.get(projectId);
-    if (existing && existing.status === 'running') {
-      return this.addToQueue({ ...config, project: projectId }, config.priority || 0);
+  toFiniteNumber(value) {
+    if (value === null || value === undefined || value === '') return undefined;
+    const n = Number(value);
+    return Number.isFinite(n) ? n : undefined;
+  }
+
+  parseGpuMemToGb(value) {
+    if (typeof value !== 'string') return undefined;
+    const match = value.match(/([\d.]+)\s*G/i);
+    if (!match) return undefined;
+    return this.toFiniteNumber(match[1]);
+  }
+
+  normalizeMetricPayload(metricPayload = {}) {
+    const root = metricPayload && typeof metricPayload === 'object' ? metricPayload : {};
+    const details = root.details && typeof root.details === 'object' ? root.details : {};
+    const rootContext = root.context && typeof root.context === 'object' ? root.context : {};
+    const rootStats = root.stats && typeof root.stats === 'object' ? root.stats : {};
+    const detailsStats = details.stats && typeof details.stats === 'object' ? details.stats : {};
+    const rootContextStats = rootContext.stats && typeof rootContext.stats === 'object' ? rootContext.stats : {};
+    const nestedMetrics = root.metrics && typeof root.metrics === 'object'
+      ? root.metrics
+      : (details.metrics && typeof details.metrics === 'object' ? details.metrics : {});
+    const context = details.context && typeof details.context === 'object' ? details.context : {};
+    const contextStats = context.stats && typeof context.stats === 'object' ? context.stats : {};
+    const nestedRootContextMetrics = rootContext.metrics && typeof rootContext.metrics === 'object'
+      ? rootContext.metrics
+      : {};
+    const nestedContextMetrics = context.metrics && typeof context.metrics === 'object'
+      ? context.metrics
+      : {};
+
+    const merged = {
+      ...rootStats,
+      ...detailsStats,
+      ...rootContextStats,
+      ...contextStats,
+      ...rootContext,
+      ...context,
+      ...details,
+      ...root,
+      ...nestedMetrics,
+      ...nestedRootContextMetrics,
+      ...nestedContextMetrics
+    };
+
+    const normalized = {
+      event: String(merged.event || root.event || 'metric'),
+      timestamp: merged.timestamp || root.timestamp || new Date().toISOString()
+    };
+
+    const numericKeys = [
+      'epoch',
+      'epochs',
+      'totalEpochs',
+      'box_loss',
+      'pose_loss',
+      'kobj_loss',
+      'cls_loss',
+      'dfl_loss',
+      'train_loss',
+      'mAP50',
+      'mAP50_95',
+      'pose_mAP50',
+      'pose_mAP50_95',
+      'box_precision',
+      'box_recall',
+      'pose_precision',
+      'pose_recall',
+      'learning_rate',
+      'lr0',
+      'lrf',
+      'eta_seconds',
+      'gpu_memory_used_gb',
+      'gpu_memory_total_gb',
+      'gpu_memory_percent',
+      'gpu_utilization_percent',
+      'gpu_temperature',
+      'gpu_power_draw',
+      'avg_memory_percent',
+      'max_memory_percent',
+      'avg_utilization_percent',
+      'max_utilization_percent',
+      'realtime_fps'
+    ];
+
+    numericKeys.forEach((key) => {
+      const num = this.toFiniteNumber(merged[key]);
+      if (num !== undefined) normalized[key] = num;
+    });
+
+    if (normalized.totalEpochs === undefined) {
+      const fallbackTotal = this.toFiniteNumber(merged.total_epochs) ?? this.toFiniteNumber(merged.epochs);
+      if (fallbackTotal !== undefined) normalized.totalEpochs = fallbackTotal;
+    }
+    if (normalized.epoch === undefined) {
+      const fallbackEpoch = this.toFiniteNumber(merged.current_epoch) ?? this.toFiniteNumber(merged.currentEpoch);
+      if (fallbackEpoch !== undefined) normalized.epoch = fallbackEpoch;
     }
 
-    return this.startTraining(projectId, config, 0);
+    if (normalized.mAP50 === undefined) {
+      const map50 = this.toFiniteNumber(merged.map50);
+      if (map50 !== undefined) normalized.mAP50 = map50;
+    }
+    if (normalized.mAP50_95 === undefined) {
+      const map5095 = this.toFiniteNumber(merged['mAP50-95'])
+        ?? this.toFiniteNumber(merged['map50_95'])
+        ?? this.toFiniteNumber(merged['map50-95'])
+        ?? this.toFiniteNumber(merged.map);
+      if (map5095 !== undefined) normalized.mAP50_95 = map5095;
+    }
+    if (normalized.pose_mAP50_95 === undefined) {
+      const poseMap5095 = this.toFiniteNumber(merged['pose_mAP50-95'])
+        ?? this.toFiniteNumber(merged['pose_map50_95'])
+        ?? this.toFiniteNumber(merged.pose_map);
+      if (poseMap5095 !== undefined) normalized.pose_mAP50_95 = poseMap5095;
+    }
+    if (normalized.box_precision === undefined) {
+      const p = this.toFiniteNumber(merged.precision) ?? this.toFiniteNumber(merged.box_p);
+      if (p !== undefined) normalized.box_precision = p;
+    }
+    if (normalized.box_recall === undefined) {
+      const r = this.toFiniteNumber(merged.recall) ?? this.toFiniteNumber(merged.box_r);
+      if (r !== undefined) normalized.box_recall = r;
+    }
+    if (normalized.gpu_memory_used_gb === undefined) {
+      const gpuMem = this.parseGpuMemToGb(merged.gpu_mem);
+      if (gpuMem !== undefined) normalized.gpu_memory_used_gb = gpuMem;
+    }
+    if (normalized.box_loss === undefined) {
+      const trainBoxLoss = this.toFiniteNumber(merged.train_box_loss);
+      if (trainBoxLoss !== undefined) normalized.box_loss = trainBoxLoss;
+    }
+    if (normalized.pose_loss === undefined) {
+      const trainPoseLoss = this.toFiniteNumber(merged.train_pose_loss);
+      if (trainPoseLoss !== undefined) normalized.pose_loss = trainPoseLoss;
+    }
+    if (normalized.kobj_loss === undefined) {
+      const trainKobjLoss = this.toFiniteNumber(merged.train_kobj_loss);
+      if (trainKobjLoss !== undefined) normalized.kobj_loss = trainKobjLoss;
+    }
+    if (normalized.cls_loss === undefined) {
+      const trainClsLoss = this.toFiniteNumber(merged.train_cls_loss);
+      if (trainClsLoss !== undefined) normalized.cls_loss = trainClsLoss;
+    }
+    if (normalized.dfl_loss === undefined) {
+      const trainDflLoss = this.toFiniteNumber(merged.train_dfl_loss);
+      if (trainDflLoss !== undefined) normalized.dfl_loss = trainDflLoss;
+    }
+
+    if (merged.latency && typeof merged.latency === 'object') {
+      normalized.latency = merged.latency;
+    }
+    if (merged.throughput && typeof merged.throughput === 'object') {
+      normalized.throughput = merged.throughput;
+    }
+    if (Array.isArray(merged.keypoints)) {
+      normalized.keypoints = merged.keypoints;
+    }
+    if (Array.isArray(merged.samples)) {
+      normalized.samples = merged.samples;
+    }
+    if (typeof merged.output_dir === 'string') {
+      normalized.output_dir = merged.output_dir;
+    }
+    if (typeof merged.meets_realtime_requirement === 'boolean') {
+      normalized.meets_realtime_requirement = merged.meets_realtime_requirement;
+    }
+    if (Array.isArray(merged.gpu_warnings)) {
+      normalized.gpu_warnings = merged.gpu_warnings;
+    } else if (Array.isArray(merged.warnings)) {
+      normalized.gpu_warnings = merged.warnings;
+    }
+
+    return normalized;
+  }
+
+  async start(projectId, config) {
+    if (this.startLocks.has(projectId)) {
+      throw new Error('Training is already starting for this project');
+    }
+
+    this.startLocks.add(projectId);
+    try {
+      const existing = this.processes.get(projectId);
+      if (existing && existing.status === 'running') {
+        return this.addToQueue({ ...config, project: projectId }, config.priority || 0);
+      }
+      if (existing && existing.status === 'starting') {
+        throw new Error('Training is already starting for this project');
+      }
+
+      return this.startTraining(projectId, config, 0);
+    } finally {
+      this.startLocks.delete(projectId);
+    }
   }
 
   async startTraining(projectId, config, retryCount = 0) {
     const existing = this.processes.get(projectId);
-    if (existing && existing.status === 'running') {
+    if (existing && (existing.status === 'running' || existing.status === 'starting')) {
       throw new Error('Training is already in progress for this project');
     }
 
@@ -811,14 +1053,20 @@ class TrainingService {
             const jsonStr = line.slice(JSON_LOG_PREFIX.length);
             const jsonData = JSON.parse(jsonStr);
             const v2Event = this.normalizeJsonLogToV2(jsonData);
+            const normalizedMetric = this.normalizeMetricPayload(jsonData);
+
             if (v2Event.kind === 'metric') {
-              this.logsV2.appendMetric(projectId, jsonData, {
+              this.logsV2.appendMetric(projectId, normalizedMetric, {
                 source: v2Event.source,
                 level: v2Event.level,
                 stage: v2Event.stage,
                 code: v2Event.code,
                 message: v2Event.message,
                 raw: line
+              });
+              this.processes.addMetric(projectId, {
+                ...normalizedMetric,
+                time: Date.now()
               });
             } else {
               this.logsV2.appendEvent(projectId, {
@@ -839,18 +1087,14 @@ class TrainingService {
                 });
               }
             }
-            this.processes.addMetric(projectId, {
-              ...jsonData,
-              time: Date.now()
-            });
 
             if (jsonData.event === 'epoch_end') {
               const parts = [];
-              parts.push(`Epoch ${jsonData.epoch}/${jsonData.epochs}`);
-              if (jsonData.box_loss !== undefined) parts.push(`box_loss=${jsonData.box_loss.toFixed(4)}`);
-              if (jsonData.pose_loss !== undefined) parts.push(`pose_loss=${jsonData.pose_loss.toFixed(4)}`);
-              if (jsonData.mAP50 !== undefined) parts.push(`mAP50=${(jsonData.mAP50 * 100).toFixed(1)}%`);
-              if (jsonData.pose_mAP50 !== undefined) parts.push(`pose_mAP50=${(jsonData.pose_mAP50 * 100).toFixed(1)}%`);
+              parts.push(`Epoch ${normalizedMetric.epoch || jsonData.epoch}/${normalizedMetric.totalEpochs || jsonData.epochs || '--'}`);
+              if (normalizedMetric.box_loss !== undefined) parts.push(`box_loss=${normalizedMetric.box_loss.toFixed(4)}`);
+              if (normalizedMetric.pose_loss !== undefined) parts.push(`pose_loss=${normalizedMetric.pose_loss.toFixed(4)}`);
+              if (normalizedMetric.mAP50 !== undefined) parts.push(`mAP50=${(normalizedMetric.mAP50 * 100).toFixed(1)}%`);
+              if (normalizedMetric.pose_mAP50 !== undefined) parts.push(`pose_mAP50=${(normalizedMetric.pose_mAP50 * 100).toFixed(1)}%`);
 
               this.processes.addLog(projectId, {
                 type: 'metric',
@@ -860,7 +1104,7 @@ class TrainingService {
             }
 
             if (jsonData.event === 'validation_complete') {
-              const m = jsonData.metrics || {};
+              const m = normalizedMetric;
               this.processes.addLog(projectId, {
                 type: 'metric',
                 msg: `✅ 验证完成 - Box mAP@50: ${(m.mAP50 * 100 || 0).toFixed(1)}%, Pose mAP@50: ${(m.pose_mAP50 * 100 || 0).toFixed(1)}%`,
@@ -917,6 +1161,12 @@ class TrainingService {
           const mapMatch = trimmed.match(/all\s+(\d+)\s+(\d+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)/);
           if (mapMatch) {
             const [full, images, instances, boxP, boxR, boxMAP50, boxMAP5095, poseP, poseR, poseMAP50, poseMAP5095] = mapMatch;
+            const latestEpochMetric = [...(this.processes.getMetrics(projectId) || [])]
+              .reverse()
+              .find((metric) => this.toFiniteNumber(metric?.epoch) !== undefined);
+            const currentEpoch = this.toFiniteNumber(latestEpochMetric?.epoch);
+            const currentTotalEpochs = this.toFiniteNumber(latestEpochMetric?.totalEpochs)
+              ?? this.toFiniteNumber(latestEpochMetric?.epochs);
             const parsedMetric = {
               box_precision: parseFloat(boxP),
               box_recall: parseFloat(boxR),
@@ -926,6 +1176,8 @@ class TrainingService {
               pose_recall: parseFloat(poseR),
               pose_mAP50: parseFloat(poseMAP50),
               pose_mAP50_95: parseFloat(poseMAP5095),
+              ...(currentEpoch !== undefined ? { epoch: currentEpoch } : {}),
+              ...(currentTotalEpochs !== undefined ? { totalEpochs: currentTotalEpochs } : {}),
               time: Date.now()
             };
             this.processes.addMetric(projectId, {
@@ -991,6 +1243,24 @@ class TrainingService {
 
       const cleanedLine = this.cleanString(trimmed);
       if (!cleanedLine && !isCapturingTraceback) return;
+
+      if (!isCapturingTraceback && this.isBenignWarningLine(cleanedLine)) {
+        const warningEvent = this.normalizeLineToEventV2(cleanedLine, 'py_stderr', {
+          level: 'warn',
+          stage: 'train',
+          kind: 'raw',
+          code: 'STDERR_WARNING'
+        });
+        if (warningEvent) {
+          this.logsV2.appendEvent(projectId, warningEvent);
+        }
+        this.processes.addLog(projectId, {
+          type: 'stderr',
+          msg: cleanedLine,
+          time: Date.now()
+        });
+        return;
+      }
 
       // 1. Traceback Start Detection
       if (line.includes('Traceback (most recent call last):')) {
@@ -1178,8 +1448,9 @@ class TrainingService {
           try {
             const jsonData = JSON.parse(stdoutRemainder.slice(JSON_LOG_PREFIX.length));
             const v2Event = this.normalizeJsonLogToV2(jsonData);
+            const normalizedMetric = this.normalizeMetricPayload(jsonData);
             if (v2Event.kind === 'metric') {
-              this.logsV2.appendMetric(projectId, jsonData, {
+              this.logsV2.appendMetric(projectId, normalizedMetric, {
                 source: v2Event.source,
                 level: v2Event.level,
                 stage: v2Event.stage,
@@ -1187,16 +1458,16 @@ class TrainingService {
                 message: v2Event.message,
                 raw: stdoutRemainder
               });
+              this.processes.addMetric(projectId, {
+                ...normalizedMetric,
+                time: Date.now()
+              });
             } else {
               this.logsV2.appendEvent(projectId, {
                 ...v2Event,
                 raw: stdoutRemainder
               });
             }
-            this.processes.addMetric(projectId, {
-              ...jsonData,
-              time: Date.now()
-            });
           } catch (err) {
             logger.debug(`Failed to parse remaining stdout JSON line: ${err.message}`);
           }

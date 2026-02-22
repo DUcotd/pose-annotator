@@ -83,7 +83,7 @@ class TrainingLogger:
                 stage = 'unknown'
 
         if not kind:
-            if lower in {'epoch_end', 'validation_complete', 'performance_benchmark', 'per_keypoint_metrics', 'gpu_summary'}:
+            if lower in {'epoch_end', 'validation_complete', 'performance_benchmark', 'per_keypoint_metrics', 'gpu_summary', 'gpu_warning'}:
                 kind = 'metric'
             elif 'error' in lower or level in {self.ERROR, self.CRITICAL}:
                 kind = 'diagnostic'
@@ -599,8 +599,9 @@ def validate_model(model, args, model_path):
             batch=args.batch,
             imgsz=args.imgsz,
             device=args.device,
+            workers=max(0, int(getattr(args, 'workers', 0))),
             save_json=True,
-            save_hybrid=True,
+            save_hybrid=False,
             plots=True
         )
         
@@ -1213,6 +1214,111 @@ def get_per_keypoint_metrics(model, data_yaml, device='0'):
 gpu_monitor = None
 visual_validator = None
 performance_benchmark = None
+visual_interval_epochs = 0
+
+
+class TrainerStateGuard:
+    """Protect trainer/model state when running side tasks during callbacks."""
+
+    def __init__(self, trainer, force_grad_enabled=True):
+        self.trainer = trainer
+        self.force_grad_enabled = force_grad_enabled
+        self.model = getattr(trainer, 'model', None)
+        self.grad_enabled_before = True
+        self.model_mode_before = None
+        self.param_requires_grad_before = None
+
+    def __enter__(self):
+        self.grad_enabled_before = torch.is_grad_enabled()
+        if self.model is not None:
+            self.model_mode_before = bool(getattr(self.model, 'training', True))
+            try:
+                self.param_requires_grad_before = [p.requires_grad for p in self.model.parameters()]
+            except Exception:
+                self.param_requires_grad_before = None
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        try:
+            if self.model is not None and self.model_mode_before is not None:
+                self.model.train(self.model_mode_before)
+        except Exception as e:
+            training_logger.warning('visual_validation', f'恢复模型训练模式失败: {e}')
+
+        if self.model is not None and self.param_requires_grad_before is not None:
+            try:
+                changed = 0
+                for param, requires_grad in zip(self.model.parameters(), self.param_requires_grad_before):
+                    if param.requires_grad != requires_grad:
+                        param.requires_grad = requires_grad
+                        changed += 1
+                if changed > 0:
+                    training_logger.warning('visual_validation', f'检测到并恢复了 {changed} 个参数 requires_grad 状态')
+            except Exception as e:
+                training_logger.warning('visual_validation', f'恢复参数梯度状态失败: {e}')
+
+        if self.force_grad_enabled:
+            if not torch.is_grad_enabled():
+                training_logger.warning('visual_validation', '检测到全局梯度被关闭，已自动恢复')
+            torch.set_grad_enabled(True)
+        else:
+            torch.set_grad_enabled(self.grad_enabled_before)
+
+
+def should_run_interval_visualization(epoch):
+    return (
+        visual_validator is not None and
+        isinstance(visual_interval_epochs, int) and
+        visual_interval_epochs > 0 and
+        epoch % visual_interval_epochs == 0
+    )
+
+
+def run_interval_visualization(trainer, epoch):
+    if not should_run_interval_visualization(epoch):
+        return
+
+    try:
+        with TrainerStateGuard(trainer, force_grad_enabled=True):
+            with torch.inference_mode():
+                viz_results = visual_validator.generate_visualization(epoch)
+
+        if viz_results:
+            log_json({
+                "event": "visual_validation",
+                "mode": "interval",
+                **viz_results
+            })
+    except Exception as e:
+        training_logger.warning('visual_validation', f'周期可视化失败: {e}')
+
+
+def run_post_train_visualization(model, target_epoch):
+    if visual_validator is None:
+        return
+
+    try:
+        model_mode_before = bool(getattr(model.model, 'training', True)) if hasattr(model, 'model') else None
+    except Exception:
+        model_mode_before = None
+
+    try:
+        with torch.inference_mode():
+            viz_results = visual_validator.generate_visualization(target_epoch)
+        if viz_results:
+            log_json({
+                "event": "visual_validation",
+                "mode": "post_train",
+                **viz_results
+            })
+    except Exception as e:
+        training_logger.warning('visual_validation', f'训练完成后可视化失败: {e}')
+    finally:
+        try:
+            if hasattr(model, 'model') and model_mode_before is not None:
+                model.model.train(model_mode_before)
+        except Exception:
+            pass
 
 def get_scalar(val, default=0.0):
     """安全地将各种类型（Tensor, numpy, list等）转换为 Python float"""
@@ -1358,19 +1464,7 @@ def on_train_epoch_end(trainer):
 
     log_json(log_data)
     
-    global visual_validator
-    if visual_validator is not None and (trainer.epoch + 1) % 5 == 0:
-        try:
-            with torch.no_grad():
-                viz_results = visual_validator.generate_visualization(trainer.epoch + 1)
-            
-            if viz_results:
-                log_json({
-                    "event": "visual_validation",
-                    **viz_results
-                })
-        except Exception as e:
-            training_logger.warning('visual_validation', f'可视化验证失败: {e}')
+    run_interval_visualization(trainer, trainer.epoch + 1)
 
 def on_train_start(trainer):
     log_json({
@@ -1417,6 +1511,11 @@ def log_config_snapshot(args, training_logger):
             'pose': args.loss_pose,
             'box': args.loss_box,
             'cls': args.loss_cls,
+        },
+        'visualization': {
+            'interval_epochs': getattr(args, 'visual_interval', 0),
+            'samples': getattr(args, 'visual_samples', 3),
+            'post_train': True
         },
         'project': args.project,
         'name': args.name,
@@ -1784,7 +1883,7 @@ def validate_config(args):
     return True
 
 def train_model(args):
-    global gpu_monitor, visual_validator, performance_benchmark, training_logger
+    global gpu_monitor, visual_validator, performance_benchmark, training_logger, visual_interval_epochs
     
     try:
         log_config_snapshot(args, training_logger)
@@ -1872,12 +1971,19 @@ def train_model(args):
                 "total_memory_gb": initial_stats.get("gpu_memory_total_gb", 0)
             })
         
+        visual_interval_epochs = max(0, int(getattr(args, 'visual_interval', 0)))
+        visual_samples = max(1, int(getattr(args, 'visual_samples', 3)))
+        if visual_interval_epochs > 0:
+            training_logger.info('visual_validation', f'训练中可视化已启用: 每 {visual_interval_epochs} 个 epoch 执行一次')
+        else:
+            training_logger.info('visual_validation', '训练中可视化默认关闭，改为训练完成后执行一次')
+
         output_dir = os.path.join(args.project, args.name, "visualizations")
         visual_validator = VisualValidator(
             model=model,
             data_yaml=abs_data_path,
             output_dir=output_dir,
-            num_samples=3
+            num_samples=visual_samples
         )
 
         model.add_callback("on_train_start", on_train_start)
@@ -1921,6 +2027,8 @@ def train_model(args):
                 'optimizer': args.optimizer,
                 'cos_lr': args.cos_lr,
                 'rect': args.rect,
+                # Keep Ultralytics artifact images (results.png, curves, batch previews).
+                'plots': True,
                 **augment_params,
                 'exist_ok': True,
                 'verbose': True
@@ -1942,54 +2050,89 @@ def train_model(args):
 
             results = model.train(**training_params)
 
+        if visual_interval_epochs <= 0:
+            run_post_train_visualization(model, target_epoch=int(getattr(args, 'epochs', 0)))
+
         best_model_path = os.path.join(args.project, args.name, 'weights', 'best.pt')
         training_logger.info('train_complete', f'训练完成！最佳模型已保存至: {best_model_path}')
         
-        if gpu_monitor is not None:
-            gpu_monitor.stop_monitoring()
-            gpu_summary = gpu_monitor.get_summary()
+        try:
             log_json({
-                "event": "gpu_summary",
-                **gpu_summary
+                "event": "train_complete",
+                "best_model": best_model_path
             })
-        
-        training_logger.info('benchmark_start', '开始性能基准测试...')
-        performance_benchmark = PerformanceBenchmark(
-            model=model,
-            device=args.device,
-            imgsz=args.imgsz
-        )
-        
-        latency_results = performance_benchmark.measure_inference_latency(num_runs=30, warmup=3)
-        throughput_results = performance_benchmark.measure_throughput(batch_sizes=[1, 2, 4], num_runs=20)
-        
-        perf_summary = performance_benchmark.get_summary()
-        log_json({
-            "event": "performance_benchmark",
-            **perf_summary
-        })
-        
-        realtime_status = '满足实时要求' if perf_summary['meets_realtime_requirement'] else '未达实时要求'
-        training_logger.info('benchmark_result', f"实时FPS: {perf_summary['realtime_fps']} - {realtime_status}")
-        
-        log_json({
-            "event": "train_complete",
-            "best_model": best_model_path
-        })
-        
-        log_training_summary(model, args, training_logger, gpu_monitor, performance_benchmark)
-        
-        training_logger.info('validation_start', '正在执行模型验证...')
-        validation_result = validate_model(model, args, best_model_path)
-        
-        training_logger.info('keypoint_metrics', '正在计算关键点细分误差...')
-        keypoint_metrics = get_per_keypoint_metrics(model, abs_data_path, args.device)
-        log_json(keypoint_metrics)
-        
-        if hasattr(args, 'export_formats') and args.export_formats:
-            training_logger.info('export_start', '正在导出模型...')
-            export_results = export_model(model, args, best_model_path)
-        
+
+            if gpu_monitor is not None:
+                gpu_monitor.stop_monitoring()
+                gpu_summary = gpu_monitor.get_summary()
+                log_json({
+                    "event": "gpu_summary",
+                    **gpu_summary
+                })
+            
+            training_logger.info('validation_start', '正在执行模型验证...')
+            validation_result = validate_model(model, args, best_model_path)
+            
+            training_logger.info('keypoint_metrics', '正在计算关键点细分误差...')
+            keypoint_metrics = get_per_keypoint_metrics(model, abs_data_path, args.device)
+            log_json(keypoint_metrics)
+
+            training_logger.info('benchmark_start', '开始性能基准测试...')
+            performance_benchmark = PerformanceBenchmark(
+                model=model,
+                device=args.device,
+                imgsz=args.imgsz
+            )
+            
+            latency_results = performance_benchmark.measure_inference_latency(num_runs=30, warmup=3)
+            throughput_results = performance_benchmark.measure_throughput(batch_sizes=[1, 2, 4], num_runs=20)
+            
+            perf_summary = performance_benchmark.get_summary()
+            log_json({
+                "event": "performance_benchmark",
+                **perf_summary
+            })
+            
+            realtime_status = '满足实时要求' if perf_summary['meets_realtime_requirement'] else '未达实时要求'
+            training_logger.info('benchmark_result', f"实时FPS: {perf_summary['realtime_fps']} - {realtime_status}")
+            
+            log_training_summary(model, args, training_logger, gpu_monitor, performance_benchmark)
+            
+            if hasattr(args, 'export_formats') and args.export_formats:
+                training_logger.info('export_start', '正在导出模型...')
+                export_results = export_model(model, args, best_model_path)
+        except Exception as post_e:
+            post_error_msg = str(post_e)
+            lower_post_error = post_error_msg.lower()
+
+            if (
+                'winerror 1455' in lower_post_error
+                or '页面文件太小' in post_error_msg
+                or 'shm.dll' in lower_post_error
+            ):
+                post_suggestions = [
+                    '训练主体已完成，模型权重已保存，可先用于推理/导出',
+                    '增大 Windows 虚拟内存（页面文件）后再执行后处理流程',
+                    '减少后处理阶段并发负载（如 workers=0），降低内存峰值'
+                ]
+            else:
+                post_suggestions = [
+                    '训练主体已完成，模型权重已保存，可先用于推理/导出',
+                    '单独重试验证/导出流程定位后处理异常',
+                    '检查后处理依赖环境和系统资源占用'
+                ]
+
+            training_logger.warning(
+                'post_train_warning',
+                '训练主体已完成，但后处理阶段出现异常',
+                stage='teardown',
+                kind='diagnostic',
+                code='POST_TRAIN_WARNING',
+                raw_error=post_error_msg,
+                suggestions=post_suggestions,
+                best_model=best_model_path
+            )
+
     except Exception as e:
         error_msg = str(e)
         
@@ -2066,6 +2209,8 @@ if __name__ == "__main__":
     parser.add_argument('--crop_fraction', type=float, default=1.0, help='Crop fraction')
     
     parser.add_argument('--skip_validation', action='store_true', help='Skip pre-flight validation check')
+    parser.add_argument('--visual_interval', type=int, default=0, help='Interval epochs for in-training visualization (0 disables)')
+    parser.add_argument('--visual_samples', type=int, default=3, help='Number of validation samples for visualization')
     
     parser.add_argument('--export_formats', type=str, default='', help='Auto-export formats after training (e.g., "onnx,tflite,torchscript")')
 

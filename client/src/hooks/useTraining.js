@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useProject } from '../context/ProjectContext';
+import { normalizeTrainingMetric, hasCoreMetricValue } from '../utils/trainingMetrics';
 
 const DEFAULT_TRAINING_CONFIG = {
     model: 'yolov8n-pose.pt',
@@ -57,6 +58,22 @@ const DEFAULT_TRAINING_CONFIG = {
 
 const EVENT_RING_LIMIT = 2000;
 const POLL_INTERVAL_MS = 2000;
+const SSE_RECONNECT_BASE_MS = 1200;
+const SSE_RECONNECT_MAX_MS = 15000;
+const SSE_STALE_TIMEOUT_MS = 45000;
+const METRIC_LIKE_EVENT_KEYS = new Set([
+    'epoch_end',
+    'validation_complete',
+    'performance_benchmark',
+    'per_keypoint_metrics',
+    'gpu_summary',
+    'visual_validation',
+    'gpu_warning',
+    'validation_row',
+    'validation_metrics'
+]);
+
+const normalizeEventKey = (value) => String(value || '').trim().toLowerCase();
 
 const parseContentDispositionFilename = (contentDisposition, fallbackName) => {
     if (!contentDisposition) return fallbackName;
@@ -69,15 +86,54 @@ const parseContentDispositionFilename = (contentDisposition, fallbackName) => {
     }
 };
 
-const normalizeMetricFromEvent = (event) => {
-    const details = event?.details && typeof event.details === 'object' ? event.details : {};
+const mapLegacyLogTypeToLevel = (type) => {
+    const t = String(type || '').toLowerCase();
+    if (t === 'error') return 'error';
+    if (t === 'stderr') return 'warn';
+    if (t === 'suggestion') return 'warn';
+    if (t === 'system') return 'info';
+    if (t === 'metric') return 'info';
+    return 'info';
+};
+
+const mapLegacyLogTypeToKind = (type) => {
+    const t = String(type || '').toLowerCase();
+    if (t === 'metric') return 'metric';
+    if (t === 'error' || t === 'stderr' || t === 'suggestion') return 'diagnostic';
+    if (t === 'system') return 'status';
+    return 'raw';
+};
+
+const normalizeLegacyLogToEvent = (log, idx) => {
+    const ts = Number(log?.time || Date.now());
+    const iso = Number.isFinite(ts) ? new Date(ts).toISOString() : new Date().toISOString();
+    const type = String(log?.type || 'log').toLowerCase();
+
     return {
-        ...details,
-        runId: event.runId,
-        seq: event.seq,
-        time: details.time || Date.parse(event.ts) || Date.now(),
-        event: details.event || event.code
+        schemaVersion: 1,
+        runId: 'legacy',
+        seq: idx + 1,
+        ts: iso,
+        source: type === 'stderr' ? 'py_stderr' : 'server',
+        level: mapLegacyLogTypeToLevel(type),
+        stage: 'train',
+        kind: mapLegacyLogTypeToKind(type),
+        code: `LEGACY_${String(log?.type || 'log').toUpperCase()}`,
+        message: String(log?.msg || ''),
+        details: log || {},
+        raw: String(log?.msg || '')
     };
+};
+
+const isMetricLikeEvent = (event) => {
+    if (!event || typeof event !== 'object') return false;
+
+    if (String(event.kind || '').toLowerCase() === 'metric') return true;
+
+    const detailEvent = normalizeEventKey(event?.details?.event);
+    const code = normalizeEventKey(event?.code);
+
+    return METRIC_LIKE_EVENT_KEYS.has(detailEvent) || METRIC_LIKE_EVENT_KEYS.has(code);
 };
 
 export const useTraining = (projectId) => {
@@ -109,12 +165,18 @@ export const useTraining = (projectId) => {
     const [connectionState, setConnectionState] = useState('disconnected');
     const [streamMode, setStreamMode] = useState('idle');
     const [runId, setRunId] = useState(null);
+    const [v2Supported, setV2Supported] = useState(true);
 
     const pollIntervalRef = useRef(null);
     const eventSourceRef = useRef(null);
     const fallbackPollRef = useRef(null);
+    const reconnectTimerRef = useRef(null);
+    const streamWatchdogRef = useRef(null);
+    const reconnectAttemptsRef = useRef(0);
     const cursorRef = useRef(0);
     const runIdRef = useRef(null);
+    const v2SupportedRef = useRef(true);
+    const connectV2StreamRef = useRef(null);
 
     const updateRunId = useCallback((nextRunId) => {
         if (!nextRunId) return;
@@ -133,21 +195,28 @@ export const useTraining = (projectId) => {
 
     const mergeMetrics = useCallback((incomingMetrics) => {
         if (!incomingMetrics || incomingMetrics.length === 0) return;
+
+        const normalizedIncoming = incomingMetrics
+            .map((metric) => normalizeTrainingMetric(metric))
+            .filter((metric) => hasCoreMetricValue(metric));
+
+        if (normalizedIncoming.length === 0) return;
+
         setMetrics((prev) => {
             const byKey = new Map();
             prev.forEach((m, idx) => {
                 const key = `${m.runId || 'legacy'}:${m.seq || m.epoch || idx}`;
                 byKey.set(key, m);
             });
-            incomingMetrics.forEach((m, idx) => {
-                const key = `${m.runId || 'legacy'}:${m.seq || m.epoch || `new-${idx}`}`;
+            normalizedIncoming.forEach((m, idx) => {
+                const key = `${m.runId || 'legacy'}:${m.seq || `${m.event || 'metric'}:${m.epoch || 'na'}:${m.time || idx}`}`;
                 byKey.set(key, m);
             });
             const merged = Array.from(byKey.values()).sort((a, b) => {
-                const ta = Number(a.time || 0);
-                const tb = Number(b.time || 0);
-                if (ta !== tb) return ta - tb;
-                return Number(a.seq || 0) - Number(b.seq || 0);
+                const sa = Number(a.seq || 0);
+                const sb = Number(b.seq || 0);
+                if (sa !== sb) return sa - sb;
+                return Number(a.time || 0) - Number(b.time || 0);
             });
             return merged.slice(-EVENT_RING_LIMIT);
         });
@@ -184,8 +253,20 @@ export const useTraining = (projectId) => {
         }
 
         const metricEvents = incomingEvents
-            .filter((event) => event.kind === 'metric')
-            .map(normalizeMetricFromEvent);
+            .filter((event) => isMetricLikeEvent(event))
+            .map((event) => normalizeTrainingMetric({
+                ...(event.details || {}),
+                raw: event.raw
+            }, {
+                runId: event.runId,
+                seq: event.seq,
+                ts: event.ts,
+                event: event?.details?.event || event.code,
+                code: event.code,
+                stage: event.stage,
+                raw: event.raw
+            }))
+            .filter((metric) => hasCoreMetricValue(metric));
         mergeMetrics(metricEvents);
     }, [mergeMetrics]);
 
@@ -209,6 +290,32 @@ export const useTraining = (projectId) => {
             eventSourceRef.current = null;
         }
     }, []);
+
+    const clearReconnectTimer = useCallback(() => {
+        if (reconnectTimerRef.current) {
+            clearTimeout(reconnectTimerRef.current);
+            reconnectTimerRef.current = null;
+        }
+    }, []);
+
+    const clearStreamWatchdog = useCallback(() => {
+        if (streamWatchdogRef.current) {
+            clearTimeout(streamWatchdogRef.current);
+            streamWatchdogRef.current = null;
+        }
+    }, []);
+
+    const handleV2Unsupported = useCallback(() => {
+        if (!v2SupportedRef.current) return;
+        v2SupportedRef.current = false;
+        setV2Supported(false);
+        setStreamMode('legacy');
+        setConnectionState('legacy');
+        clearReconnectTimer();
+        clearStreamWatchdog();
+        stopFallbackPolling();
+        closeEventSource();
+    }, [stopFallbackPolling, closeEventSource, clearReconnectTimer, clearStreamWatchdog]);
 
     const fetchEnvInfo = useCallback(async () => {
         try {
@@ -243,21 +350,29 @@ export const useTraining = (projectId) => {
     }, [projectId]);
 
     const fetchV2Runs = useCallback(async () => {
-        if (!projectId) return;
+        if (!projectId || !v2SupportedRef.current) return;
         try {
             const res = await fetch(`http://localhost:5000/api/projects/${projectId}/train/v2/runs`);
+            if (res.status === 404) {
+                handleV2Unsupported();
+                return;
+            }
             if (!res.ok) return;
             const data = await res.json();
             setRunsV2(data.runs || []);
         } catch (err) {
             console.error('Failed to fetch v2 runs', err);
         }
-    }, [projectId]);
+    }, [projectId, handleV2Unsupported]);
 
     const fetchV2Status = useCallback(async () => {
-        if (!projectId) return null;
+        if (!projectId || !v2SupportedRef.current) return null;
         try {
             const res = await fetch(`http://localhost:5000/api/projects/${projectId}/train/v2/status`);
+            if (res.status === 404) {
+                handleV2Unsupported();
+                return null;
+            }
             if (!res.ok) return null;
             const data = await res.json();
 
@@ -280,10 +395,10 @@ export const useTraining = (projectId) => {
             console.error('Failed to fetch v2 status', err);
             return null;
         }
-    }, [projectId, mergeEvents, mergeMetrics, updateRunId]);
+    }, [projectId, mergeEvents, mergeMetrics, updateRunId, handleV2Unsupported]);
 
     const fetchV2Events = useCallback(async (inputCursor = null, options = {}) => {
-        if (!projectId) return null;
+        if (!projectId || !v2SupportedRef.current) return null;
         const nextCursor = inputCursor == null ? cursorRef.current : inputCursor;
         const selectedRunId = options.runId || runIdRef.current;
         try {
@@ -295,6 +410,10 @@ export const useTraining = (projectId) => {
                 params.set('runId', selectedRunId);
             }
             const res = await fetch(`http://localhost:5000/api/projects/${projectId}/train/v2/events?${params.toString()}`);
+            if (res.status === 404) {
+                handleV2Unsupported();
+                return null;
+            }
             if (!res.ok) return null;
             const data = await res.json();
             if (Array.isArray(data.events) && data.events.length > 0) {
@@ -310,10 +429,10 @@ export const useTraining = (projectId) => {
             console.error('Failed to fetch v2 events', err);
             return null;
         }
-    }, [projectId, mergeEvents, updateRunId]);
+    }, [projectId, mergeEvents, updateRunId, handleV2Unsupported]);
 
     const startFallbackPolling = useCallback(() => {
-        if (!projectId || fallbackPollRef.current) return;
+        if (!projectId || fallbackPollRef.current || !v2SupportedRef.current) return;
         setStreamMode('polling');
         setConnectionState('polling');
 
@@ -324,17 +443,56 @@ export const useTraining = (projectId) => {
         }, POLL_INTERVAL_MS);
     }, [projectId, fetchV2Status, fetchV2Events, fetchV2Runs]);
 
-    const connectV2Stream = useCallback(() => {
+    const scheduleSseReconnect = useCallback((reason = 'error') => {
+        if (!projectId || !v2SupportedRef.current) return;
+        if (reconnectTimerRef.current) return;
+
+        const nextAttempt = reconnectAttemptsRef.current + 1;
+        reconnectAttemptsRef.current = nextAttempt;
+        const backoff = Math.min(
+            SSE_RECONNECT_MAX_MS,
+            SSE_RECONNECT_BASE_MS * (2 ** Math.min(nextAttempt - 1, 4))
+        );
+
+        reconnectTimerRef.current = setTimeout(() => {
+            reconnectTimerRef.current = null;
+            if (!v2SupportedRef.current || !projectId) return;
+            const connect = connectV2StreamRef.current;
+            if (typeof connect === 'function') {
+                connect(reason);
+            }
+        }, backoff);
+    }, [projectId]);
+
+    const markStreamAlive = useCallback(() => {
+        clearStreamWatchdog();
+        streamWatchdogRef.current = setTimeout(() => {
+            if (!v2SupportedRef.current) return;
+            setConnectionState('reconnecting');
+            closeEventSource();
+            startFallbackPolling();
+            scheduleSseReconnect('stale_timeout');
+        }, SSE_STALE_TIMEOUT_MS);
+    }, [clearStreamWatchdog, closeEventSource, scheduleSseReconnect, startFallbackPolling]);
+
+    const connectV2Stream = useCallback((trigger = 'manual') => {
+        if (!v2SupportedRef.current) {
+            setStreamMode('legacy');
+            setConnectionState('legacy');
+            return;
+        }
         if (!projectId || typeof window === 'undefined' || typeof window.EventSource === 'undefined') {
             startFallbackPolling();
             return;
         }
 
+        clearReconnectTimer();
+        clearStreamWatchdog();
         stopFallbackPolling();
         closeEventSource();
 
         setStreamMode('sse');
-        setConnectionState('connecting');
+        setConnectionState(trigger === 'manual' ? 'connecting' : 'reconnecting');
 
         const streamUrl = `http://localhost:5000/api/projects/${projectId}/train/v2/stream?lastSeq=${cursorRef.current || 0}`;
         const source = new window.EventSource(streamUrl);
@@ -348,9 +506,19 @@ export const useTraining = (projectId) => {
             }
         };
 
+        const handleAlive = () => {
+            reconnectAttemptsRef.current = 0;
+            setConnectionState('connected');
+            markStreamAlive();
+        };
+
+        source.onopen = () => {
+            handleAlive();
+        };
+
         source.addEventListener('connected', (evt) => {
             const data = safeParse(evt.data);
-            setConnectionState('connected');
+            handleAlive();
             if (data?.status) setStatus(data.status);
             if (data?.diagnosis) setDiagnosisV2(data.diagnosis);
             if (data?.runId) updateRunId(data.runId);
@@ -362,6 +530,7 @@ export const useTraining = (projectId) => {
 
         source.addEventListener('replay', (evt) => {
             const data = safeParse(evt.data);
+            handleAlive();
             if (data?.events) mergeEvents(data.events);
             if (Number.isFinite(data?.cursor) && data.cursor > cursorRef.current) {
                 cursorRef.current = data.cursor;
@@ -372,12 +541,14 @@ export const useTraining = (projectId) => {
         source.addEventListener('event', (evt) => {
             const event = safeParse(evt.data);
             if (!event) return;
+            handleAlive();
             mergeEvents([event]);
         });
 
         source.addEventListener('metric', (evt) => {
             const payload = safeParse(evt.data);
             if (!payload) return;
+            handleAlive();
 
             if (payload.kind === 'metric') {
                 mergeEvents([payload]);
@@ -394,19 +565,23 @@ export const useTraining = (projectId) => {
         source.addEventListener('diagnosis', (evt) => {
             const diagnosis = safeParse(evt.data);
             if (!diagnosis) return;
+            handleAlive();
             setDiagnosisV2(diagnosis);
         });
 
         source.addEventListener('replay_gap', async (evt) => {
             const payload = safeParse(evt.data);
+            handleAlive();
             setConnectionState('polling');
             startFallbackPolling();
             await fetchV2Events(payload?.cursor ?? cursorRef.current, { runId: payload?.runId || runIdRef.current });
+            scheduleSseReconnect('replay_gap');
         });
 
         source.addEventListener('status', (evt) => {
             const payload = safeParse(evt.data);
             if (!payload) return;
+            handleAlive();
             if (payload.status) setStatus(payload.status);
             if (Number.isFinite(payload.seq) && payload.seq > cursorRef.current) {
                 cursorRef.current = payload.seq;
@@ -414,12 +589,36 @@ export const useTraining = (projectId) => {
             }
         });
 
+        source.addEventListener('heartbeat', () => {
+            handleAlive();
+        });
+
         source.onerror = () => {
+            if (!v2SupportedRef.current) return;
             setConnectionState('reconnecting');
+            clearStreamWatchdog();
             closeEventSource();
             startFallbackPolling();
+            scheduleSseReconnect('sse_error');
         };
-    }, [projectId, mergeEvents, mergeMetrics, closeEventSource, startFallbackPolling, stopFallbackPolling, fetchV2Events, updateRunId]);
+    }, [
+        projectId,
+        mergeEvents,
+        mergeMetrics,
+        closeEventSource,
+        startFallbackPolling,
+        stopFallbackPolling,
+        fetchV2Events,
+        updateRunId,
+        scheduleSseReconnect,
+        clearReconnectTimer,
+        markStreamAlive,
+        clearStreamWatchdog
+    ]);
+
+    useEffect(() => {
+        connectV2StreamRef.current = connectV2Stream;
+    }, [connectV2Stream]);
 
     const checkStatus = useCallback(async () => {
         if (!projectId) return;
@@ -429,6 +628,29 @@ export const useTraining = (projectId) => {
 
             setStatus(data.status);
             setLogs(data.logs || []);
+            if (!v2SupportedRef.current) {
+                const legacyEvents = (data.logs || []).map((log, idx) => normalizeLegacyLogToEvent(log, idx));
+                setEventsV2(legacyEvents.slice(-EVENT_RING_LIMIT));
+
+                if (data.status === 'failed') {
+                    const latestErr = [...(data.logs || [])].reverse().find((item) =>
+                        item.type === 'error' || item.type === 'stderr'
+                    );
+                    if (latestErr) {
+                        setDiagnosisV2({
+                            runId: 'legacy',
+                            status: 'failed',
+                            stage: 'train',
+                            code: `LEGACY_${String(latestErr.type || 'ERROR').toUpperCase()}`,
+                            rootCause: String(latestErr.msg || '训练失败'),
+                            evidence: [String(latestErr.msg || '')],
+                            suggestions: ['请升级到最新后端以启用结构化诊断卡与完整证据。'],
+                            firstSeenAt: new Date(Number(latestErr.time || Date.now())).toISOString(),
+                            lastSeenAt: new Date(Number(latestErr.time || Date.now())).toISOString()
+                        });
+                    }
+                }
+            }
             if (metrics.length === 0 && Array.isArray(data.metrics)) {
                 setMetrics(data.metrics);
             }
@@ -455,6 +677,8 @@ export const useTraining = (projectId) => {
         setRunsV2([]);
         setRunId(null);
         runIdRef.current = null;
+        setV2Supported(true);
+        v2SupportedRef.current = true;
         setConnectionState('connecting');
         setStreamMode('idle');
 
@@ -467,6 +691,8 @@ export const useTraining = (projectId) => {
         connectV2Stream();
 
         return () => {
+            clearReconnectTimer();
+            clearStreamWatchdog();
             stopPolling();
             stopFallbackPolling();
             closeEventSource();
@@ -480,6 +706,8 @@ export const useTraining = (projectId) => {
         fetchEnvInfo,
         fetchDatasetInfo,
         connectV2Stream,
+        clearReconnectTimer,
+        clearStreamWatchdog,
         stopPolling,
         stopFallbackPolling,
         closeEventSource
@@ -694,6 +922,7 @@ export const useTraining = (projectId) => {
         cursor,
         connectionState,
         streamMode,
+        v2Supported,
         runId,
         handleStart,
         handleStop,

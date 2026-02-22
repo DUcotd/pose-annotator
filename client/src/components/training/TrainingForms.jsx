@@ -1,14 +1,14 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useMemo, useRef, useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Cpu, Settings, FolderOpen, FileText, Server, Zap, TrendingUp, Target } from 'lucide-react';
+import { Cpu, Settings, FileText, Server, TrendingUp, Target } from 'lucide-react';
 import { SectionCard, Toggle } from './CommonComponents';
 
 const modelOptions = [
-    { id: 'yolov8n-pose.pt', label: 'YOLOv8n-pose (Nano) - 轻量快速', size: '6.5MB', speed: '最快' },
-    { id: 'yolov8s-pose.pt', label: 'YOLOv8s-pose (Small) - 均衡', size: '23MB', speed: '快速' },
-    { id: 'yolov8m-pose.pt', label: 'YOLOv8m-pose (Medium) - 精度', size: '52MB', speed: '中等' },
-    { id: 'yolov8l-pose.pt', label: 'YOLOv8l-pose (Large) - 高精度', size: '88MB', speed: '较慢' },
-    { id: 'yolov8x-pose.pt', label: 'YOLOv8x-pose (XLarge) - 顶级', size: '131MB', speed: '最慢' }
+    { value: 'yolov8n-pose.pt', label: 'YOLOv8n-pose (Nano)', meta: '6.5MB · 最快' },
+    { value: 'yolov8s-pose.pt', label: 'YOLOv8s-pose (Small)', meta: '23MB · 快速均衡' },
+    { value: 'yolov8m-pose.pt', label: 'YOLOv8m-pose (Medium)', meta: '52MB · 精度优先' },
+    { value: 'yolov8l-pose.pt', label: 'YOLOv8l-pose (Large)', meta: '88MB · 高精度' },
+    { value: 'yolov8x-pose.pt', label: 'YOLOv8x-pose (XL)', meta: '131MB · 最高精度' }
 ];
 
 const optimizerOptions = [
@@ -24,102 +24,169 @@ const deviceOptions = [
     { value: 'cpu', label: 'CPU (无显卡模式)' }
 ];
 
-const CustomSelect = ({ value, options, onChange, disabled, label }) => {
-    const [dropdownOpen, setDropdownOpen] = useState(false);
-    const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0, width: 0 });
-    const dropdownRef = useRef(null);
-    const dropdownTriggerRef = useRef(null);
+const STACK_STYLE = { display: 'flex', flexDirection: 'column', gap: '0.9rem' };
+const FIELD_STYLE = { display: 'flex', flexDirection: 'column', gap: '6px' };
+const FIELD_LABEL_STYLE = { fontSize: '12px', fontWeight: 700, color: '#b6c2d9', letterSpacing: '0.2px' };
+const CONTROL_STYLE = { height: '42px', padding: '0 12px' };
+
+const parseIntOr = (value, fallback) => {
+    const parsed = Number.parseInt(value, 10);
+    return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const parseFloatOr = (value, fallback) => {
+    const parsed = Number.parseFloat(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const TextInput = ({ className = '', ...props }) => (
+    <input
+        {...props}
+        className={`tw-control remote-input ${className}`.trim()}
+        style={{ ...CONTROL_STYLE, ...(props.style || {}) }}
+    />
+);
+
+const SliderField = ({ label, value, min, max, step, onChange, disabled }) => (
+    <div style={FIELD_STYLE}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+            <span style={{ fontSize: '12px', color: '#b6c2d9', fontWeight: 700 }}>{label}</span>
+            <span style={{ fontSize: '12px', color: '#5eead4', fontWeight: 700 }}>{value}</span>
+        </div>
+        <input
+            type="range"
+            min={min}
+            max={max}
+            step={step}
+            value={value}
+            disabled={disabled}
+            onChange={(e) => onChange(parseFloatOr(e.target.value, value))}
+            style={{ width: '100%', accentColor: '#14b8a6', cursor: disabled ? 'not-allowed' : 'pointer' }}
+        />
+    </div>
+);
+
+const PortalSelect = ({
+    value,
+    options,
+    onChange,
+    disabled = false,
+    placeholder = '请选择',
+    renderValue = null,
+    renderOption = null,
+    portalId
+}) => {
+    const [open, setOpen] = useState(false);
+    const [position, setPosition] = useState({ top: 0, left: 0, width: 0 });
+    const triggerRef = useRef(null);
+
+    const selectedOption = useMemo(
+        () => options.find((option) => option.value === value),
+        [options, value]
+    );
 
     useEffect(() => {
-        const handleClickOutside = (event) => {
-            if (dropdownOpen && dropdownTriggerRef.current && !dropdownTriggerRef.current.contains(event.target)) {
-                const dropdownEl = document.getElementById('custom-select-portal');
-                if (dropdownEl && !dropdownEl.contains(event.target)) {
-                    setDropdownOpen(false);
-                }
-            }
-        };
-        document.addEventListener('mousedown', handleClickOutside);
-        return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, [dropdownOpen]);
+        const onDocumentClick = (event) => {
+            if (!open) return;
+            const dropdownEl = document.getElementById(portalId);
+            const triggerEl = triggerRef.current;
+            const target = event.target;
 
-    const handleClick = () => {
-        if (!disabled) {
-            if (!dropdownOpen && dropdownTriggerRef.current) {
-                const rect = dropdownTriggerRef.current.getBoundingClientRect();
-                setDropdownPosition({
-                    top: rect.bottom + 8,
-                    left: rect.left,
-                    width: rect.width
-                });
-            }
-            setDropdownOpen(!dropdownOpen);
-        }
+            if (triggerEl && triggerEl.contains(target)) return;
+            if (dropdownEl && dropdownEl.contains(target)) return;
+            setOpen(false);
+        };
+
+        document.addEventListener('mousedown', onDocumentClick);
+        return () => document.removeEventListener('mousedown', onDocumentClick);
+    }, [open, portalId]);
+
+    const toggleDropdown = () => {
+        if (disabled) return;
+        const rect = triggerRef.current?.getBoundingClientRect();
+        if (!rect) return;
+
+        setPosition({
+            top: rect.bottom + 8,
+            left: rect.left,
+            width: rect.width
+        });
+        setOpen((prev) => !prev);
     };
 
-    const selectedOption = options.find(opt => opt.value === value);
-
     return (
-        <div style={{ position: 'relative' }} ref={dropdownRef}>
-            <div
-                ref={dropdownTriggerRef}
-                onClick={handleClick}
+        <div style={{ position: 'relative' }}>
+            <button
+                ref={triggerRef}
+                type="button"
+                onClick={toggleDropdown}
+                disabled={disabled}
+                className="tw-control"
                 style={{
-                    background: 'rgba(0,0,0,0.25)',
-                    border: '1px solid rgba(255,255,255,0.1)',
-                    borderRadius: '12px',
-                    padding: '12px 16px',
-                    cursor: disabled ? 'not-allowed' : 'pointer',
-                    opacity: disabled ? 0.6 : 1,
+                    ...CONTROL_STYLE,
+                    width: '100%',
                     display: 'flex',
+                    justifyContent: 'space-between',
                     alignItems: 'center',
-                    justifyContent: 'space-between'
+                    textAlign: 'left',
+                    cursor: disabled ? 'not-allowed' : 'pointer'
                 }}
             >
-                <span style={{ fontSize: '14px', color: 'white' }}>{selectedOption?.label || '请选择'}</span>
-                <div style={{ transform: dropdownOpen ? 'rotate(180deg)' : 'rotate(0)', transition: 'transform 0.2s' }}>
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M6 9l6 6 6-6" />
-                    </svg>
-                </div>
-            </div>
+                <span style={{ display: 'block', flex: 1, minWidth: 0, overflow: 'hidden' }}>
+                    {renderValue ? renderValue(selectedOption) : (
+                        <span style={{ fontSize: '13px', color: selectedOption ? '#e7edf8' : '#7f90af' }}>
+                            {selectedOption?.label || placeholder}
+                        </span>
+                    )}
+                </span>
+                <span style={{ marginLeft: '10px', color: '#9aaccc', fontSize: '11px' }}>
+                    {open ? '▲' : '▼'}
+                </span>
+            </button>
 
-            {dropdownOpen && createPortal(
+            {open && createPortal(
                 <div
-                    id="custom-select-portal"
+                    id={portalId}
+                    className="custom-scrollbar"
                     style={{
                         position: 'fixed',
-                        top: dropdownPosition.top,
-                        left: dropdownPosition.left,
-                        width: dropdownPosition.width,
-                        background: 'rgba(30,35,45,0.98)',
-                        border: '1px solid rgba(255,255,255,0.1)',
+                        top: position.top,
+                        left: position.left,
+                        width: position.width,
+                        maxHeight: '300px',
+                        overflowY: 'auto',
+                        background: 'linear-gradient(165deg, rgba(8,16,30,0.96), rgba(13,25,46,0.95))',
+                        border: '1px solid rgba(148,163,184,0.32)',
                         borderRadius: '12px',
-                        overflow: 'hidden',
-                        zIndex: 9999,
-                        boxShadow: '0 10px 40px rgba(0,0,0,0.5)'
+                        boxShadow: '0 18px 36px rgba(2,6,23,0.52)',
+                        zIndex: 9999
                     }}
                 >
-                    {options.map(option => (
-                        <div
-                            key={option.value}
-                            onClick={() => {
-                                onChange(option.value);
-                                setDropdownOpen(false);
-                            }}
-                            style={{
-                                padding: '12px 16px',
-                                cursor: 'pointer',
-                                background: value === option.value ? 'rgba(99,102,241,0.15)' : 'transparent',
-                                borderBottom: '1px solid rgba(255,255,255,0.04)',
-                                transition: 'background 0.2s'
-                            }}
-                        >
-                            <span style={{ fontSize: '14px', color: value === option.value ? '#818cf8' : 'white' }}>
-                                {option.label}
-                            </span>
-                        </div>
-                    ))}
+                    {options.map((option) => {
+                        const isSelected = option.value === value;
+                        return (
+                            <button
+                                key={option.value}
+                                type="button"
+                                onClick={() => {
+                                    onChange(option.value);
+                                    setOpen(false);
+                                }}
+                                style={{
+                                    width: '100%',
+                                    border: 'none',
+                                    borderBottom: '1px solid rgba(148,163,184,0.16)',
+                                    background: isSelected ? 'rgba(20,184,166,0.16)' : 'transparent',
+                                    color: isSelected ? '#99f6e4' : '#d7e0f0',
+                                    padding: '10px 12px',
+                                    textAlign: 'left',
+                                    cursor: 'pointer'
+                                }}
+                            >
+                                {renderOption ? renderOption(option, isSelected) : option.label}
+                            </button>
+                        );
+                    })}
                 </div>,
                 document.body
             )}
@@ -128,293 +195,154 @@ const CustomSelect = ({ value, options, onChange, disabled, label }) => {
 };
 
 export const TrainingForm = ({ config, updateConfig, status, onBrowseData, envInfo }) => {
-    const [dropdownOpen, setDropdownOpen] = useState(false);
-    const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0, width: 0 });
-    const dropdownRef = useRef(null);
-    const dropdownTriggerRef = useRef(null);
-
     const isRunning = status === 'running' || status === 'starting';
 
-    useEffect(() => {
-        const handleClickOutside = (event) => {
-            if (dropdownOpen && dropdownTriggerRef.current && !dropdownTriggerRef.current.contains(event.target)) {
-                const dropdownEl = document.getElementById('model-dropdown-portal');
-                if (dropdownEl && !dropdownEl.contains(event.target)) {
-                    setDropdownOpen(false);
-                }
-            }
-        };
-        document.addEventListener('mousedown', handleClickOutside);
-        return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, [dropdownOpen]);
-
-    const handleModelClick = () => {
-        if (!isRunning) {
-            if (!dropdownOpen && dropdownTriggerRef.current) {
-                const rect = dropdownTriggerRef.current.getBoundingClientRect();
-                setDropdownPosition({
-                    top: rect.bottom + 8,
-                    left: rect.left,
-                    width: rect.width
-                });
-            }
-            setDropdownOpen(!dropdownOpen);
-        }
-    };
-
     return (
-        <>
-            <SectionCard icon={Cpu} title="基础配置" color="99,102,241" gradient="linear-gradient(135deg, rgba(99,102,241,0.15), rgba(139,92,246,0.05))">
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-                    <div style={{ position: 'relative' }} ref={dropdownRef}>
-                        <label style={{ fontSize: '13px', color: 'var(--text-tertiary)', marginBottom: '8px', display: 'block', fontWeight: 600 }}>预训练模型</label>
-                        <div
-                            ref={dropdownTriggerRef}
-                            onClick={handleModelClick}
-                            style={{
-                                background: 'rgba(0,0,0,0.25)',
-                                border: '1px solid rgba(255,255,255,0.1)',
-                                borderRadius: '14px',
-                                padding: '1rem 1.25rem',
-                                cursor: isRunning ? 'not-allowed' : 'pointer',
-                                opacity: isRunning ? 0.6 : 1,
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'space-between'
-                            }}
-                        >
-                            <div>
-                                <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>
-                                    {modelOptions.find(m => m.id === config.model)?.label}
-                                </div>
-                                <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '4px' }}>
-                                    {modelOptions.find(m => m.id === config.model)?.size} • {modelOptions.find(m => m.id === config.model)?.speed}
-                                </div>
+        <SectionCard
+            icon={Cpu}
+            title="基础配置"
+            color="45,212,191"
+            gradient="linear-gradient(145deg, rgba(45,212,191,0.18), rgba(6,182,212,0.08))"
+        >
+            <div style={STACK_STYLE}>
+                <div style={FIELD_STYLE}>
+                    <label style={FIELD_LABEL_STYLE}>预训练模型</label>
+                    <PortalSelect
+                        value={config.model}
+                        options={modelOptions}
+                        disabled={isRunning}
+                        onChange={(value) => updateConfig({ model: value })}
+                        portalId="model-select-portal"
+                        renderValue={(selected) => (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                <span style={{ fontSize: '13px', color: '#e7edf8', fontWeight: 700 }}>
+                                    {selected?.label || '请选择模型'}
+                                </span>
+                                <span style={{ fontSize: '11px', color: '#8da0bf' }}>
+                                    {selected?.meta || ''}
+                                </span>
                             </div>
-                            <div style={{ transform: dropdownOpen ? 'rotate(180deg)' : 'rotate(0)', transition: 'transform 0.2s' }}>
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                    <path d="M6 9l6 6 6-6" />
-                                </svg>
-                            </div>
-                        </div>
-
-                        {dropdownOpen && createPortal(
-                            <div
-                                id="model-dropdown-portal"
-                                style={{
-                                    position: 'fixed',
-                                    top: dropdownPosition.top,
-                                    left: dropdownPosition.left,
-                                    width: dropdownPosition.width,
-                                    background: 'rgba(30,35,45,0.98)',
-                                    border: '1px solid rgba(255,255,255,0.1)',
-                                    borderRadius: '14px',
-                                    overflow: 'hidden',
-                                    zIndex: 9999,
-                                    boxShadow: '0 10px 40px rgba(0,0,0,0.5)',
-                                    maxHeight: '300px',
-                                    overflowY: 'auto'
-                                }}
-                                className="custom-scrollbar"
-                            >
-                                {modelOptions.map(option => (
-                                    <div
-                                        key={option.id}
-                                        onClick={() => {
-                                            updateConfig({ model: option.id });
-                                            setDropdownOpen(false);
-                                        }}
-                                        style={{
-                                            padding: '1rem 1.25rem',
-                                            cursor: 'pointer',
-                                            background: config.model === option.id ? 'rgba(99,102,241,0.15)' : 'transparent',
-                                            borderBottom: '1px solid rgba(255,255,255,0.04)',
-                                            transition: 'background 0.2s'
-                                        }}
-                                    >
-                                        <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>{option.label}</div>
-                                        <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '2px' }}>{option.size} • {option.speed}</div>
-                                    </div>
-                                ))}
-                            </div>,
-                            document.body
                         )}
-                    </div>
-
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                        <div>
-                            <label style={{ fontSize: '13px', color: 'var(--text-tertiary)', marginBottom: '8px', display: 'block', fontWeight: 600 }}>训练轮次 (Epochs)</label>
-                            <input
-                                type="number"
-                                value={config.epochs}
-                                onChange={(e) => updateConfig({ epochs: parseInt(e.target.value) })}
-                                disabled={isRunning}
-                                className="remote-input"
-                                style={{
-                                    width: '100%',
-                                    background: 'rgba(0,0,0,0.25)',
-                                    border: '1px solid rgba(255,255,255,0.1)',
-                                    borderRadius: '12px',
-                                    padding: '12px 16px',
-                                    color: 'white',
-                                    fontSize: '14px'
-                                }}
-                            />
-                        </div>
-                        <div>
-                            <label style={{ fontSize: '13px', color: 'var(--text-tertiary)', marginBottom: '8px', display: 'block', fontWeight: 600 }}>批次大小 (Batch)</label>
-                            <input
-                                type="number"
-                                value={config.batch}
-                                onChange={(e) => updateConfig({ batch: parseInt(e.target.value) })}
-                                disabled={isRunning}
-                                className="remote-input"
-                                style={{
-                                    width: '100%',
-                                    background: 'rgba(0,0,0,0.25)',
-                                    border: '1px solid rgba(255,255,255,0.1)',
-                                    borderRadius: '12px',
-                                    padding: '12px 16px',
-                                    color: 'white',
-                                    fontSize: '14px'
-                                }}
-                            />
-                        </div>
-                    </div>
-
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                        <div>
-                            <label style={{ fontSize: '13px', color: 'var(--text-tertiary)', marginBottom: '8px', display: 'block', fontWeight: 600 }}>图片尺寸 (Imgsz)</label>
-                            <input
-                                type="number"
-                                value={config.imgsz}
-                                onChange={(e) => updateConfig({ imgsz: parseInt(e.target.value) })}
-                                disabled={isRunning}
-                                className="remote-input"
-                                style={{
-                                    width: '100%',
-                                    background: 'rgba(0,0,0,0.25)',
-                                    border: '1px solid rgba(255,255,255,0.1)',
-                                    borderRadius: '12px',
-                                    padding: '12px 16px',
-                                    color: 'white',
-                                    fontSize: '14px'
-                                }}
-                            />
-                        </div>
-                        <div>
-                            <label style={{ fontSize: '13px', color: 'var(--text-tertiary)', marginBottom: '8px', display: 'block', fontWeight: 600 }}>实验名称</label>
-                            <input
-                                type="text"
-                                value={config.name}
-                                onChange={(e) => updateConfig({ name: e.target.value })}
-                                disabled={isRunning}
-                                className="remote-input"
-                                style={{
-                                    width: '100%',
-                                    background: 'rgba(0,0,0,0.25)',
-                                    border: '1px solid rgba(255,255,255,0.1)',
-                                    borderRadius: '12px',
-                                    padding: '12px 16px',
-                                    color: 'white',
-                                    fontSize: '14px'
-                                }}
-                            />
-                        </div>
-                    </div>
-
-                    <div>
-                        <label style={{ fontSize: '13px', color: 'var(--text-tertiary)', marginBottom: '8px', display: 'block', fontWeight: 600 }}>数据集配置 (data.yaml)</label>
-                        <div style={{ display: 'flex', gap: '8px' }}>
-                            <input
-                                type="text"
-                                value={config.data}
-                                readOnly
-                                placeholder="默认使用项目导出路径"
-                                style={{
-                                    flex: 1,
-                                    background: 'rgba(0,0,0,0.25)',
-                                    border: '1px solid rgba(255,255,255,0.1)',
-                                    borderRadius: '12px',
-                                    padding: '12px 16px',
-                                    color: 'white',
-                                    fontSize: '13px',
-                                    opacity: 0.8
-                                }}
-                            />
-                            <button
-                                onClick={onBrowseData}
-                                disabled={isRunning}
-                                style={{
-                                    background: 'rgba(255,255,255,0.1)',
-                                    border: '1px solid rgba(255,255,255,0.1)',
-                                    borderRadius: '12px',
-                                    width: '44px',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    cursor: isRunning ? 'not-allowed' : 'pointer'
-                                }}
-                            >
-                                <FileText size={18} />
-                            </button>
-                        </div>
-                    </div>
-
-                    {envInfo && (
-                        <div style={{
-                            marginTop: '0.5rem',
-                            padding: '12px 14px',
-                            background: 'rgba(255,255,255,0.03)',
-                            borderRadius: '12px',
-                            border: '1px solid rgba(255,255,255,0.06)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '12px'
-                        }}>
-                            <div style={{
-                                width: '32px',
-                                height: '32px',
-                                borderRadius: '8px',
-                                background: envInfo.available ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                color: envInfo.available ? '#4ade80' : '#f87171'
-                            }}>
-                                <Settings size={16} className={isRunning ? 'spin' : ''} />
+                        renderOption={(option, selected) => (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                <span style={{ fontSize: '13px', fontWeight: 700, color: selected ? '#99f6e4' : '#dbe4f2' }}>
+                                    {option.label}
+                                </span>
+                                <span style={{ fontSize: '11px', color: '#8da0bf' }}>{option.meta}</span>
                             </div>
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                                <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                    Python 环境
-                                    {envInfo.available && (
-                                        <span style={{
-                                            fontSize: '10px',
-                                            background: envInfo.cuda ? 'rgba(99,102,241,0.15)' : 'rgba(255,255,255,0.1)',
-                                            color: envInfo.cuda ? '#818cf8' : 'var(--text-tertiary)',
-                                            padding: '1px 6px',
-                                            borderRadius: '4px'
-                                        }}>
-                                            {envInfo.cuda ? 'GPU 加速' : 'CPU 模式'}
-                                        </span>
-                                    )}
-                                </div>
-                                <div style={{
-                                    fontSize: '11px',
-                                    color: 'var(--text-tertiary)',
-                                    marginTop: '2px',
-                                    whiteSpace: 'nowrap',
-                                    overflow: 'hidden',
-                                    textOverflow: 'ellipsis'
-                                }}>
-                                    {envInfo.available ? `${envInfo.version} • ${envInfo.message}` : '未配置 Python 环境'}
-                                </div>
-                            </div>
-                        </div>
-                    )}
+                        )}
+                    />
                 </div>
-            </SectionCard>
-        </>
+
+                <div className="tw-grid-2">
+                    <div style={FIELD_STYLE}>
+                        <label style={FIELD_LABEL_STYLE}>训练轮次 (Epochs)</label>
+                        <TextInput
+                            type="number"
+                            value={config.epochs}
+                            disabled={isRunning}
+                            onChange={(e) => updateConfig({ epochs: parseIntOr(e.target.value, config.epochs) })}
+                        />
+                    </div>
+                    <div style={FIELD_STYLE}>
+                        <label style={FIELD_LABEL_STYLE}>批次大小 (Batch)</label>
+                        <TextInput
+                            type="number"
+                            value={config.batch}
+                            disabled={isRunning}
+                            onChange={(e) => updateConfig({ batch: parseIntOr(e.target.value, config.batch) })}
+                        />
+                    </div>
+                </div>
+
+                <div className="tw-grid-2">
+                    <div style={FIELD_STYLE}>
+                        <label style={FIELD_LABEL_STYLE}>图片尺寸 (Imgsz)</label>
+                        <TextInput
+                            type="number"
+                            value={config.imgsz}
+                            disabled={isRunning}
+                            onChange={(e) => updateConfig({ imgsz: parseIntOr(e.target.value, config.imgsz) })}
+                        />
+                    </div>
+                    <div style={FIELD_STYLE}>
+                        <label style={FIELD_LABEL_STYLE}>实验名称</label>
+                        <TextInput
+                            type="text"
+                            value={config.name}
+                            disabled={isRunning}
+                            onChange={(e) => updateConfig({ name: e.target.value })}
+                        />
+                        <div style={{ fontSize: '11px', color: '#7f90af', lineHeight: 1.4 }}>
+                            默认建议 <code style={{ color: '#99f6e4', fontFamily: 'Consolas, Monaco, monospace' }}>exp_auto</code>；
+                            历史同名会自动递增为 <code style={{ color: '#99f6e4', fontFamily: 'Consolas, Monaco, monospace' }}>exp_auto_1 / exp_auto_2</code>。
+                        </div>
+                    </div>
+                </div>
+
+                <div style={FIELD_STYLE}>
+                    <label style={FIELD_LABEL_STYLE}>数据集配置 (data.yaml)</label>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '8px' }}>
+                        <TextInput
+                            type="text"
+                            readOnly
+                            value={config.data}
+                            placeholder="默认使用项目导出路径"
+                            style={{ opacity: 0.78 }}
+                        />
+                        <button
+                            type="button"
+                            className="tw-inline-icon-btn"
+                            onClick={onBrowseData}
+                            disabled={isRunning}
+                        >
+                            <FileText size={16} />
+                        </button>
+                    </div>
+                </div>
+
+                {envInfo && (
+                    <div style={{
+                        borderRadius: '12px',
+                        border: `1px solid ${envInfo.available ? 'rgba(74,222,128,0.3)' : 'rgba(248,113,113,0.3)'}`,
+                        background: envInfo.available
+                            ? 'linear-gradient(145deg, rgba(12,36,31,0.56), rgba(15,23,42,0.54))'
+                            : 'linear-gradient(145deg, rgba(48,20,20,0.42), rgba(15,23,42,0.54))',
+                        padding: '0.75rem',
+                        display: 'flex',
+                        gap: '10px',
+                        alignItems: 'center'
+                    }}>
+                        <div style={{
+                            width: '30px',
+                            height: '30px',
+                            borderRadius: '8px',
+                            display: 'grid',
+                            placeItems: 'center',
+                            color: envInfo.available ? '#4ade80' : '#fca5a5',
+                            background: envInfo.available ? 'rgba(74,222,128,0.14)' : 'rgba(248,113,113,0.14)'
+                        }}>
+                            <Settings size={15} className={isRunning ? 'spin' : ''} />
+                        </div>
+                        <div style={{ minWidth: 0 }}>
+                            <div style={{ fontSize: '12px', color: '#d9e3f5', fontWeight: 700 }}>
+                                Python 环境 {envInfo.cuda ? '· GPU' : '· CPU'}
+                            </div>
+                            <div style={{
+                                fontSize: '11px',
+                                color: '#8da0bf',
+                                marginTop: '2px',
+                                whiteSpace: 'nowrap',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis'
+                            }}>
+                                {envInfo.available ? `${envInfo.version} · ${envInfo.message}` : '未配置 Python 环境'}
+                            </div>
+                        </div>
+                    </div>
+                )}
+            </div>
+        </SectionCard>
     );
 };
 
@@ -426,54 +354,48 @@ export const HardwareForm = ({ config, updateConfig, status }) => {
         <SectionCard
             icon={Server}
             title="硬件与性能"
-            color="168,85,247"
-            gradient="linear-gradient(135deg, rgba(168,85,247,0.15), rgba(139,92,246,0.05))"
-            collapsible={true}
-            defaultCollapsed={true}
-            statusSummary={isEnabled ? `设备: ${config.device === '0' ? 'GPU 0' : config.device === 'cpu' ? 'CPU' : config.device}` : '已禁用'}
+            color="59,130,246"
+            gradient="linear-gradient(145deg, rgba(59,130,246,0.18), rgba(14,116,144,0.08))"
+            collapsible
+            defaultCollapsed
+            statusSummary={isEnabled ? `设备: ${config.device === 'cpu' ? 'CPU' : `GPU ${config.device}`}` : '已禁用'}
         >
             <Toggle
                 checked={isEnabled}
                 onChange={(e) => updateConfig({ hardwareEnabled: e.target.checked })}
                 label="启用硬件配置"
-                desc="自定义设备、线程数和缓存设置"
+                desc="设置训练设备、数据线程和缓存策略"
                 disabled={isRunning}
             />
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginTop: '1rem', opacity: isEnabled ? 1 : 0.5 }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                    <div>
-                        <label style={{ fontSize: '13px', color: 'var(--text-tertiary)', marginBottom: '8px', display: 'block', fontWeight: 600 }}>设备 (Device)</label>
-                        <CustomSelect
+
+            <div style={{ ...STACK_STYLE, marginTop: '0.9rem', opacity: isEnabled ? 1 : 0.56 }}>
+                <div className="tw-grid-2">
+                    <div style={FIELD_STYLE}>
+                        <label style={FIELD_LABEL_STYLE}>设备 (Device)</label>
+                        <PortalSelect
                             value={config.device}
                             options={deviceOptions}
-                            onChange={(val) => updateConfig({ device: val })}
+                            onChange={(value) => updateConfig({ device: value })}
                             disabled={isRunning || !isEnabled}
+                            portalId="device-select-portal"
                         />
                     </div>
-                    <div>
-                        <label style={{ fontSize: '13px', color: 'var(--text-tertiary)', marginBottom: '8px', display: 'block', fontWeight: 600 }}>数据加载线程 (Workers)</label>
-                        <input
+                    <div style={FIELD_STYLE}>
+                        <label style={FIELD_LABEL_STYLE}>数据加载线程 (Workers)</label>
+                        <TextInput
                             type="number"
                             value={config.workers}
-                            onChange={(e) => updateConfig({ workers: parseInt(e.target.value) })}
                             disabled={isRunning || !isEnabled}
-                            style={{
-                                width: '100%',
-                                background: 'rgba(0,0,0,0.25)',
-                                border: '1px solid rgba(255,255,255,0.1)',
-                                borderRadius: '12px',
-                                padding: '12px 16px',
-                                color: 'white',
-                                fontSize: '14px'
-                            }}
+                            onChange={(e) => updateConfig({ workers: parseIntOr(e.target.value, config.workers) })}
                         />
                     </div>
                 </div>
+
                 <Toggle
                     checked={config.cache_images}
                     onChange={(e) => updateConfig({ cache_images: e.target.checked })}
                     label="缓存图片到内存"
-                    desc="RAM > 16G 建议开启，训练速度快 50%"
+                    desc="内存足够时建议开启，训练速度更稳定"
                     disabled={isRunning || !isEnabled}
                 />
             </div>
@@ -490,87 +412,73 @@ export const StrategyForm = ({ config, updateConfig, status }) => {
             icon={TrendingUp}
             title="训练策略"
             color="251,146,60"
-            gradient="linear-gradient(135deg, rgba(251,146,60,0.15), rgba(245,158,11,0.05))"
-            collapsible={true}
-            defaultCollapsed={true}
-            statusSummary={isEnabled ? `优化器: ${config.optimizer.toUpperCase()}` : '已禁用'}
+            gradient="linear-gradient(145deg, rgba(251,146,60,0.18), rgba(180,83,9,0.08))"
+            collapsible
+            defaultCollapsed
+            statusSummary={isEnabled ? `优化器: ${config.optimizer?.toUpperCase?.() || config.optimizer}` : '已禁用'}
         >
             <Toggle
                 checked={isEnabled}
                 onChange={(e) => updateConfig({ strategyEnabled: e.target.checked })}
                 label="启用训练策略"
-                desc="自定义早停、优化器和学习率策略"
+                desc="控制优化器、早停、学习率策略与续训模式"
                 disabled={isRunning}
             />
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginTop: '1rem', opacity: isEnabled ? 1 : 0.5 }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                    <div>
-                        <label style={{ fontSize: '13px', color: 'var(--text-tertiary)', marginBottom: '8px', display: 'block', fontWeight: 600 }}>早停轮次 (Patience)</label>
-                        <input
+
+            <div style={{ ...STACK_STYLE, marginTop: '0.9rem', opacity: isEnabled ? 1 : 0.56 }}>
+                <div className="tw-grid-2">
+                    <div style={FIELD_STYLE}>
+                        <label style={FIELD_LABEL_STYLE}>早停轮次 (Patience)</label>
+                        <TextInput
                             type="number"
                             value={config.patience}
-                            onChange={(e) => updateConfig({ patience: parseInt(e.target.value) })}
                             disabled={isRunning || !isEnabled}
-                            style={{
-                                width: '100%',
-                                background: 'rgba(0,0,0,0.25)',
-                                border: '1px solid rgba(255,255,255,0.1)',
-                                borderRadius: '12px',
-                                padding: '12px 16px',
-                                color: 'white',
-                                fontSize: '14px'
-                            }}
+                            onChange={(e) => updateConfig({ patience: parseIntOr(e.target.value, config.patience) })}
                         />
                     </div>
-                    <div>
-                        <label style={{ fontSize: '13px', color: 'var(--text-tertiary)', marginBottom: '8px', display: 'block', fontWeight: 600 }}>优化器</label>
-                        <CustomSelect
+                    <div style={FIELD_STYLE}>
+                        <label style={FIELD_LABEL_STYLE}>优化器</label>
+                        <PortalSelect
                             value={config.optimizer}
                             options={optimizerOptions}
-                            onChange={(val) => updateConfig({ optimizer: val })}
+                            onChange={(value) => updateConfig({ optimizer: value })}
                             disabled={isRunning || !isEnabled}
+                            portalId="optimizer-select-portal"
                         />
                     </div>
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                    <div>
-                        <label style={{ fontSize: '13px', color: 'var(--text-tertiary)', marginBottom: '8px', display: 'block', fontWeight: 600 }}>关闭马赛克轮次</label>
-                        <input
+
+                <div className="tw-grid-2">
+                    <div style={FIELD_STYLE}>
+                        <label style={FIELD_LABEL_STYLE}>关闭马赛克轮次</label>
+                        <TextInput
                             type="number"
                             value={config.close_mosaic}
-                            onChange={(e) => updateConfig({ close_mosaic: parseInt(e.target.value) })}
                             disabled={isRunning || !isEnabled}
-                            style={{
-                                width: '100%',
-                                background: 'rgba(0,0,0,0.25)',
-                                border: '1px solid rgba(255,255,255,0.1)',
-                                borderRadius: '12px',
-                                padding: '12px 16px',
-                                color: 'white',
-                                fontSize: '14px'
-                            }}
+                            onChange={(e) => updateConfig({ close_mosaic: parseIntOr(e.target.value, config.close_mosaic) })}
                         />
                     </div>
                 </div>
+
                 <Toggle
                     checked={config.cos_lr}
                     onChange={(e) => updateConfig({ cos_lr: e.target.checked })}
                     label="余弦退火学习率"
-                    desc="让后期收敛更精准"
+                    desc="后期收敛更平滑，通常提升最终指标"
                     disabled={isRunning || !isEnabled}
                 />
                 <Toggle
                     checked={config.rect}
                     onChange={(e) => updateConfig({ rect: e.target.checked })}
                     label="矩形训练"
-                    desc="使用矩形图片进行训练"
+                    desc="按比例加载图片，减少不必要填充"
                     disabled={isRunning || !isEnabled}
                 />
                 <Toggle
                     checked={config.resume}
                     onChange={(e) => updateConfig({ resume: e.target.checked })}
                     label="断点续训 (Resume)"
-                    desc="从上次中断的地方继续训练"
+                    desc="从最近一次中断位置继续训练"
                     disabled={isRunning || !isEnabled}
                 />
             </div>
@@ -587,75 +495,50 @@ export const LossForm = ({ config, updateConfig, status }) => {
             icon={Target}
             title="损失函数权重"
             color="236,72,153"
-            gradient="linear-gradient(135deg, rgba(236,72,153,0.15), rgba(217,70,239,0.05))"
-            collapsible={true}
-            defaultCollapsed={true}
+            gradient="linear-gradient(145deg, rgba(236,72,153,0.18), rgba(190,24,93,0.08))"
+            collapsible
+            defaultCollapsed
             statusSummary={isEnabled ? `Pose: ${config.loss_pose}, Box: ${config.loss_box}` : '已禁用'}
         >
             <Toggle
                 checked={isEnabled}
                 onChange={(e) => updateConfig({ lossEnabled: e.target.checked })}
                 label="启用损失权重配置"
-                desc="自定义关键点、边框和类别的损失权重"
+                desc="用于平衡关键点、边框与类别学习强度"
                 disabled={isRunning}
             />
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginTop: '1rem', opacity: isEnabled ? 1 : 0.5 }}>
-                <div>
-                    <label style={{ fontSize: '13px', color: 'var(--text-tertiary)', marginBottom: '8px', display: 'block', fontWeight: 600 }}>关键点损失权重 (Pose)</label>
-                    <input
+
+            <div style={{ ...STACK_STYLE, marginTop: '0.9rem', opacity: isEnabled ? 1 : 0.56 }}>
+                <div style={FIELD_STYLE}>
+                    <label style={FIELD_LABEL_STYLE}>关键点损失权重 (Pose)</label>
+                    <TextInput
                         type="number"
                         step="0.1"
                         value={config.loss_pose}
-                        onChange={(e) => updateConfig({ loss_pose: parseFloat(e.target.value) })}
                         disabled={isRunning || !isEnabled}
-                        style={{
-                            width: '100%',
-                            background: 'rgba(0,0,0,0.25)',
-                            border: '1px solid rgba(255,255,255,0.1)',
-                            borderRadius: '12px',
-                            padding: '12px 16px',
-                            color: 'white',
-                            fontSize: '14px'
-                        }}
+                        onChange={(e) => updateConfig({ loss_pose: parseFloatOr(e.target.value, config.loss_pose) })}
                     />
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                    <div>
-                        <label style={{ fontSize: '13px', color: 'var(--text-tertiary)', marginBottom: '8px', display: 'block', fontWeight: 600 }}>边框损失权重 (Box)</label>
-                        <input
+
+                <div className="tw-grid-2">
+                    <div style={FIELD_STYLE}>
+                        <label style={FIELD_LABEL_STYLE}>边框损失权重 (Box)</label>
+                        <TextInput
                             type="number"
                             step="0.1"
                             value={config.loss_box}
-                            onChange={(e) => updateConfig({ loss_box: parseFloat(e.target.value) })}
                             disabled={isRunning || !isEnabled}
-                            style={{
-                                width: '100%',
-                                background: 'rgba(0,0,0,0.25)',
-                                border: '1px solid rgba(255,255,255,0.1)',
-                                borderRadius: '12px',
-                                padding: '12px 16px',
-                                color: 'white',
-                                fontSize: '14px'
-                            }}
+                            onChange={(e) => updateConfig({ loss_box: parseFloatOr(e.target.value, config.loss_box) })}
                         />
                     </div>
-                    <div>
-                        <label style={{ fontSize: '13px', color: 'var(--text-tertiary)', marginBottom: '8px', display: 'block', fontWeight: 600 }}>类别损失权重 (Cls)</label>
-                        <input
+                    <div style={FIELD_STYLE}>
+                        <label style={FIELD_LABEL_STYLE}>类别损失权重 (Cls)</label>
+                        <TextInput
                             type="number"
                             step="0.1"
                             value={config.loss_cls}
-                            onChange={(e) => updateConfig({ loss_cls: parseFloat(e.target.value) })}
                             disabled={isRunning || !isEnabled}
-                            style={{
-                                width: '100%',
-                                background: 'rgba(0,0,0,0.25)',
-                                border: '1px solid rgba(255,255,255,0.1)',
-                                borderRadius: '12px',
-                                padding: '12px 16px',
-                                color: 'white',
-                                fontSize: '14px'
-                            }}
+                            onChange={(e) => updateConfig({ loss_cls: parseFloatOr(e.target.value, config.loss_cls) })}
                         />
                     </div>
                 </div>
@@ -666,79 +549,89 @@ export const LossForm = ({ config, updateConfig, status }) => {
 
 export const AugmentationForm = ({ config, updateConfig, status }) => {
     const isRunning = status === 'running' || status === 'starting';
-
-    const SliderField = ({ label, value, min, max, step, onChange }) => (
-        <div style={{ marginBottom: '1rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>{label}</span>
-                <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--accent-primary)' }}>{value}</span>
-            </div>
-            <input
-                type="range"
-                min={min}
-                max={max}
-                step={step}
-                value={value}
-                onChange={(e) => onChange(parseFloat(e.target.value))}
-                disabled={isRunning || !config.augmentationEnabled}
-                style={{ width: '100%', height: '4px', borderRadius: '2px', cursor: 'pointer' }}
-            />
-        </div>
-    );
+    const augmentationDisabled = isRunning || !config.augmentationEnabled;
 
     return (
         <SectionCard
             icon={Settings}
             title="数据增强"
-            color="34,197,94"
-            gradient="linear-gradient(135deg, rgba(34,197,94,0.15), rgba(74,222,128,0.05))"
-            collapsible={true}
-            defaultCollapsed={true}
+            color="74,222,128"
+            gradient="linear-gradient(145deg, rgba(74,222,128,0.18), rgba(22,163,74,0.08))"
+            collapsible
+            defaultCollapsed
             statusSummary={config.augmentationEnabled ? '已启用' : '已禁用'}
         >
             <Toggle
                 checked={config.augmentationEnabled}
                 onChange={(e) => updateConfig({ augmentationEnabled: e.target.checked })}
                 label="启用数据增强"
-                desc="通过几何变换和颜色抖动提升模型泛化能力"
+                desc="通过几何和颜色扰动提升泛化能力"
                 disabled={isRunning}
             />
 
-            <div style={{ marginTop: '1.5rem', opacity: config.augmentationEnabled ? 1 : 0.5 }}>
+            <div style={{ ...STACK_STYLE, marginTop: '1rem', opacity: config.augmentationEnabled ? 1 : 0.56 }}>
                 <SliderField
                     label="旋转角度 (degrees)"
-                    value={config.degrees} min={0} max={180} step={1}
-                    onChange={(v) => updateConfig({ degrees: v })}
+                    value={config.degrees}
+                    min={0}
+                    max={180}
+                    step={1}
+                    disabled={augmentationDisabled}
+                    onChange={(value) => updateConfig({ degrees: value })}
                 />
                 <SliderField
                     label="平移比例 (translate)"
-                    value={config.translate} min={0} max={1} step={0.05}
-                    onChange={(v) => updateConfig({ translate: v })}
+                    value={config.translate}
+                    min={0}
+                    max={1}
+                    step={0.05}
+                    disabled={augmentationDisabled}
+                    onChange={(value) => updateConfig({ translate: value })}
                 />
                 <SliderField
                     label="缩放比例 (scale)"
-                    value={config.scale} min={0} max={1} step={0.05}
-                    onChange={(v) => updateConfig({ scale: v })}
+                    value={config.scale}
+                    min={0}
+                    max={1}
+                    step={0.05}
+                    disabled={augmentationDisabled}
+                    onChange={(value) => updateConfig({ scale: value })}
                 />
                 <SliderField
                     label="左右翻转 (fliplr)"
-                    value={config.fliplr} min={0} max={1} step={0.05}
-                    onChange={(v) => updateConfig({ fliplr: v })}
+                    value={config.fliplr}
+                    min={0}
+                    max={1}
+                    step={0.05}
+                    disabled={augmentationDisabled}
+                    onChange={(value) => updateConfig({ fliplr: value })}
                 />
                 <SliderField
                     label="上下翻转 (flipud)"
-                    value={config.flipud} min={0} max={1} step={0.05}
-                    onChange={(v) => updateConfig({ flipud: v })}
+                    value={config.flipud}
+                    min={0}
+                    max={1}
+                    step={0.05}
+                    disabled={augmentationDisabled}
+                    onChange={(value) => updateConfig({ flipud: value })}
                 />
                 <SliderField
                     label="透视变换 (perspective)"
-                    value={config.perspective} min={0} max={0.01} step={0.0005}
-                    onChange={(v) => updateConfig({ perspective: v })}
+                    value={config.perspective}
+                    min={0}
+                    max={0.01}
+                    step={0.0005}
+                    disabled={augmentationDisabled}
+                    onChange={(value) => updateConfig({ perspective: value })}
                 />
                 <SliderField
                     label="Mosaic 概率"
-                    value={config.mosaic} min={0} max={1} step={0.1}
-                    onChange={(v) => updateConfig({ mosaic: v })}
+                    value={config.mosaic}
+                    min={0}
+                    max={1}
+                    step={0.1}
+                    disabled={augmentationDisabled}
+                    onChange={(value) => updateConfig({ mosaic: value })}
                 />
             </div>
         </SectionCard>
@@ -754,8 +647,8 @@ export const RemoteForm = ({ config, updateConfig, status }) => {
             icon={Server}
             title="远程训练配置"
             color="59,130,246"
-            gradient="linear-gradient(135deg, rgba(59,130,246,0.15), rgba(37,99,235,0.05))"
-            collapsible={true}
+            gradient="linear-gradient(145deg, rgba(59,130,246,0.18), rgba(37,99,235,0.08))"
+            collapsible
             defaultCollapsed={!isEnabled}
             statusSummary={isEnabled ? `主机: ${config.remoteHost || '未配置'}` : '本地训练'}
         >
@@ -763,133 +656,73 @@ export const RemoteForm = ({ config, updateConfig, status }) => {
                 checked={isEnabled}
                 onChange={(e) => updateConfig({ remoteEnabled: e.target.checked })}
                 label="启用远程服务器训练"
-                desc="同步数据集到服务器并远程执行训练任务"
+                desc="将数据同步到远程主机后执行训练"
                 disabled={isRunning}
             />
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginTop: '1rem', opacity: isEnabled ? 1 : 0.5 }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '3fr 1fr', gap: '1rem' }}>
-                    <div>
-                        <label style={{ fontSize: '13px', color: 'var(--text-tertiary)', marginBottom: '8px', display: 'block', fontWeight: 600 }}>主机 (Host)</label>
-                        <input
+            <div style={{ ...STACK_STYLE, marginTop: '0.9rem', opacity: isEnabled ? 1 : 0.56 }}>
+                <div className="tw-grid-host-port">
+                    <div style={FIELD_STYLE}>
+                        <label style={FIELD_LABEL_STYLE}>主机 (Host)</label>
+                        <TextInput
                             type="text"
-                            placeholder="192.168.1.100"
                             value={config.remoteHost}
-                            onChange={(e) => updateConfig({ remoteHost: e.target.value })}
+                            placeholder="192.168.1.100"
                             disabled={isRunning || !isEnabled}
-                            className="remote-input"
-                            style={{
-                                width: '100%',
-                                background: 'rgba(0,0,0,0.25)',
-                                border: '1px solid rgba(255,255,255,0.1)',
-                                borderRadius: '12px',
-                                padding: '12px 16px',
-                                color: 'white',
-                                fontSize: '14px'
-                            }}
+                            onChange={(e) => updateConfig({ remoteHost: e.target.value })}
                         />
                     </div>
-                    <div>
-                        <label style={{ fontSize: '13px', color: 'var(--text-tertiary)', marginBottom: '8px', display: 'block', fontWeight: 600 }}>端口</label>
-                        <input
+                    <div style={FIELD_STYLE}>
+                        <label style={FIELD_LABEL_STYLE}>端口</label>
+                        <TextInput
                             type="number"
                             value={config.remotePort}
-                            onChange={(e) => updateConfig({ remotePort: parseInt(e.target.value) })}
                             disabled={isRunning || !isEnabled}
-                            className="remote-input"
-                            style={{
-                                width: '100%',
-                                background: 'rgba(0,0,0,0.25)',
-                                border: '1px solid rgba(255,255,255,0.1)',
-                                borderRadius: '12px',
-                                padding: '12px 16px',
-                                color: 'white',
-                                fontSize: '14px'
-                            }}
+                            onChange={(e) => updateConfig({ remotePort: parseIntOr(e.target.value, config.remotePort) })}
                         />
                     </div>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                    <div>
-                        <label style={{ fontSize: '13px', color: 'var(--text-tertiary)', marginBottom: '8px', display: 'block', fontWeight: 600 }}>用户名</label>
-                        <input
+                <div className="tw-grid-2">
+                    <div style={FIELD_STYLE}>
+                        <label style={FIELD_LABEL_STYLE}>用户名</label>
+                        <TextInput
                             type="text"
                             value={config.remoteUser}
-                            onChange={(e) => updateConfig({ remoteUser: e.target.value })}
                             disabled={isRunning || !isEnabled}
-                            className="remote-input"
-                            style={{
-                                width: '100%',
-                                background: 'rgba(0,0,0,0.25)',
-                                border: '1px solid rgba(255,255,255,0.1)',
-                                borderRadius: '12px',
-                                padding: '12px 16px',
-                                color: 'white',
-                                fontSize: '14px'
-                            }}
+                            onChange={(e) => updateConfig({ remoteUser: e.target.value })}
                         />
                     </div>
-                    <div>
-                        <label style={{ fontSize: '13px', color: 'var(--text-tertiary)', marginBottom: '8px', display: 'block', fontWeight: 600 }}>密码</label>
-                        <input
+                    <div style={FIELD_STYLE}>
+                        <label style={FIELD_LABEL_STYLE}>密码</label>
+                        <TextInput
                             type="password"
                             value={config.remotePassword}
-                            onChange={(e) => updateConfig({ remotePassword: e.target.value })}
                             disabled={isRunning || !isEnabled}
-                            className="remote-input"
-                            style={{
-                                width: '100%',
-                                background: 'rgba(0,0,0,0.25)',
-                                border: '1px solid rgba(255,255,255,0.1)',
-                                borderRadius: '12px',
-                                padding: '12px 16px',
-                                color: 'white',
-                                fontSize: '14px'
-                            }}
+                            onChange={(e) => updateConfig({ remotePassword: e.target.value })}
                         />
                     </div>
                 </div>
 
-                <div>
-                    <label style={{ fontSize: '13px', color: 'var(--text-tertiary)', marginBottom: '8px', display: 'block', fontWeight: 600 }}>远程工作路径 (Remote Path)</label>
-                    <input
+                <div style={FIELD_STYLE}>
+                    <label style={FIELD_LABEL_STYLE}>远程工作路径 (Remote Path)</label>
+                    <TextInput
                         type="text"
-                        placeholder="/home/user/training"
                         value={config.remotePath}
-                        onChange={(e) => updateConfig({ remotePath: e.target.value })}
+                        placeholder="/home/user/training"
                         disabled={isRunning || !isEnabled}
-                        className="remote-input"
-                        style={{
-                            width: '100%',
-                            background: 'rgba(0,0,0,0.25)',
-                            border: '1px solid rgba(255,255,255,0.1)',
-                            borderRadius: '12px',
-                            padding: '12px 16px',
-                            color: 'white',
-                            fontSize: '14px'
-                        }}
+                        onChange={(e) => updateConfig({ remotePath: e.target.value })}
                     />
                 </div>
 
-                <div>
-                    <label style={{ fontSize: '13px', color: 'var(--text-tertiary)', marginBottom: '8px', display: 'block', fontWeight: 600 }}>Python 解释器路径</label>
-                    <input
+                <div style={FIELD_STYLE}>
+                    <label style={FIELD_LABEL_STYLE}>Python 解释器路径</label>
+                    <TextInput
                         type="text"
-                        placeholder="python3"
                         value={config.remotePython}
-                        onChange={(e) => updateConfig({ remotePython: e.target.value })}
+                        placeholder="python3"
                         disabled={isRunning || !isEnabled}
-                        className="remote-input"
-                        style={{
-                            width: '100%',
-                            background: 'rgba(0,0,0,0.25)',
-                            border: '1px solid rgba(255,255,255,0.1)',
-                            borderRadius: '12px',
-                            padding: '12px 16px',
-                            color: 'white',
-                            fontSize: '14px'
-                        }}
+                        onChange={(e) => updateConfig({ remotePython: e.target.value })}
                     />
                 </div>
             </div>

@@ -79,7 +79,7 @@ const AppContent = () => {
 
   if (view === 'training') {
     return (
-      <div style={{ height: '100%', overflow: 'hidden' }}>
+      <div className="page-workspace page-training">
         <TrainingConfig />
       </div>
     );
@@ -87,7 +87,7 @@ const AppContent = () => {
 
   if (view === 'export') {
     return (
-      <div style={{ height: '100%', overflow: 'hidden' }}>
+      <div className="page-workspace page-export">
         <DatasetExport />
       </div>
     );
@@ -95,7 +95,7 @@ const AppContent = () => {
 
   if (view === 'editor' && selectedImage) {
     return (
-      <div style={{ height: '100%', overflow: 'hidden' }}>
+      <div className="page-workspace page-editor">
         <AnnotationEditor
           key={`${selectedImage}-${editorReloadToken}`}
           image={selectedImage}
@@ -107,7 +107,11 @@ const AppContent = () => {
   }
 
   if (view === 'settings') {
-    return <Settings onBack={goBack} />;
+    return (
+      <div className="page-workspace page-settings">
+        <Settings onBack={goBack} />
+      </div>
+    );
   }
 
   return null;
