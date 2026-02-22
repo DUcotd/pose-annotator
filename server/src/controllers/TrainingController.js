@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const logger = require('../utils/logger');
 const TrainingService = require('../services/TrainingService');
+const TrainingLogV2Service = require('../services/TrainingLogV2Service');
 const ExportService = require('../services/ExportService');
 const ProcessManager = require('../managers/ProcessManager');
 const settings = require('../config/settings');
@@ -113,6 +114,134 @@ function createTrainingRouter(projectsDir) {
     const logStats = ProcessManager.getLogStats(projectId);
     status.logStats = logStats;
     res.json(status);
+  });
+
+  router.get('/:projectId/train/v2/status', (req, res) => {
+    const { projectId } = req.params;
+    const status = TrainingLogV2Service.getStatus(projectId);
+    res.json(status);
+  });
+
+  router.get('/:projectId/train/v2/events', (req, res) => {
+    const { projectId } = req.params;
+    const {
+      runId,
+      cursor,
+      limit,
+      levels,
+      stages,
+      kinds,
+      codes,
+      search,
+      order
+    } = req.query;
+
+    const result = TrainingLogV2Service.getEvents(projectId, {
+      runId,
+      cursor: Number(cursor || 0),
+      limit: Number(limit || 200),
+      levels,
+      stages,
+      kinds,
+      codes,
+      search,
+      order
+    });
+    res.json(result);
+  });
+
+  router.get('/:projectId/train/v2/runs', (req, res) => {
+    const { projectId } = req.params;
+    const paths = ExportService.getProjectPaths(projectId, projectsDir);
+    const runs = TrainingLogV2Service.listRuns(projectId, paths.root);
+    res.json({ projectId, runs });
+  });
+
+  router.get('/:projectId/train/v2/stream', (req, res) => {
+    const { projectId } = req.params;
+    const lastSeq = Number(req.query.lastSeq || 0);
+    const replayBatchSize = Number(req.query.replayBatch || 500);
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+
+    const sendEvent = (event, data) => {
+      res.write(`event: ${event}\n`);
+      res.write(`data: ${JSON.stringify(data)}\n\n`);
+    };
+
+    TrainingLogV2Service.setConnectionState(projectId, 'connected');
+
+    const connectedStatus = TrainingLogV2Service.getStatus(projectId);
+    sendEvent('connected', {
+      projectId,
+      ...connectedStatus,
+      time: Date.now()
+    });
+
+    let replayCursor = lastSeq;
+    let replayHasMore = false;
+    let replayBatches = 0;
+    const maxReplayBatches = 20;
+    const runId = connectedStatus.runId || undefined;
+
+    do {
+      const backlog = TrainingLogV2Service.getEvents(projectId, {
+        runId,
+        cursor: replayCursor,
+        limit: replayBatchSize
+      });
+
+      replayHasMore = Boolean(backlog.hasMore);
+      if (backlog.events.length > 0) {
+        sendEvent('replay', backlog);
+        replayCursor = backlog.cursor;
+      }
+      replayBatches += 1;
+    } while (replayHasMore && replayBatches < maxReplayBatches);
+
+    if (replayHasMore) {
+      sendEvent('replay_gap', {
+        projectId,
+        runId,
+        cursor: replayCursor,
+        reason: 'backlog_exceeded'
+      });
+    }
+
+    const eventHandler = ({ projectId: pId, event }) => {
+      if (pId === projectId) sendEvent(event.kind === 'metric' ? 'metric' : 'event', event);
+    };
+    const metricHandler = ({ projectId: pId, metric }) => {
+      if (pId === projectId) sendEvent('metric', metric);
+    };
+    const diagnosisHandler = ({ projectId: pId, diagnosis }) => {
+      if (pId === projectId) sendEvent('diagnosis', diagnosis);
+    };
+    const statusHandler = (payload) => {
+      if (payload.projectId === projectId) sendEvent('status', payload);
+    };
+
+    TrainingLogV2Service.on('event', eventHandler);
+    TrainingLogV2Service.on('metric', metricHandler);
+    TrainingLogV2Service.on('diagnosis', diagnosisHandler);
+    TrainingLogV2Service.on('status', statusHandler);
+
+    const heartbeat = setInterval(() => {
+      sendEvent('heartbeat', { ts: Date.now() });
+    }, 15000);
+
+    req.on('close', () => {
+      clearInterval(heartbeat);
+      TrainingLogV2Service.off('event', eventHandler);
+      TrainingLogV2Service.off('metric', metricHandler);
+      TrainingLogV2Service.off('diagnosis', diagnosisHandler);
+      TrainingLogV2Service.off('status', statusHandler);
+      TrainingLogV2Service.setConnectionState(projectId, 'disconnected');
+      res.end();
+    });
   });
 
   router.get('/:projectId/dataset/info', (req, res) => {
@@ -363,6 +492,68 @@ function createTrainingRouter(projectsDir) {
     }
   });
 
+  router.post('/:projectId/train/v2/export', (req, res) => {
+    const { projectId } = req.params;
+    const { runId, format = 'json' } = req.body || {};
+
+    try {
+      const paths = ExportService.getProjectPaths(projectId, projectsDir);
+      const result = TrainingLogV2Service.exportRun(projectId, {
+        runId,
+        format,
+        projectRoot: paths.root
+      });
+
+      res.setHeader('Content-Type', result.contentType);
+      res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(result.filename)}"`);
+
+      if (Buffer.isBuffer(result.content)) {
+        res.setHeader('Content-Length', result.content.length);
+        res.send(result.content);
+      } else {
+        res.setHeader('Content-Length', Buffer.byteLength(result.content, 'utf-8'));
+        res.send(result.content);
+      }
+    } catch (err) {
+      logger.error(`Failed to export v2 logs for ${projectId}:`, err);
+      res.status(500).json({ error: '导出结构化诊断包失败', details: err.message });
+    }
+  });
+
+  router.post('/:projectId/train/v2/export-to-file', (req, res) => {
+    const { projectId } = req.params;
+    const { runId, format = 'json' } = req.body || {};
+
+    try {
+      const paths = ExportService.getProjectPaths(projectId, projectsDir);
+      const logsDir = path.join(paths.root, 'runs', 'logs', 'v2', 'exports');
+      if (!fs.existsSync(logsDir)) {
+        fs.mkdirSync(logsDir, { recursive: true });
+      }
+
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      const ext = String(format).toLowerCase() === 'zip' ? 'zip' : 'json';
+      const filename = `training_diagnosis_${timestamp}.${ext}`;
+      const outputPath = path.join(logsDir, filename);
+
+      const saveResult = TrainingLogV2Service.saveExportToFile(projectId, outputPath, {
+        runId,
+        format: ext,
+        projectRoot: paths.root
+      });
+
+      res.json({
+        ...saveResult,
+        filePath: outputPath,
+        filename,
+        logsDir
+      });
+    } catch (err) {
+      logger.error(`Failed to save v2 log package: ${err.message}`);
+      res.status(500).json({ error: '保存结构化诊断包失败', details: err.message });
+    }
+  });
+
   router.get('/:projectId/train/logs/export', (req, res) => {
     const { projectId } = req.params;
     const { includeMetrics, includeConfig, includeTimestamps } = req.query;
@@ -425,10 +616,21 @@ function createTrainingRouter(projectsDir) {
     try {
       const paths = ExportService.getProjectPaths(projectId, projectsDir);
       const reportsDir = path.join(paths.root, 'runs', 'logs', 'reports');
+      const reportsDirV2 = path.join(paths.root, 'runs', 'logs', 'v2', 'exports');
       
       let targetPath = filePath;
       if (!targetPath) {
-        if (fs.existsSync(reportsDir)) {
+        if (fs.existsSync(reportsDirV2)) {
+          const files = fs.readdirSync(reportsDirV2)
+            .filter(f => f.endsWith('.json') || f.endsWith('.zip'))
+            .sort()
+            .reverse();
+          if (files.length > 0) {
+            targetPath = path.join(reportsDirV2, files[0]);
+          }
+        }
+
+        if (!targetPath && fs.existsSync(reportsDir)) {
           const files = fs.readdirSync(reportsDir).filter(f => f.endsWith('.txt')).sort().reverse();
           if (files.length > 0) {
             targetPath = path.join(reportsDir, files[0]);
@@ -455,7 +657,7 @@ function createTrainingRouter(projectsDir) {
     
     try {
       const paths = ExportService.getProjectPaths(projectId, projectsDir);
-      const logsDir = path.join(paths.root, 'runs', 'logs');
+      const logsDir = path.join(paths.root, 'runs', 'logs', 'v2', 'exports');
       
       if (!fs.existsSync(logsDir)) {
         fs.mkdirSync(logsDir, { recursive: true });

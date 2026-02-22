@@ -7,6 +7,7 @@ const { JobQueue } = require('../managers/JobQueue');
 const PythonEnvService = require('./PythonEnvService');
 const settings = require('../config/settings');
 const RemoteTrainingService = require('./RemoteTrainingService');
+const TrainingLogV2Service = require('./TrainingLogV2Service');
 
 const JSON_LOG_PREFIX = '__JSON_LOG__';
 const MAX_LOG_LENGTH = 1000;
@@ -154,6 +155,7 @@ class TrainingService {
 
   constructor() {
     this.processes = ProcessManager;
+    this.logsV2 = TrainingLogV2Service;
     this.retryState = {};
     this.isShuttingDown = false;
     this.jobQueue = new JobQueue();
@@ -577,6 +579,91 @@ class TrainingService {
     };
   }
 
+  inferStageFromEvent(eventName) {
+    const event = String(eventName || '').toLowerCase();
+    if (!event) return 'unknown';
+    if (event.includes('preflight') || event.includes('validation_passed') || event.includes('validation_failed')) return 'preflight';
+    if (event.includes('validation') || event.includes('map') || event.includes('metric')) return 'validate';
+    if (event.includes('export')) return 'export';
+    if (event.includes('train') || event.includes('epoch') || event.includes('resume') || event.includes('gpu')) return 'train';
+    if (event.includes('model_load') || event.includes('hardware_check') || event.includes('config_snapshot') || event.includes('dataset_stats')) return 'bootstrap';
+    if (event.includes('summary') || event.includes('complete') || event.includes('stop') || event.includes('error')) return 'teardown';
+    return 'unknown';
+  }
+
+  mapErrorTypeToCode(errorType) {
+    const upper = String(errorType || 'UNKNOWN').toUpperCase();
+    const mapping = {
+      OOM: 'CUDA_OOM',
+      CUDA: 'CUDA_RUNTIME_ERROR',
+      CUDNN: 'CUDNN_ERROR',
+      NO_GPU: 'GPU_NOT_AVAILABLE',
+      MEMORY: 'SYSTEM_MEMORY_ERROR',
+      FILE_NOT_FOUND: 'DATASET_FILE_NOT_FOUND',
+      YAML_ERROR: 'DATASET_YAML_ERROR',
+      SHAPE_ERROR: 'TENSOR_SHAPE_ERROR',
+      PERMISSION: 'PERMISSION_ERROR',
+      NETWORK: 'NETWORK_ERROR',
+      PYTHON_ENV: 'PYTHON_ENV_ERROR'
+    };
+    return mapping[upper] || `${upper}_ERROR`;
+  }
+
+  normalizeLineToEventV2(line, source = 'py_stdout', extra = {}) {
+    const cleaned = this.cleanString(line || '');
+    if (!cleaned) return null;
+
+    const level = extra.level || (source === 'py_stderr' ? 'warn' : 'info');
+    const stage = extra.stage || 'train';
+    const kind = extra.kind || 'raw';
+    const code = extra.code || (source === 'py_stderr' ? 'STDERR_LINE' : 'STDOUT_LINE');
+
+    return {
+      source,
+      level,
+      stage,
+      kind,
+      code,
+      message: cleaned,
+      details: extra.details,
+      raw: String(line || cleaned)
+    };
+  }
+
+  normalizeJsonLogToV2(jsonData) {
+    const eventName = String(jsonData?.event || 'unknown');
+    const stage = jsonData?.stage || this.inferStageFromEvent(eventName);
+    const level = String((jsonData?.level || 'INFO')).toLowerCase();
+    const message = jsonData?.message || eventName;
+    const code = jsonData?.code || (eventName ? eventName.toUpperCase() : 'JSON_EVENT');
+
+    const details = {
+      ...jsonData,
+      context: jsonData?.context || {}
+    };
+
+    const metricEvents = new Set([
+      'epoch_end',
+      'validation_complete',
+      'performance_benchmark',
+      'per_keypoint_metrics',
+      'gpu_summary',
+      'visual_validation'
+    ]);
+
+    const kind = jsonData?.kind || (metricEvents.has(eventName) ? 'metric' : (eventName.includes('error') ? 'diagnostic' : 'status'));
+
+    return {
+      source: 'py_stdout',
+      level: ['debug', 'info', 'warn', 'error', 'fatal'].includes(level) ? level : 'info',
+      stage,
+      kind,
+      code,
+      message,
+      details
+    };
+  }
+
   async start(projectId, config) {
     const existing = this.processes.get(projectId);
     if (existing && existing.status === 'running') {
@@ -597,12 +684,55 @@ class TrainingService {
       name: this.resolveExperimentName(config, retryCount)
     };
 
+    const runState = retryCount === 0
+      ? this.logsV2.createRun(
+        projectId,
+        config.projectRoot || config.project || null,
+        {
+          model: config.model,
+          epochs: config.epochs,
+          batch: config.batch,
+          imgsz: config.imgsz,
+          name: config.name
+        }
+      )
+      : this.logsV2.ensureActiveRun(projectId, config.projectRoot || config.project || null);
+
     this.jsonBuffer.set(projectId, '');
 
     const { cmd: pythonCmd } = await this.getPythonCommand();
     const args = this.buildArgs(config);
 
+    this.logsV2.setStatus(projectId, 'starting');
+    this.logsV2.appendEvent(projectId, {
+      source: 'server',
+      level: 'info',
+      stage: 'bootstrap',
+      kind: 'status',
+      code: retryCount > 0 ? 'TRAIN_RETRY_STARTING' : 'TRAIN_STARTING',
+      message: retryCount > 0
+        ? `训练重试启动中 (第 ${retryCount + 1} 次)`
+        : '训练任务启动中',
+      details: {
+        runId: runState.runId,
+        retryCount,
+        model: config.model,
+        epochs: config.epochs,
+        batch: config.batch,
+        imgsz: config.imgsz
+      }
+    });
+
     if (config.remoteEnabled) {
+      this.logsV2.appendEvent(projectId, {
+        source: 'server',
+        level: 'info',
+        stage: 'bootstrap',
+        kind: 'status',
+        code: 'REMOTE_TRAINING_ENABLED',
+        message: '已启用远程训练模式',
+        details: { remoteHost: config.remoteHost, remotePath: config.remotePath }
+      });
       return RemoteTrainingService.start(projectId, {
         ...config,
         projectRoot: config.projectRoot || config.project
@@ -641,6 +771,16 @@ class TrainingService {
 
     this.processes.setPid(projectId, child.pid);
     this.processes.setStatus(projectId, 'running');
+    this.logsV2.setStatus(projectId, 'running');
+    this.logsV2.appendEvent(projectId, {
+      source: 'system',
+      level: 'info',
+      stage: 'bootstrap',
+      kind: 'status',
+      code: 'TRAIN_PROCESS_STARTED',
+      message: `训练进程已启动，PID: ${child.pid}`,
+      details: { pid: child.pid, batch: config.batch, runId: runState.runId }
+    });
 
     this.retryState[projectId] = {
       retryCount,
@@ -656,7 +796,7 @@ class TrainingService {
     });
 
     child.stdout.on('data', (data) => {
-      const chunk = this.cleanString(data.toString());
+      const chunk = data.toString('utf8');
       let buffer = this.jsonBuffer.get(projectId) || '';
       buffer += chunk;
 
@@ -670,6 +810,35 @@ class TrainingService {
           try {
             const jsonStr = line.slice(JSON_LOG_PREFIX.length);
             const jsonData = JSON.parse(jsonStr);
+            const v2Event = this.normalizeJsonLogToV2(jsonData);
+            if (v2Event.kind === 'metric') {
+              this.logsV2.appendMetric(projectId, jsonData, {
+                source: v2Event.source,
+                level: v2Event.level,
+                stage: v2Event.stage,
+                code: v2Event.code,
+                message: v2Event.message,
+                raw: line
+              });
+            } else {
+              this.logsV2.appendEvent(projectId, {
+                ...v2Event,
+                raw: line
+              });
+
+              if (v2Event.level === 'error' || v2Event.level === 'fatal') {
+                const classified = this.classifyError(v2Event.message);
+                this.logsV2.updateDiagnosis(projectId, {
+                  status: 'failed',
+                  stage: v2Event.stage,
+                  code: this.mapErrorTypeToCode(classified.type),
+                  rootCause: classified.title,
+                  evidence: [v2Event.message],
+                  suggestions: classified.suggestions,
+                  rawTail: this.logsV2.getRawTail(projectId)
+                });
+              }
+            }
             this.processes.addMetric(projectId, {
               ...jsonData,
               time: Date.now()
@@ -705,13 +874,22 @@ class TrainingService {
           const trimmed = line.trim();
 
           if (this.shouldSkipLog(trimmed)) {
+            const noisyEvent = this.normalizeLineToEventV2(trimmed, 'py_stdout', {
+              level: 'debug',
+              stage: 'train',
+              kind: 'raw',
+              code: 'TRAIN_NOISE_LINE'
+            });
+            if (noisyEvent) {
+              this.logsV2.appendEvent(projectId, noisyEvent);
+            }
             return;
           }
 
           const progressMatch = trimmed.match(/(\d+)\/(\d+)\s+([\d.]+G)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)/);
           if (progressMatch) {
             const [full, epoch, totalEpochs, gpuMem, boxLoss, poseLoss, kobjLoss, clsLoss, dflLoss] = progressMatch;
-            this.processes.addMetric(projectId, {
+            const parsedMetric = {
               epoch: parseInt(epoch),
               totalEpochs: parseInt(totalEpochs),
               gpu_mem: gpuMem,
@@ -721,6 +899,17 @@ class TrainingService {
               cls_loss: parseFloat(clsLoss),
               dfl_loss: parseFloat(dflLoss),
               time: Date.now()
+            };
+            this.processes.addMetric(projectId, {
+              ...parsedMetric
+            });
+            this.logsV2.appendMetric(projectId, parsedMetric, {
+              source: 'py_stdout',
+              level: 'info',
+              stage: 'train',
+              code: 'TRAIN_PROGRESS_ROW',
+              message: '解析训练进度行',
+              raw: trimmed
             });
             return;
           }
@@ -728,7 +917,7 @@ class TrainingService {
           const mapMatch = trimmed.match(/all\s+(\d+)\s+(\d+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)/);
           if (mapMatch) {
             const [full, images, instances, boxP, boxR, boxMAP50, boxMAP5095, poseP, poseR, poseMAP50, poseMAP5095] = mapMatch;
-            this.processes.addMetric(projectId, {
+            const parsedMetric = {
               box_precision: parseFloat(boxP),
               box_recall: parseFloat(boxR),
               mAP50: parseFloat(boxMAP50),
@@ -738,6 +927,17 @@ class TrainingService {
               pose_mAP50: parseFloat(poseMAP50),
               pose_mAP50_95: parseFloat(poseMAP5095),
               time: Date.now()
+            };
+            this.processes.addMetric(projectId, {
+              ...parsedMetric
+            });
+            this.logsV2.appendMetric(projectId, parsedMetric, {
+              source: 'py_stdout',
+              level: 'info',
+              stage: 'validate',
+              code: 'VALIDATION_ROW',
+              message: '解析验证指标行',
+              raw: trimmed
             });
 
             this.processes.addLog(projectId, {
@@ -765,12 +965,22 @@ class TrainingService {
             msg: trimmed,
             time: Date.now()
           });
+          const stdoutEvent = this.normalizeLineToEventV2(trimmed, 'py_stdout', {
+            level: 'info',
+            stage: 'train',
+            kind: 'raw',
+            code: 'STDOUT_LINE'
+          });
+          if (stdoutEvent) {
+            this.logsV2.appendEvent(projectId, stdoutEvent);
+          }
         }
       });
     });
 
     let stderrBuffer = '';
     let isCapturingTraceback = false;
+    let tracebackLines = [];
 
     // Helper to process a complete line from stderr
     // We define this inside to share closure scope
@@ -785,17 +995,28 @@ class TrainingService {
       // 1. Traceback Start Detection
       if (line.includes('Traceback (most recent call last):')) {
         isCapturingTraceback = true;
+        tracebackLines = [line];
         this.processes.addLog(projectId, {
           type: 'stderr',
           msg: '🔴 ' + line, // Keep raw line structure
           time: Date.now()
         });
+        const tracebackStartEvent = this.normalizeLineToEventV2(line, 'py_stderr', {
+          level: 'error',
+          stage: 'train',
+          kind: 'diagnostic',
+          code: 'PY_TRACEBACK_START'
+        });
+        if (tracebackStartEvent) {
+          this.logsV2.appendEvent(projectId, tracebackStartEvent);
+        }
         // Also ensure this gets into the error logs for the report
         this.processes.addErrorLog(projectId, line);
         return;
       }
 
       if (isCapturingTraceback) {
+        tracebackLines.push(line);
         // Log formatted traceback lines
         this.processes.addLog(projectId, {
           type: 'stderr',
@@ -828,6 +1049,30 @@ class TrainingService {
               });
             }
           }
+
+          this.logsV2.appendEvent(projectId, {
+            source: 'py_stderr',
+            level: 'error',
+            stage: 'train',
+            kind: 'diagnostic',
+            code: this.mapErrorTypeToCode(classified.type),
+            message: classified.title,
+            details: {
+              rawError: line,
+              suggestions: classified.suggestions
+            },
+            raw: line
+          });
+          this.logsV2.updateDiagnosis(projectId, {
+            status: 'failed',
+            stage: 'train',
+            code: this.mapErrorTypeToCode(classified.type),
+            rootCause: classified.title,
+            evidence: tracebackLines.slice(-20),
+            suggestions: classified.suggestions,
+            rawTail: this.logsV2.getRawTail(projectId)
+          });
+          tracebackLines = [];
         }
         return;
       }
@@ -852,6 +1097,36 @@ class TrainingService {
             msg: `💡 解决建议:\n${classified.suggestions.map((s, i) => `   ${i + 1}. ${s}`).join('\n')}`,
             time: Date.now()
           });
+        }
+
+        this.logsV2.appendEvent(projectId, {
+          source: 'py_stderr',
+          level: 'error',
+          stage: 'train',
+          kind: 'diagnostic',
+          code: this.mapErrorTypeToCode(classified.type),
+          message: `${classified.title}: ${classified.rawError}`,
+          details: { suggestions: classified.suggestions },
+          raw: cleanedLine
+        });
+        this.logsV2.updateDiagnosis(projectId, {
+          status: 'failed',
+          stage: 'train',
+          code: this.mapErrorTypeToCode(classified.type),
+          rootCause: classified.title,
+          evidence: [cleanedLine],
+          suggestions: classified.suggestions,
+          rawTail: this.logsV2.getRawTail(projectId)
+        });
+      } else {
+        const stderrEvent = this.normalizeLineToEventV2(cleanedLine, 'py_stderr', {
+          level: 'warn',
+          stage: 'train',
+          kind: 'raw',
+          code: 'STDERR_LINE'
+        });
+        if (stderrEvent) {
+          this.logsV2.appendEvent(projectId, stderrEvent);
         }
       }
 
@@ -897,24 +1172,100 @@ class TrainingService {
         logger.debug(`Closed CSV watcher for project ${projectId}`);
       }
 
+      const stdoutRemainder = (this.jsonBuffer.get(projectId) || '').trim();
+      if (stdoutRemainder) {
+        if (stdoutRemainder.startsWith(JSON_LOG_PREFIX)) {
+          try {
+            const jsonData = JSON.parse(stdoutRemainder.slice(JSON_LOG_PREFIX.length));
+            const v2Event = this.normalizeJsonLogToV2(jsonData);
+            if (v2Event.kind === 'metric') {
+              this.logsV2.appendMetric(projectId, jsonData, {
+                source: v2Event.source,
+                level: v2Event.level,
+                stage: v2Event.stage,
+                code: v2Event.code,
+                message: v2Event.message,
+                raw: stdoutRemainder
+              });
+            } else {
+              this.logsV2.appendEvent(projectId, {
+                ...v2Event,
+                raw: stdoutRemainder
+              });
+            }
+            this.processes.addMetric(projectId, {
+              ...jsonData,
+              time: Date.now()
+            });
+          } catch (err) {
+            logger.debug(`Failed to parse remaining stdout JSON line: ${err.message}`);
+          }
+        } else {
+          const cleanedRemainder = this.cleanString(stdoutRemainder);
+          if (cleanedRemainder && !this.shouldSkipLog(cleanedRemainder)) {
+            this.processes.addLog(projectId, {
+              type: 'stdout',
+              msg: cleanedRemainder,
+              time: Date.now()
+            });
+            const stdoutEvent = this.normalizeLineToEventV2(cleanedRemainder, 'py_stdout', {
+              level: 'info',
+              stage: 'train',
+              kind: 'raw',
+              code: 'STDOUT_TAIL'
+            });
+            if (stdoutEvent) {
+              this.logsV2.appendEvent(projectId, stdoutEvent);
+            }
+          }
+        }
+      }
       this.jsonBuffer.delete(projectId);
+
+      if (stderrBuffer.trim()) {
+        processStderrLine(stderrBuffer);
+        stderrBuffer = '';
+      }
 
       if (code === 0) {
         const status = 'completed';
         this.processes.setStatus(projectId, status);
+        this.logsV2.setStatus(projectId, status);
         this.processes.addLog(projectId, {
           type: 'system',
           msg: `✅ 训练完成！进程退出码: ${code}`,
           time: Date.now()
         });
+        this.logsV2.appendEvent(projectId, {
+          source: 'system',
+          level: 'info',
+          stage: 'teardown',
+          kind: 'status',
+          code: 'TRAIN_COMPLETED',
+          message: `训练完成，退出码 ${code}`,
+          details: { exitCode: code }
+        });
         logger.info(`Training for project ${projectId} ${status}`);
       }
       else if (retryState && retryState.isRetrying && retryState.retryCount <= MAX_OOM_RETRIES) {
         logger.info(`Waiting for OOM retry for project ${projectId}`);
+        this.logsV2.appendEvent(projectId, {
+          source: 'system',
+          level: 'warn',
+          stage: 'teardown',
+          kind: 'status',
+          code: 'TRAIN_WAITING_RETRY',
+          message: '等待 OOM 自动重试',
+          details: {
+            retryCount: retryState.retryCount,
+            maxRetries: MAX_OOM_RETRIES
+          }
+        });
       }
       else {
         const status = 'failed';
         this.processes.setStatus(projectId, status);
+        this.logsV2.setStatus(projectId, status);
 
         const errorLogs = this.processes.getErrorLogs(projectId) || [];
         const recentErrors = errorLogs.slice(-10);
@@ -939,6 +1290,32 @@ class TrainingService {
           });
         }
 
+        const currentV2 = this.logsV2.getStatus(projectId);
+        if (!currentV2.diagnosis) {
+          this.logsV2.updateDiagnosis(projectId, {
+            status: 'failed',
+            stage: 'teardown',
+            code: 'TRAIN_PROCESS_FAILED',
+            rootCause: `训练进程异常退出 (exitCode=${code})`,
+            evidence: recentErrors,
+            suggestions: [
+              '检查数据集路径和 data.yaml 配置',
+              '检查 Python 环境是否完整（ultralytics/torch）',
+              '优先查看 stderr 与 traceback 关键行'
+            ],
+            rawTail: this.logsV2.getRawTail(projectId)
+          });
+        }
+        this.logsV2.appendEvent(projectId, {
+          source: 'system',
+          level: 'error',
+          stage: 'teardown',
+          kind: 'status',
+          code: 'TRAIN_FAILED',
+          message: `训练失败，退出码 ${code}`,
+          details: { exitCode: code, recentErrors }
+        });
+
         logger.info(`Training for project ${projectId} ${status}`);
       }
 
@@ -948,14 +1325,43 @@ class TrainingService {
     child.on('error', (err) => {
       logger.error(`Training process error for ${projectId}:`, err);
       this.processes.setStatus(projectId, 'failed');
+      this.logsV2.setStatus(projectId, 'failed');
       this.processes.addLog(projectId, {
         type: 'system',
         msg: `启动失败: ${err.message}`,
         time: Date.now()
       });
+      this.logsV2.appendEvent(projectId, {
+        source: 'system',
+        level: 'fatal',
+        stage: 'bootstrap',
+        kind: 'diagnostic',
+        code: 'TRAIN_PROCESS_SPAWN_ERROR',
+        message: `训练进程启动失败: ${err.message}`,
+        details: { error: err.message }
+      });
+      this.logsV2.updateDiagnosis(projectId, {
+        status: 'failed',
+        stage: 'bootstrap',
+        code: 'TRAIN_PROCESS_SPAWN_ERROR',
+        rootCause: '训练进程启动失败',
+        evidence: [err.message],
+        suggestions: [
+          '检查 Python 解释器路径和权限',
+          '检查训练脚本路径是否存在',
+          '查看系统日志确认进程启动错误'
+        ],
+        rawTail: this.logsV2.getRawTail(projectId)
+      });
     });
 
-    return { success: true, pid: child.pid, name: config.name || 'exp_auto', batch: config.batch };
+    return {
+      success: true,
+      pid: child.pid,
+      name: config.name || 'exp_auto',
+      batch: config.batch,
+      runId: (this.logsV2.getStatus(projectId) || {}).runId || null
+    };
   }
 
   async handleOOMError(projectId, config, retryCount) {
@@ -971,6 +1377,27 @@ class TrainingService {
         type: 'system',
         msg: `❌ 已达到最大重试次数 (${MAX_OOM_RETRIES})，训练终止`,
         time: Date.now()
+      });
+      this.logsV2.appendEvent(projectId, {
+        source: 'system',
+        level: 'error',
+        stage: 'train',
+        kind: 'diagnostic',
+        code: 'CUDA_OOM_MAX_RETRIES',
+        message: `显存不足重试超过上限 (${MAX_OOM_RETRIES})`
+      });
+      this.logsV2.updateDiagnosis(projectId, {
+        status: 'failed',
+        stage: 'train',
+        code: 'CUDA_OOM_MAX_RETRIES',
+        rootCause: '显存不足且自动重试失败',
+        evidence: ['多次重试后仍发生 OOM'],
+        suggestions: [
+          '进一步减小 batch 或 imgsz',
+          '切换更小模型（如 yolov8n-pose）',
+          '切换 CPU 训练或释放 GPU 显存'
+        ],
+        rawTail: this.logsV2.getRawTail(projectId)
       });
 
       this.processes.addLog(projectId, {
@@ -1012,6 +1439,19 @@ class TrainingService {
       type: 'system',
       msg: `🔄 显存不足！将在 3 秒后自动重试，Batch Size: ${config.batch} → ${newBatch}`,
       time: Date.now()
+    });
+    this.logsV2.appendEvent(projectId, {
+      source: 'system',
+      level: 'warn',
+      stage: 'train',
+      kind: 'diagnostic',
+      code: 'CUDA_OOM_RETRYING',
+      message: `显存不足，自动重试 batch: ${config.batch} -> ${newBatch}`,
+      details: {
+        oldBatch: config.batch,
+        newBatch,
+        retry: retryState.retryCount
+      }
     });
 
     logger.info(`OOM detected for project ${projectId}, will retry with batch size ${newBatch}`);
@@ -1061,10 +1501,19 @@ class TrainingService {
     try {
       this.killProcess(processState.pid, true);
       this.processes.setStatus(projectId, 'stopped');
+      this.logsV2.setStatus(projectId, 'stopped');
       this.processes.addLog(projectId, {
         type: 'system',
         msg: '用户手动停止训练',
         time: Date.now()
+      });
+      this.logsV2.appendEvent(projectId, {
+        source: 'system',
+        level: 'warn',
+        stage: 'teardown',
+        kind: 'status',
+        code: 'TRAIN_STOPPED_BY_USER',
+        message: '用户手动停止训练'
       });
       return { success: true };
     } catch (err) {

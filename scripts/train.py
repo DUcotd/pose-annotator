@@ -56,13 +56,57 @@ class TrainingLogger:
             s = s.replace(char, '')
             
         return s.strip()
+
+    def _infer_stage_kind_code(self, event, level, context):
+        """推断结构化日志的 stage/kind/code，兼容旧调用方式"""
+        event_name = str(event or 'unknown')
+        lower = event_name.lower()
+
+        stage = context.get('stage')
+        kind = context.get('kind')
+        code = context.get('code')
+
+        if not stage:
+            if 'preflight' in lower or 'validation_passed' in lower or 'validation_failed' in lower:
+                stage = 'preflight'
+            elif 'validation' in lower or 'map' in lower:
+                stage = 'validate'
+            elif 'export' in lower:
+                stage = 'export'
+            elif 'train' in lower or 'epoch' in lower or 'resume' in lower:
+                stage = 'train'
+            elif 'model_load' in lower or 'hardware_check' in lower or 'config_snapshot' in lower or 'dataset_stats' in lower:
+                stage = 'bootstrap'
+            elif 'summary' in lower or 'complete' in lower or 'error' in lower:
+                stage = 'teardown'
+            else:
+                stage = 'unknown'
+
+        if not kind:
+            if lower in {'epoch_end', 'validation_complete', 'performance_benchmark', 'per_keypoint_metrics', 'gpu_summary'}:
+                kind = 'metric'
+            elif 'error' in lower or level in {self.ERROR, self.CRITICAL}:
+                kind = 'diagnostic'
+            elif lower.endswith('_start') or lower.endswith('_complete') or lower.endswith('_stop'):
+                kind = 'status'
+            else:
+                kind = 'raw'
+
+        if not code:
+            code = event_name.upper()
+
+        return stage, kind, code
     
     def log(self, event, message, level=INFO, **context):
         """输出结构化 JSON 日志"""
+        stage, kind, code = self._infer_stage_kind_code(event, level, context)
         data = {
             'event': event,
             'timestamp': datetime.datetime.now().isoformat(),
             'level': level,
+            'stage': stage,
+            'kind': kind,
+            'code': code,
             'message': self._clean_string(message),
             'context': {
                 'elapsed_seconds': round(time.time() - self.start_time, 2),

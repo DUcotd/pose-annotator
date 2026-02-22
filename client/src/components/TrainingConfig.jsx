@@ -6,7 +6,7 @@ import {
 import { useProject } from '../context/ProjectContext';
 import { useTraining } from '../hooks/useTraining';
 import { StatBadge } from './training/CommonComponents';
-import { LogViewer } from './training/VizComponents';
+import { LogWorkbench } from './training/LogWorkbench';
 import { TrainingDashboard } from './training/TrainingDashboard';
 import { TrainingForm, AugmentationForm, HardwareForm, StrategyForm, LossForm, RemoteForm } from './training/TrainingForms';
 
@@ -18,6 +18,9 @@ export const TrainingConfig = () => {
         envInfo,
         logs,
         metrics,
+        eventsV2,
+        diagnosisV2,
+        connectionState,
         stats,
         datasetInfo,
         handleStart: startTraining,
@@ -32,6 +35,7 @@ export const TrainingConfig = () => {
     const logEndRef = useRef(null);
     const [exportResult, setExportResult] = useState(null);
     const [showExportSuccess, setShowExportSuccess] = useState(false);
+    const hasExportableData = eventsV2.length > 0 || logs.length > 0 || metrics.length > 0;
 
     const onStart = async () => {
         try {
@@ -241,7 +245,11 @@ export const TrainingConfig = () => {
                     <TrainingDashboard metrics={metrics} status={status} />
 
                     {/* Log Viewer */}
-                    <LogViewer logs={logs} />
+                    <LogWorkbench
+                        events={eventsV2}
+                        diagnosis={diagnosisV2}
+                        connectionState={connectionState}
+                    />
                 </div>
 
                 {/* Right: Controls & Config */}
@@ -312,18 +320,18 @@ export const TrainingConfig = () => {
                                 alert(`导出失败: ${err.message}`);
                             }
                         }}
-                        disabled={logs.length === 0 && metrics.length === 0}
+                        disabled={!hasExportableData}
                         style={{
                             width: '100%',
-                            background: logs.length === 0 && metrics.length === 0
+                            background: !hasExportableData
                                 ? 'rgba(255,255,255,0.03)'
                                 : 'rgba(99, 102, 241, 0.1)',
-                            border: logs.length === 0 && metrics.length === 0
+                            border: !hasExportableData
                                 ? '1px solid rgba(255,255,255,0.06)'
                                 : '1px solid rgba(99, 102, 241, 0.2)',
                             borderRadius: '16px',
                             padding: '0.875rem',
-                            color: logs.length === 0 && metrics.length === 0
+                            color: !hasExportableData
                                 ? 'var(--text-tertiary)'
                                 : '#818cf8',
                             fontWeight: 600,
@@ -331,7 +339,7 @@ export const TrainingConfig = () => {
                             alignItems: 'center',
                             justifyContent: 'center',
                             gap: '10px',
-                            cursor: logs.length === 0 && metrics.length === 0 ? 'not-allowed' : 'pointer',
+                            cursor: !hasExportableData ? 'not-allowed' : 'pointer',
                             transition: 'all 0.2s',
                             flexShrink: 0
                         }}
