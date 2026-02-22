@@ -60,7 +60,7 @@ export const MainLayout = ({ children }) => {
                     </div>
                     <div className="brand-text">
                         <h1>数据标注平台</h1>
-                        <span className="brand-tagline">AI Smart Labeling · v1.2</span>
+                        <span className="brand-tagline">AI Smart Labeling · v2.1</span>
                     </div>
                 </div>
 

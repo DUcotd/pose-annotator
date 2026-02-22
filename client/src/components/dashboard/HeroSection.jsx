@@ -14,7 +14,7 @@ export const HeroSection = ({ onCreate, onImport, onGuide, summary }) => {
                 <span className="hero-title-kicker text-gradient">探索您的</span>
                 <span className="hero-title-main">
                     计算机视觉世界
-                    <span className="badge-new">v1.2</span>
+                    <span className="badge-new">v2.1</span>
                 </span>
             </h1>
             <p className="hero-subtitle">
