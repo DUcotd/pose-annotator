@@ -678,10 +678,10 @@ class TrainingService {
   normalizeJsonLogToV2(jsonData) {
     const rawEventName = String(jsonData?.event || 'unknown');
     const eventName = rawEventName.toLowerCase();
-    const stage = jsonData?.stage || this.inferStageFromEvent(eventName);
+    let stage = jsonData?.stage || this.inferStageFromEvent(eventName);
     const level = String((jsonData?.level || 'INFO')).toLowerCase();
     const message = jsonData?.message || rawEventName;
-    const code = jsonData?.code || (rawEventName ? rawEventName.toUpperCase() : 'JSON_EVENT');
+    let code = jsonData?.code || (rawEventName ? rawEventName.toUpperCase() : 'JSON_EVENT');
 
     const details = {
       ...jsonData,
@@ -701,13 +701,36 @@ class TrainingService {
     // Some script events are emitted with kind=raw but carry structured metric payload.
     // We normalize them to metric to keep dashboard signals real-time.
     const forceMetricEvents = new Set(['gpu_warning']);
-    const kind = forceMetricEvents.has(eventName)
+    let kind = forceMetricEvents.has(eventName)
       ? 'metric'
       : (jsonData?.kind || (metricEvents.has(eventName) ? 'metric' : (eventName.includes('error') ? 'diagnostic' : 'status')));
 
+    let normalizedLevel = ['debug', 'info', 'warn', 'error', 'fatal'].includes(level) ? level : 'info';
+
+    // Backward compatibility:
+    // Old train.py may emit keypoint post-analysis import failures as ERROR.
+    // This step is non-critical after train_complete, so downgrade to warning.
+    if (
+      eventName === 'keypoint_metrics'
+      && /cannot import name\s+['"]?posemetricsstats['"]?/i.test(String(message))
+      && /ultralytics\.utils\.metrics/i.test(String(message))
+    ) {
+      normalizedLevel = 'warn';
+      stage = jsonData?.stage || 'teardown';
+      kind = 'diagnostic';
+      code = 'KEYPOINT_METRICS_SKIPPED';
+      details.context = {
+        ...details.context,
+        nonFatal: true,
+        skipped: true,
+        raw_error: String(message),
+        reason: 'ultralytics_version_incompatible'
+      };
+    }
+
     return {
       source: 'py_stdout',
-      level: ['debug', 'info', 'warn', 'error', 'fatal'].includes(level) ? level : 'info',
+      level: normalizedLevel,
       stage,
       kind,
       code,

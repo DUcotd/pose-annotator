@@ -1,6 +1,8 @@
 const { Client } = require('ssh2');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
+const crypto = require('crypto');
 const archiver = require('archiver');
 const logger = require('../utils/logger');
 const ProcessManager = require('../managers/ProcessManager');
@@ -9,6 +11,32 @@ const { validateRemoteTrainConfig } = require('../utils/ValidationUtils');
 
 const trimString = (value) => (typeof value === 'string' ? value.trim() : '');
 const MAX_AUTO_REPAIR_ATTEMPTS = 1;
+const REMOTE_DATASET_MANIFEST_FILE = '.pose_annotator_dataset_manifest.json';
+const REMOTE_UPLOAD_STALL_TIMEOUT_MS = 3 * 60 * 1000;
+const REMOTE_UPLOAD_PROGRESS_INTERVAL_MS = 15 * 1000;
+const REMOTE_UPLOAD_PROGRESS_PERCENT_STEP = 10;
+const REMOTE_UPLOAD_FASTPUT_CONCURRENCY = 128;
+const REMOTE_UPLOAD_FASTPUT_CHUNK_SIZE = 256 * 1024;
+const REMOTE_UPLOAD_STREAM_CHUNK_SIZE = 512 * 1024;
+const DATASET_ARCHIVE_ZLIB_LEVEL = 1;
+const ARCHIVE_STORE_FILE_EXTENSIONS = new Set([
+  '.jpg',
+  '.jpeg',
+  '.png',
+  '.webp',
+  '.gif',
+  '.bmp',
+  '.tif',
+  '.tiff',
+  '.mp4',
+  '.avi',
+  '.mov',
+  '.mkv',
+  '.zip',
+  '.7z',
+  '.rar',
+  '.gz'
+]);
 
 class RemoteTrainingService {
   constructor() {
@@ -24,6 +52,28 @@ class RemoteTrainingService {
     return `'${str.replace(/'/g, `'\"'\"'`)}'`;
   }
 
+  formatBytes(bytes) {
+    const numeric = Number(bytes);
+    if (!Number.isFinite(numeric) || numeric <= 0) return '0 B';
+
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    let size = numeric;
+    let unitIndex = 0;
+
+    while (size >= 1024 && unitIndex < units.length - 1) {
+      size /= 1024;
+      unitIndex += 1;
+    }
+
+    const fractionDigits = size >= 100 || unitIndex === 0 ? 0 : size >= 10 ? 1 : 2;
+    return `${size.toFixed(fractionDigits)} ${units[unitIndex]}`;
+  }
+
+  shouldStoreArchiveEntry(filePath = '') {
+    const ext = path.extname(String(filePath || '')).toLowerCase();
+    return ARCHIVE_STORE_FILE_EXTENSIONS.has(ext);
+  }
+
   sanitizeRemoteConfig(config = {}) {
     const remotePortNum = Number(config.remotePort);
     const remotePort = Number.isInteger(remotePortNum) ? remotePortNum : 22;
@@ -37,6 +87,133 @@ class RemoteTrainingService {
       remotePath: trimString(config.remotePath) || '/tmp/training',
       remotePython: trimString(config.remotePython) || 'python3'
     };
+  }
+
+  getRemoteDatasetManifestPath(remotePath) {
+    return path.posix.join(remotePath, REMOTE_DATASET_MANIFEST_FILE);
+  }
+
+  async hashFileSha256(filePath) {
+    return new Promise((resolve, reject) => {
+      const hash = crypto.createHash('sha256');
+      const stream = fs.createReadStream(filePath);
+      stream.on('error', reject);
+      stream.on('data', (chunk) => hash.update(chunk));
+      stream.on('end', () => resolve(hash.digest('hex')));
+    });
+  }
+
+  async collectDatasetFiles(datasetRoot, relativeDir = '', files = []) {
+    const currentDir = relativeDir
+      ? path.join(datasetRoot, relativeDir)
+      : datasetRoot;
+    const entries = await fs.promises.readdir(currentDir, { withFileTypes: true });
+
+    for (const entry of entries) {
+      const relPath = relativeDir
+        ? path.posix.join(relativeDir, entry.name)
+        : entry.name;
+
+      if (entry.isDirectory()) {
+        await this.collectDatasetFiles(datasetRoot, relPath, files);
+        continue;
+      }
+      if (entry.isFile()) {
+        files.push(relPath);
+      }
+    }
+
+    return files;
+  }
+
+  async buildLocalDatasetManifest(projectRoot) {
+    const datasetPath = path.join(projectRoot, 'dataset');
+    if (!fs.existsSync(datasetPath)) {
+      throw new Error(`本地数据集目录不存在: ${datasetPath}`);
+    }
+    const yamlPath = path.join(datasetPath, 'data.yaml');
+    if (!fs.existsSync(yamlPath)) {
+      throw new Error(`本地数据集缺少 data.yaml: ${yamlPath}`);
+    }
+
+    const relativeFiles = await this.collectDatasetFiles(datasetPath);
+    relativeFiles.sort((a, b) => a.localeCompare(b));
+
+    const rollupHash = crypto.createHash('sha256');
+    let totalBytes = 0;
+
+    for (const relativeFile of relativeFiles) {
+      const absolutePath = path.join(datasetPath, relativeFile);
+      const stat = await fs.promises.stat(absolutePath);
+      if (!stat.isFile()) continue;
+
+      const contentHash = await this.hashFileSha256(absolutePath);
+      totalBytes += Number(stat.size || 0);
+
+      rollupHash.update(relativeFile);
+      rollupHash.update('\t');
+      rollupHash.update(String(stat.size));
+      rollupHash.update('\t');
+      rollupHash.update(contentHash);
+      rollupHash.update('\n');
+    }
+
+    return {
+      schemaVersion: 1,
+      algorithm: 'sha256(path,size,content)',
+      fingerprint: rollupHash.digest('hex'),
+      fileCount: relativeFiles.length,
+      totalBytes,
+      generatedAt: new Date().toISOString()
+    };
+  }
+
+  normalizeFingerprint(value) {
+    return typeof value === 'string' ? value.trim().toLowerCase() : '';
+  }
+
+  isValidFingerprint(value) {
+    return /^[a-f0-9]{64}$/.test(this.normalizeFingerprint(value));
+  }
+
+  extractManifestFingerprint(manifest) {
+    if (!manifest || typeof manifest !== 'object') return null;
+    const fingerprint = this.normalizeFingerprint(manifest.fingerprint);
+    if (!this.isValidFingerprint(fingerprint)) return null;
+    return fingerprint;
+  }
+
+  planDatasetSync(localManifest, remoteManifest, hasRemoteDataYaml) {
+    const localFingerprint = this.extractManifestFingerprint(localManifest);
+    if (!localFingerprint) {
+      return { shouldUpload: true, reason: 'local_manifest_invalid' };
+    }
+
+    if (!hasRemoteDataYaml) {
+      return { shouldUpload: true, reason: 'remote_dataset_missing' };
+    }
+
+    const remoteFingerprint = this.extractManifestFingerprint(remoteManifest);
+    if (!remoteFingerprint) {
+      return { shouldUpload: true, reason: 'remote_manifest_missing' };
+    }
+
+    if (remoteFingerprint !== localFingerprint) {
+      return { shouldUpload: true, reason: 'dataset_fingerprint_changed' };
+    }
+
+    return { shouldUpload: false, reason: 'dataset_fingerprint_match' };
+  }
+
+  describeDatasetSyncReason(reason) {
+    const mapping = {
+      local_manifest_invalid: '本地数据集指纹无效，需重新上传',
+      remote_dataset_missing: '远程数据目录缺少 data.yaml',
+      remote_manifest_missing: '远程不存在可用的数据集指纹清单',
+      dataset_fingerprint_changed: '本地数据集与远程指纹不一致',
+      dataset_fingerprint_match: '远程数据集指纹与本地一致'
+    };
+    return mapping[reason] || reason;
   }
 
   appendV2Event(projectId, eventInput = {}) {
@@ -107,15 +284,25 @@ class RemoteTrainingService {
     let zipPath = null;
 
     try {
-      zipPath = await this.packageDataset(projectId, projectRoot);
+      const localManifest = await this.buildLocalDatasetManifest(projectRoot);
+      const localFingerprintShort = String(localManifest.fingerprint || '').slice(0, 12);
+      ProcessManager.addLog(projectId, {
+        type: 'system',
+        msg: `🧾 本地数据集指纹: ${localFingerprintShort}... (files=${localManifest.fileCount}, bytes=${localManifest.totalBytes})`,
+        time: Date.now()
+      });
       this.appendV2Event(projectId, {
         source: 'system',
         level: 'info',
         stage: 'bootstrap',
-        kind: 'status',
-        code: 'REMOTE_DATASET_PACKAGED',
-        message: '本地数据集已打包',
-        details: { zipPath: path.basename(zipPath) }
+        kind: 'metric',
+        code: 'REMOTE_DATASET_FINGERPRINT_LOCAL',
+        message: '已计算本地数据集指纹',
+        details: {
+          fingerprint: localManifest.fingerprint,
+          fileCount: localManifest.fileCount,
+          totalBytes: localManifest.totalBytes
+        }
       });
 
       conn = await this.connect({
@@ -134,18 +321,112 @@ class RemoteTrainingService {
         message: '远程 SSH 连接成功'
       });
 
-      await this.uploadAndExtract(conn, zipPath, normalizedConfig.remotePath);
-      this.appendV2Event(projectId, {
-        source: 'system',
-        level: 'info',
-        stage: 'bootstrap',
-        kind: 'status',
-        code: 'REMOTE_DATASET_READY',
-        message: '数据集已上传并解压到远程目录'
-      });
+      const syncState = await this.evaluateDatasetSyncState(
+        conn,
+        normalizedConfig.remotePath,
+        localManifest
+      );
+      const syncReasonText = this.describeDatasetSyncReason(syncState.reason);
+      const remoteFingerprintShort = String(syncState.remoteManifest?.fingerprint || '').slice(0, 12);
 
-      await this.cleanupLocalArchive(zipPath);
-      zipPath = null;
+      if (syncState.shouldUpload) {
+        ProcessManager.addLog(projectId, {
+          type: 'system',
+          msg: `📦 远程数据集需要更新: ${syncReasonText}，开始上传...`,
+          time: Date.now()
+        });
+        this.appendV2Event(projectId, {
+          source: 'system',
+          level: 'warn',
+          stage: 'bootstrap',
+          kind: 'status',
+          code: 'REMOTE_DATASET_UPLOAD_REQUIRED',
+          message: `远程数据集需上传: ${syncReasonText}`,
+          details: {
+            reason: syncState.reason,
+            localFingerprint: localManifest.fingerprint,
+            remoteFingerprint: syncState.remoteManifest?.fingerprint || null
+          }
+        });
+
+        zipPath = await this.packageDataset(projectId, projectRoot);
+        this.appendV2Event(projectId, {
+          source: 'system',
+          level: 'info',
+          stage: 'bootstrap',
+          kind: 'status',
+          code: 'REMOTE_DATASET_PACKAGED',
+          message: '本地数据集已打包',
+          details: { zipPath: path.basename(zipPath) }
+        });
+
+        await this.uploadAndExtract(projectId, conn, zipPath, normalizedConfig.remotePath);
+        this.appendV2Event(projectId, {
+          source: 'system',
+          level: 'info',
+          stage: 'bootstrap',
+          kind: 'status',
+          code: 'REMOTE_DATASET_READY',
+          message: '数据集已上传并解压到远程目录'
+        });
+
+        await this.cleanupLocalArchive(zipPath);
+        zipPath = null;
+
+        try {
+          await this.writeRemoteDatasetManifest(conn, normalizedConfig.remotePath, {
+            ...localManifest,
+            projectId,
+            remotePath: normalizedConfig.remotePath,
+            syncedAt: new Date().toISOString()
+          });
+          this.appendV2Event(projectId, {
+            source: 'system',
+            level: 'info',
+            stage: 'bootstrap',
+            kind: 'status',
+            code: 'REMOTE_DATASET_MANIFEST_UPDATED',
+            message: '远程数据集指纹清单已更新',
+            details: {
+              fingerprint: localManifest.fingerprint,
+              fileCount: localManifest.fileCount
+            }
+          });
+        } catch (manifestErr) {
+          ProcessManager.addLog(projectId, {
+            type: 'error',
+            msg: `写入远程数据集指纹清单失败: ${manifestErr.message}`,
+            time: Date.now()
+          });
+          this.appendV2Event(projectId, {
+            source: 'system',
+            level: 'warn',
+            stage: 'bootstrap',
+            kind: 'diagnostic',
+            code: 'REMOTE_DATASET_MANIFEST_WRITE_FAILED',
+            message: `写入远程数据集指纹清单失败: ${manifestErr.message}`
+          });
+        }
+      } else {
+        ProcessManager.addLog(projectId, {
+          type: 'system',
+          msg: `♻️ 远程数据集复用命中，跳过上传 (fingerprint=${localFingerprintShort}..., remote=${remoteFingerprintShort || 'n/a'}...)`,
+          time: Date.now()
+        });
+        this.appendV2Event(projectId, {
+          source: 'system',
+          level: 'info',
+          stage: 'bootstrap',
+          kind: 'status',
+          code: 'REMOTE_DATASET_REUSED',
+          message: `远程数据集一致，跳过上传: ${syncReasonText}`,
+          details: {
+            reason: syncState.reason,
+            fingerprint: localManifest.fingerprint,
+            remoteFingerprint: syncState.remoteManifest?.fingerprint || null
+          }
+        });
+      }
 
       this.executeTraining(projectId, conn, normalizedConfig);
       return { success: true, message: '远程训练任务已启动' };
@@ -217,12 +498,177 @@ class RemoteTrainingService {
     });
   }
 
-  async fastPut(sftp, localPath, remotePath) {
+  async fastPut(sftp, localPath, remotePath, options = {}) {
+    const stallTimeoutMsRaw = Number(options.stallTimeoutMs);
+    const stallTimeoutMs =
+      Number.isFinite(stallTimeoutMsRaw) && stallTimeoutMsRaw > 0
+        ? stallTimeoutMsRaw
+        : REMOTE_UPLOAD_STALL_TIMEOUT_MS;
+    const concurrencyRaw = Number(options.concurrency);
+    const chunkSizeRaw = Number(options.chunkSize);
+    const concurrency =
+      Number.isInteger(concurrencyRaw) && concurrencyRaw > 0
+        ? concurrencyRaw
+        : REMOTE_UPLOAD_FASTPUT_CONCURRENCY;
+    const chunkSize =
+      Number.isInteger(chunkSizeRaw) && chunkSizeRaw >= 32 * 1024
+        ? chunkSizeRaw
+        : REMOTE_UPLOAD_FASTPUT_CHUNK_SIZE;
+    const onProgress = typeof options.onProgress === 'function' ? options.onProgress : null;
+
     return new Promise((resolve, reject) => {
-      sftp.fastPut(localPath, remotePath, (err) => {
-        if (err) return reject(err);
+      let settled = false;
+      let stallTimer = null;
+
+      const clearStallTimer = () => {
+        if (!stallTimer) return;
+        clearTimeout(stallTimer);
+        stallTimer = null;
+      };
+      const rejectOnce = (err) => {
+        if (settled) return;
+        settled = true;
+        clearStallTimer();
+        reject(err);
+      };
+      const resolveOnce = () => {
+        if (settled) return;
+        settled = true;
+        clearStallTimer();
         resolve();
+      };
+      const refreshStallTimer = () => {
+        clearStallTimer();
+        stallTimer = setTimeout(() => {
+          rejectOnce(
+            new Error(
+              `SFTP 上传长时间无进度（>${Math.round(stallTimeoutMs / 1000)} 秒），传输可能已卡住`
+            )
+          );
+        }, stallTimeoutMs);
+        if (typeof stallTimer.unref === 'function') {
+          stallTimer.unref();
+        }
+      };
+
+      refreshStallTimer();
+
+      sftp.fastPut(
+        localPath,
+        remotePath,
+        {
+          concurrency,
+          chunkSize,
+          step: (transferred, chunk, total) => {
+            refreshStallTimer();
+            if (onProgress) {
+              onProgress({
+                transferred: Number(transferred) || 0,
+                chunkSize: Number(chunk) || 0,
+                total: Number(total) || 0
+              });
+            }
+          }
+        },
+        (err) => {
+          if (err) {
+            rejectOnce(err);
+            return;
+          }
+          resolveOnce();
+        }
+      );
+    });
+  }
+
+  async streamPut(sftp, localPath, remotePath, options = {}) {
+    const localStat = await fs.promises.stat(localPath);
+    const totalBytes = Number(localStat.size || 0);
+    const stallTimeoutMsRaw = Number(options.stallTimeoutMs);
+    const stallTimeoutMs =
+      Number.isFinite(stallTimeoutMsRaw) && stallTimeoutMsRaw > 0
+        ? stallTimeoutMsRaw
+        : REMOTE_UPLOAD_STALL_TIMEOUT_MS;
+    const onProgress = typeof options.onProgress === 'function' ? options.onProgress : null;
+
+    return new Promise((resolve, reject) => {
+      const readStream = fs.createReadStream(localPath, {
+        highWaterMark: REMOTE_UPLOAD_STREAM_CHUNK_SIZE
       });
+      const writeStream = sftp.createWriteStream(remotePath);
+      let settled = false;
+      let transferred = 0;
+      let stallTimer = null;
+
+      const clearStallTimer = () => {
+        if (!stallTimer) return;
+        clearTimeout(stallTimer);
+        stallTimer = null;
+      };
+      const refreshStallTimer = () => {
+        clearStallTimer();
+        stallTimer = setTimeout(() => {
+          rejectOnce(
+            new Error(
+              `SFTP 流式上传长时间无进度（>${Math.round(stallTimeoutMs / 1000)} 秒），传输可能已卡住`
+            )
+          );
+        }, stallTimeoutMs);
+        if (typeof stallTimer.unref === 'function') {
+          stallTimer.unref();
+        }
+      };
+      const rejectOnce = (err) => {
+        if (settled) return;
+        settled = true;
+        clearStallTimer();
+        try {
+          readStream.destroy();
+        } catch {
+          // noop
+        }
+        try {
+          writeStream.destroy();
+        } catch {
+          // noop
+        }
+        reject(err);
+      };
+      const resolveOnce = () => {
+        if (settled) return;
+        settled = true;
+        clearStallTimer();
+        resolve();
+      };
+
+      refreshStallTimer();
+
+      readStream.on('data', (chunk) => {
+        transferred += Number(chunk?.length || 0);
+        refreshStallTimer();
+        if (onProgress) {
+          onProgress({
+            transferred,
+            chunkSize: Number(chunk?.length || 0),
+            total: totalBytes
+          });
+        }
+      });
+
+      readStream.on('error', rejectOnce);
+      writeStream.on('error', rejectOnce);
+      writeStream.on('close', () => {
+        if (onProgress && totalBytes > 0) {
+          onProgress({
+            transferred: totalBytes,
+            chunkSize: 0,
+            total: totalBytes
+          });
+        }
+        resolveOnce();
+      });
+
+      readStream.pipe(writeStream);
     });
   }
 
@@ -242,6 +688,81 @@ class RemoteTrainingService {
         resolve(stats);
       });
     });
+  }
+
+  async remoteFileExists(conn, remoteFilePath) {
+    const sftp = await this.openSftp(conn);
+    try {
+      await this.statPath(sftp, remoteFilePath);
+      return true;
+    } catch {
+      return false;
+    } finally {
+      try {
+        sftp.end();
+      } catch {
+        // noop
+      }
+    }
+  }
+
+  async readRemoteDatasetManifest(conn, remotePath) {
+    const remoteManifestPath = this.getRemoteDatasetManifestPath(remotePath);
+    const safeManifestPath = this.shellEscape(remoteManifestPath);
+    const { stdout } = await this.execCommand(
+      conn,
+      `if [ -f ${safeManifestPath} ]; then cat ${safeManifestPath}; fi`
+    );
+    const raw = String(stdout || '').trim();
+    if (!raw) return null;
+
+    try {
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === 'object' ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+
+  async writeRemoteDatasetManifest(conn, remotePath, manifestPayload = {}) {
+    const remoteManifestPath = this.getRemoteDatasetManifestPath(remotePath);
+    const tempManifestPath = path.join(
+      os.tmpdir(),
+      `pose-annotator-remote-manifest-${Date.now()}-${Math.random().toString(36).slice(2)}.json`
+    );
+    await fs.promises.writeFile(
+      tempManifestPath,
+      JSON.stringify(manifestPayload, null, 2),
+      'utf8'
+    );
+
+    const sftp = await this.openSftp(conn);
+    try {
+      await this.fastPut(sftp, tempManifestPath, remoteManifestPath);
+    } finally {
+      try {
+        sftp.end();
+      } catch {
+        // noop
+      }
+      try {
+        await fs.promises.unlink(tempManifestPath);
+      } catch {
+        // noop
+      }
+    }
+  }
+
+  async evaluateDatasetSyncState(conn, remotePath, localManifest) {
+    const remoteDataYamlPath = path.posix.join(remotePath, 'data.yaml');
+    const hasRemoteDataYaml = await this.remoteFileExists(conn, remoteDataYamlPath);
+    const remoteManifest = await this.readRemoteDatasetManifest(conn, remotePath);
+    const decision = this.planDatasetSync(localManifest, remoteManifest, hasRemoteDataYaml);
+    return {
+      ...decision,
+      hasRemoteDataYaml,
+      remoteManifest
+    };
   }
 
   async execCommand(conn, command) {
@@ -281,16 +802,25 @@ class RemoteTrainingService {
 
     const zipPath = path.join(projectRoot, `.remote_dataset_${projectId}_${Date.now()}.zip`);
 
+    const relativeFiles = await this.collectDatasetFiles(datasetPath);
+    relativeFiles.sort((a, b) => a.localeCompare(b));
+
     return new Promise((resolve, reject) => {
       const output = fs.createWriteStream(zipPath);
-      const archive = archiver('zip', { zlib: { level: 9 } });
+      const archive = archiver('zip', { zlib: { level: DATASET_ARCHIVE_ZLIB_LEVEL } });
 
       output.on('close', () => resolve(zipPath));
       output.on('error', reject);
       archive.on('error', reject);
 
       archive.pipe(output);
-      archive.directory(datasetPath, false);
+      for (const relativeFile of relativeFiles) {
+        const absolutePath = path.join(datasetPath, relativeFile);
+        archive.file(absolutePath, {
+          name: relativeFile,
+          store: this.shouldStoreArchiveEntry(relativeFile)
+        });
+      }
       archive.finalize();
     });
   }
@@ -304,16 +834,92 @@ class RemoteTrainingService {
     }
   }
 
-  async uploadAndExtract(conn, localZipPath, remotePath) {
+  async uploadAndExtract(projectId, conn, localZipPath, remotePath) {
     const remoteZipPath = path.posix.join(remotePath, path.basename(localZipPath));
     const safeRemotePath = this.shellEscape(remotePath);
     const safeRemoteZipPath = this.shellEscape(remoteZipPath);
+    const archiveStat = await fs.promises.stat(localZipPath);
+    const archiveBytes = Number(archiveStat.size || 0);
+    const archiveSizeText = this.formatBytes(archiveBytes);
+    const stallTimeoutSeconds = Math.round(REMOTE_UPLOAD_STALL_TIMEOUT_MS / 1000);
+
+    ProcessManager.addLog(projectId, {
+      type: 'system',
+      msg: `⬆️ 开始上传远程数据集压缩包 (${archiveSizeText})`,
+      time: Date.now()
+    });
+    this.appendV2Event(projectId, {
+      source: 'system',
+      level: 'info',
+      stage: 'bootstrap',
+      kind: 'status',
+      code: 'REMOTE_DATASET_UPLOAD_STARTED',
+      message: '远程数据集上传开始',
+      details: {
+        archive: path.basename(localZipPath),
+        bytes: archiveBytes
+      }
+    });
 
     await this.execCommand(conn, `mkdir -p ${safeRemotePath}`);
 
-    const sftp = await this.openSftp(conn);
+    let lastProgressTs = 0;
+    let lastProgressPercent = -1;
+    const reportProgress = ({ transferred, total }) => {
+      const totalBytes = total > 0 ? total : archiveBytes;
+      const transferredBytes = Math.max(0, Number(transferred) || 0);
+      const progressPercent =
+        totalBytes > 0 ? Math.min(100, Math.floor((transferredBytes / totalBytes) * 100)) : null;
+      const now = Date.now();
+      const reachedStep =
+        progressPercent !== null &&
+        (lastProgressPercent < 0 || progressPercent >= lastProgressPercent + REMOTE_UPLOAD_PROGRESS_PERCENT_STEP);
+      const reachedInterval = now - lastProgressTs >= REMOTE_UPLOAD_PROGRESS_INTERVAL_MS;
+      const completed = progressPercent === 100;
+
+      if (!reachedStep && !reachedInterval && !completed) {
+        return;
+      }
+
+      lastProgressTs = now;
+      if (progressPercent !== null) {
+        lastProgressPercent = progressPercent;
+      }
+
+      const transferredText = this.formatBytes(transferredBytes);
+      const totalText = this.formatBytes(totalBytes);
+      const percentText = progressPercent !== null ? `${progressPercent}%` : 'unknown';
+
+      ProcessManager.addLog(projectId, {
+        type: 'system',
+        msg: `⬆️ 远程上传进度 ${percentText} (${transferredText}/${totalText})`,
+        time: now
+      });
+      this.appendV2Event(projectId, {
+        source: 'system',
+        level: 'info',
+        stage: 'bootstrap',
+        kind: 'metric',
+        code: 'REMOTE_DATASET_UPLOAD_PROGRESS',
+        message: `远程上传进度 ${percentText}`,
+        details: {
+          transferredBytes,
+          totalBytes,
+          percent: progressPercent
+        }
+      });
+    };
+
+    let usedStreamFallback = false;
+    let fastPutError = null;
+    let sftp = await this.openSftp(conn);
     try {
-      await this.fastPut(sftp, localZipPath, remoteZipPath);
+      await this.fastPut(sftp, localZipPath, remoteZipPath, {
+        stallTimeoutMs: REMOTE_UPLOAD_STALL_TIMEOUT_MS,
+        onProgress: reportProgress
+      });
+    } catch (err) {
+      fastPutError = err;
     } finally {
       try {
         sftp.end();
@@ -322,10 +928,86 @@ class RemoteTrainingService {
       }
     }
 
+    if (fastPutError) {
+      const fallbackMessage = `SFTP fastPut 上传失败，回退到流式上传: ${fastPutError.message}`;
+      ProcessManager.addLog(projectId, {
+        type: 'warn',
+        msg: `⚠️ ${fallbackMessage}`,
+        time: Date.now()
+      });
+      this.appendV2Event(projectId, {
+        source: 'system',
+        level: 'warn',
+        stage: 'bootstrap',
+        kind: 'diagnostic',
+        code: 'REMOTE_DATASET_UPLOAD_FALLBACK_STREAM',
+        message: fallbackMessage,
+        details: {
+          stallTimeoutSeconds
+        }
+      });
+
+      usedStreamFallback = true;
+      sftp = await this.openSftp(conn);
+      try {
+        await this.streamPut(sftp, localZipPath, remoteZipPath, {
+          stallTimeoutMs: REMOTE_UPLOAD_STALL_TIMEOUT_MS,
+          onProgress: reportProgress
+        });
+      } finally {
+        try {
+          sftp.end();
+        } catch {
+          // noop
+        }
+      }
+    }
+
+    ProcessManager.addLog(projectId, {
+      type: 'system',
+      msg: `✅ 远程数据集上传完成 (${usedStreamFallback ? 'stream' : 'fastPut'})`,
+      time: Date.now()
+    });
+    this.appendV2Event(projectId, {
+      source: 'system',
+      level: 'info',
+      stage: 'bootstrap',
+      kind: 'status',
+      code: 'REMOTE_DATASET_UPLOAD_COMPLETED',
+      message: '远程数据集上传完成',
+      details: {
+        transport: usedStreamFallback ? 'stream' : 'fastPut',
+        bytes: archiveBytes
+      }
+    });
+
+    ProcessManager.addLog(projectId, {
+      type: 'system',
+      msg: '🗜️ 正在解压远程数据集...',
+      time: Date.now()
+    });
+    this.appendV2Event(projectId, {
+      source: 'system',
+      level: 'info',
+      stage: 'bootstrap',
+      kind: 'status',
+      code: 'REMOTE_DATASET_EXTRACTING',
+      message: '正在解压远程数据集'
+    });
+
     await this.execCommand(
       conn,
       `unzip -o ${safeRemoteZipPath} -d ${safeRemotePath} && rm -f ${safeRemoteZipPath}`
     );
+
+    this.appendV2Event(projectId, {
+      source: 'system',
+      level: 'info',
+      stage: 'bootstrap',
+      kind: 'status',
+      code: 'REMOTE_DATASET_EXTRACTED',
+      message: '远程数据集解压完成'
+    });
   }
 
   buildRemoteTrainCommand(config) {

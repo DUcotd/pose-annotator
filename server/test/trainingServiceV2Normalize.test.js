@@ -106,6 +106,22 @@ test('TrainingService normalizeJsonLogToV2 promotes gpu_warning to metric case-i
   assert.equal(event.stage, 'train');
 });
 
+test('TrainingService normalizeJsonLogToV2 downgrades PoseMetricsStats import failure to non-fatal warning', () => {
+  const event = TrainingService.normalizeJsonLogToV2({
+    event: 'keypoint_metrics',
+    level: 'ERROR',
+    message: "关键点误差分析失败: cannot import name 'PoseMetricsStats' from 'ultralytics.utils.metrics' (D:\\miniconda3\\envs\\llm-gpu\\Lib\\site-packages\\ultralytics\\utils\\metrics.py)"
+  });
+
+  assert.equal(event.level, 'warn');
+  assert.equal(event.stage, 'teardown');
+  assert.equal(event.kind, 'diagnostic');
+  assert.equal(event.code, 'KEYPOINT_METRICS_SKIPPED');
+  assert.equal(event.details.context.nonFatal, true);
+  assert.equal(event.details.context.skipped, true);
+  assert.equal(event.details.context.reason, 'ultralytics_version_incompatible');
+});
+
 test('TrainingService normalizeMetricPayload flattens gpu stats from nested context.stats', () => {
   const metric = TrainingService.normalizeMetricPayload({
     event: 'gpu_warning',

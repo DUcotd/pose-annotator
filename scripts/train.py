@@ -1149,9 +1149,8 @@ class VisualValidator:
 
 def get_per_keypoint_metrics(model, data_yaml, device='0'):
     try:
-        import torch
-        from ultralytics.utils.metrics import PoseMetricsStats
-        
+        # Optional post-train analysis. Keep it independent from internal Ultralytics classes
+        # to avoid version-specific import breakage.
         training_logger.info('keypoint_metrics', '开始计算各关键点误差分析...')
         
         val_results = model.val(
@@ -1208,7 +1207,19 @@ def get_per_keypoint_metrics(model, data_yaml, device='0'):
         return keypoint_metrics
         
     except Exception as e:
-        training_logger.error('keypoint_metrics', f'关键点误差分析失败: {e}')
+        # Keypoint breakdown is non-critical. Training/validation/export should not be treated as failed.
+        training_logger.warning(
+            'keypoint_metrics',
+            f'关键点误差分析失败，已跳过: {e}',
+            stage='teardown',
+            kind='diagnostic',
+            code='KEYPOINT_METRICS_SKIPPED',
+            raw_error=str(e),
+            suggestions=[
+                '该步骤仅用于附加分析，不影响 best.pt 产出',
+                '若需该分析，请升级/对齐 ultralytics 版本后重试验证流程'
+            ]
+        )
         return {"event": "per_keypoint_metrics", "error": str(e), "keypoints": []}
 
 gpu_monitor = None
