@@ -22,6 +22,8 @@
     "files": [
       "electron-main.js",
       "server.js",
+      "server/**/*",
+      "scripts/**/*",
       "package.json",
       "node_modules/**/*",
       "client/dist/**/*"
