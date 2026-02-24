@@ -151,6 +151,26 @@ const getAllProjectPaths = () => {
     return paths;
 };
 
+const isValidProjectStructure = (projectPath) => {
+    try {
+        if (!fs.existsSync(projectPath)) return false;
+        const stat = fs.statSync(projectPath);
+        if (!stat.isDirectory()) return false;
+
+        const uploadsPath = path.join(projectPath, 'uploads');
+        const annotationsPath = path.join(projectPath, 'annotations');
+
+        return (
+            fs.existsSync(uploadsPath) &&
+            fs.statSync(uploadsPath).isDirectory() &&
+            fs.existsSync(annotationsPath) &&
+            fs.statSync(annotationsPath).isDirectory()
+        );
+    } catch (e) {
+        return false;
+    }
+};
+
 const findProjectRoot = (projectId) => {
     const allPaths = getAllProjectPaths();
     for (const dir of allPaths) {
@@ -247,6 +267,7 @@ app.get('/api/projects', async (req, res) => {
                         const projectPath = path.join(dir, p);
                         const stat = await fs.promises.stat(projectPath);
                         if (!stat.isDirectory()) continue;
+                        if (!isValidProjectStructure(projectPath)) continue;
 
                         projectMap.set(p, projectPath);
                     } catch (e) { /* ignore */ }
@@ -383,6 +404,24 @@ const projectCounters = {}; // In-memory cache for nextImageId to optimize I/O
 const getNextImageId = (projectId) => {
     const paths = getProjectPaths(projectId);
     const configPath = path.join(paths.root, 'config.json');
+    const getMaxFileIndex = () => {
+        try {
+            if (!fs.existsSync(paths.uploads)) return 0;
+            const files = fs.readdirSync(paths.uploads);
+            let max = 0;
+            for (const name of files) {
+                const match = name.match(/^(\d{6})\./);
+                if (!match) continue;
+                const idx = parseInt(match[1], 10);
+                if (Number.isFinite(idx) && idx > max) {
+                    max = idx;
+                }
+            }
+            return max;
+        } catch (e) {
+            return 0;
+        }
+    };
 
     // Initialize from disk if not in cache
     if (projectCounters[projectId] === undefined) {
@@ -392,7 +431,9 @@ const getNextImageId = (projectId) => {
                 config = JSON.parse(fs.readFileSync(configPath));
             } catch (e) { }
         }
-        projectCounters[projectId] = config.nextImageId || 1;
+        const maxFileIndex = getMaxFileIndex();
+        const configuredNext = Number(config.nextImageId) || 1;
+        projectCounters[projectId] = Math.max(configuredNext, maxFileIndex + 1);
     }
 
     const currentId = projectCounters[projectId];
@@ -990,16 +1031,15 @@ app.post('/api/projects/:projectId/import-images', async (req, res) => {
             continue;
         }
 
-        let targetName = originalName;
-        let counter = 1;
+        const ext = path.extname(originalName) || '.jpg';
+        let targetName = String(getNextImageId(projectId)).padStart(6, '0') + ext;
+        let hadNameCollision = false;
         while (existingFiles.has(targetName)) {
-            const ext = path.extname(originalName);
-            const baseName = path.basename(originalName, ext);
-            targetName = `${baseName}_${Date.now()}_${counter}${ext}`;
-            counter++;
+            hadNameCollision = true;
+            targetName = String(getNextImageId(projectId)).padStart(6, '0') + ext;
         }
 
-        if (targetName !== originalName) {
+        if (hadNameCollision) {
             results.duplicates.push({ original: originalName, renamed: targetName });
         }
 
