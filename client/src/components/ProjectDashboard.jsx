@@ -79,6 +79,8 @@ export const ProjectDashboard = ({ projects = [], onCreateProject, onSelectProje
 
     const totalImages = projects.reduce((acc, p) => acc + (p.imageCount || 0), 0);
     const totalAnnotated = projects.reduce((acc, p) => acc + (p.annotatedCount || 0), 0);
+    const readyProjects = projects.filter((project) => (project.imageCount || 0) > 0).length;
+    const pendingAnnotations = Math.max(totalImages - totalAnnotated, 0);
     const annotationRate = totalImages > 0 ? Math.round((totalAnnotated / totalImages) * 100) : 0;
 
     const closeNotification = () => setNotification(null);
@@ -108,6 +110,17 @@ export const ProjectDashboard = ({ projects = [], onCreateProject, onSelectProje
                             ? '当前没有项目，先创建一个开始标注。'
                             : `共 ${projects.length} 个项目，已标注 ${totalAnnotated}/${totalImages} 张图片。`}
                     </p>
+                    <div className="dashboard-content-chips" aria-label="工作区摘要">
+                        <span className="dashboard-content-chip">
+                            就绪项目 {readyProjects}
+                        </span>
+                        <span className="dashboard-content-chip">
+                            待标注 {pendingAnnotations} 张
+                        </span>
+                        <span className="dashboard-content-chip">
+                            平均标注率 {annotationRate}%
+                        </span>
+                    </div>
                 </div>
             </div>
 
@@ -134,7 +147,7 @@ export const ProjectDashboard = ({ projects = [], onCreateProject, onSelectProje
                 </div>
             </div>
 
-            <div className="dashboard-spacer" style={{ marginTop: 'auto', height: '24px' }} />
+            <div className="dashboard-spacer" />
 
             <CreateProjectModal
                 isOpen={isCreating}

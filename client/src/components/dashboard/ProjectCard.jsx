@@ -1,6 +1,14 @@
 import React from 'react';
 import { Folder, Trash2, Zap, ChevronRight, Image as ImageIcon, CheckCircle, MapPin, Loader2, Plus } from 'lucide-react';
 
+const handleCardKeyDown = (event, callback) => {
+    if (event.target !== event.currentTarget) return;
+    if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        callback();
+    }
+};
+
 export const ProjectCard = ({ project, onClick, onDelete, onRenumber, index, isDeleting }) => {
     const hasImages = (project.imageCount || 0) > 0;
     const hasAnnotated = (project.annotatedCount || 0) > 0;
@@ -8,161 +16,71 @@ export const ProjectCard = ({ project, onClick, onDelete, onRenumber, index, isD
 
     return (
         <div
-            className="glass-card glass-card-hover project-card"
+            className={`glass-card glass-card-hover project-card dash-project-card ${isDeleting ? 'is-deleting' : ''}`}
             style={{
-                height: '300px',
-                padding: '28px',
-                display: 'flex',
-                flexDirection: 'column',
-                position: 'relative',
                 animationDelay: `${(index % 4) * 0.1 + 0.2}s`,
-                opacity: isDeleting ? 0.6 : 1,
-                pointerEvents: isDeleting ? 'none' : 'auto'
             }}
             onClick={onClick}
+            onKeyDown={(event) => {
+                if (isDeleting) return;
+                handleCardKeyDown(event, onClick);
+            }}
+            role="button"
+            tabIndex={isDeleting ? -1 : 0}
+            aria-label={`打开项目 ${project.name}`}
         >
             {isDeleting && (
-                <div style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    background: 'rgba(0, 0, 0, 0.3)',
-                    borderRadius: 'inherit',
-                    zIndex: 10
-                }}>
-                    <div style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        gap: '12px'
-                    }}>
-                        <Loader2 size={32} className="spin-animation" style={{ color: '#4da1ff' }} />
-                        <span style={{ color: '#fff', fontWeight: 600 }}>删除中...</span>
+                <div className="dash-project-overlay">
+                    <div className="dash-project-overlay-body">
+                        <Loader2 size={32} className="spin-animation dash-project-overlay-icon" />
+                        <span className="dash-project-overlay-text">删除中...</span>
                     </div>
                 </div>
             )}
 
-            {/* Header row */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.25rem' }}>
-                <div style={{
-                    width: '48px',
-                    height: '48px',
-                    borderRadius: '14px',
-                    background: 'linear-gradient(135deg, rgba(77, 161, 255, 0.2), rgba(99, 102, 241, 0.1))',
-                    color: '#4da1ff',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    border: '1px solid rgba(77, 161, 255, 0.15)',
-                    boxShadow: '0 4px 12px rgba(77, 161, 255, 0.1)',
-                    flexShrink: 0
-                }}>
+            <div className="dash-project-header">
+                <div className="dash-project-icon-wrap">
                     <Folder size={22} strokeWidth={2} />
                 </div>
-                <div style={{ display: 'flex', gap: '8px' }}>
+                <div className="dash-project-actions">
                     <button
                         onClick={(e) => { e.stopPropagation(); onRenumber(project.id); }}
-                        className="icon-btn hover-card"
+                        className="icon-btn hover-card dash-project-action dash-project-action-renumber"
                         title="对现有图片重新编号 (解决乱序问题)"
-                        style={{
-                            color: '#fbbf24',
-                            background: 'rgba(251, 191, 36, 0.05)',
-                            padding: '8px',
-                            borderRadius: '10px',
-                            border: '1px solid rgba(251, 191, 36, 0.1)'
-                        }}
                     >
                         <Zap size={16} fill="currentColor" />
                     </button>
                     <button
                         onClick={(e) => { e.stopPropagation(); onDelete(project.id); }}
-                        className="icon-btn trash-btn"
+                        className="icon-btn trash-btn dash-project-action dash-project-action-delete"
                         title="删除项目"
-                        style={{
-                            color: 'var(--text-tertiary)',
-                            background: 'rgba(255,255,255,0.03)',
-                            padding: '8px',
-                            borderRadius: '10px',
-                            border: '1px solid rgba(255,255,255,0.05)'
-                        }}
                     >
                         <Trash2 size={16} />
                     </button>
                 </div>
             </div>
 
-            {/* Content */}
-            <div style={{ flex: 1 }}>
-                <h3 style={{
-                    margin: '0 0 0.5rem 0',
-                    fontSize: '1.3rem',
-                    fontWeight: 800,
-                    letterSpacing: '-0.5px',
-                    color: 'var(--text-primary)',
-                    lineHeight: 1.2,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap'
-                }}>
+            <div className="dash-project-body">
+                <h3 className="dash-project-name">
                     {project.name}
                 </h3>
 
                 {project.path && (
-                    <div style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                        marginBottom: '0.75rem',
-                        color: 'var(--text-tertiary)',
-                        fontSize: '0.75rem',
-                        overflow: 'hidden'
-                    }}>
-                        <MapPin size={12} style={{ flexShrink: 0 }} />
-                        <span style={{
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap'
-                        }} title={project.path}>
+                    <div className="dash-project-path">
+                        <MapPin size={12} className="dash-project-path-icon" />
+                        <span className="dash-project-path-text" title={project.path}>
                             {project.path}
                         </span>
                     </div>
                 )}
 
-                {/* Stats badges */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                    <div style={{
-                        background: 'rgba(255, 255, 255, 0.04)',
-                        border: '1px solid rgba(255, 255, 255, 0.08)',
-                        padding: '4px 10px',
-                        borderRadius: '8px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                        color: 'var(--text-secondary)',
-                        fontSize: '0.82rem',
-                        fontWeight: 600
-                    }}>
+                <div className="dash-project-badges">
+                    <div className="dash-project-badge">
                         <ImageIcon size={13} />
                         <span>{project.imageCount || 0} 张</span>
                     </div>
                     {hasAnnotated && (
-                        <div style={{
-                            background: 'rgba(52, 211, 153, 0.08)',
-                            border: '1px solid rgba(52, 211, 153, 0.18)',
-                            padding: '4px 10px',
-                            borderRadius: '8px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '6px',
-                            color: '#34d399',
-                            fontSize: '0.82rem',
-                            fontWeight: 600
-                        }}>
+                        <div className="dash-project-badge dash-project-badge-annotated">
                             <CheckCircle size={13} />
                             <span>{project.annotatedCount || 0} 已标</span>
                         </div>
@@ -170,12 +88,13 @@ export const ProjectCard = ({ project, onClick, onDelete, onRenumber, index, isD
                     <span className="card-tag">YOLO</span>
                 </div>
 
-                {/* Annotation progress bar */}
                 {hasImages && (
                     <div className="project-card-progress">
                         <div className="project-card-progress-label">
                             <span>标注进度</span>
-                            <span style={{ color: annotationRate >= 80 ? '#34d399' : 'var(--text-tertiary)' }}>{annotationRate}%</span>
+                            <span className={`dash-project-progress-value ${annotationRate >= 80 ? 'success' : ''}`}>
+                                {annotationRate}%
+                            </span>
                         </div>
                         <div className="progress-bar-track">
                             <div
@@ -187,17 +106,10 @@ export const ProjectCard = ({ project, onClick, onDelete, onRenumber, index, isD
                 )}
             </div>
 
-            {/* Footer */}
-            <div style={{ marginTop: 'auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '12px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <div style={{
-                        width: '7px',
-                        height: '7px',
-                        borderRadius: '50%',
-                        background: hasImages ? '#34d399' : '#fbbf24',
-                        boxShadow: `0 0 8px ${hasImages ? 'rgba(52, 211, 153, 0.5)' : 'rgba(251, 191, 36, 0.5)'}`
-                    }} />
-                    <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
+            <div className="dash-project-footer">
+                <div className="dash-project-status">
+                    <div className={`dash-project-status-dot ${hasImages ? 'ready' : 'waiting'}`} />
+                    <span className="dash-project-status-text">
                         {hasImages ? '已就绪' : '等待图片'}
                     </span>
                 </div>
@@ -211,44 +123,21 @@ export const ProjectCard = ({ project, onClick, onDelete, onRenumber, index, isD
 
 export const CreateProjectCard = ({ onClick }) => (
     <div
-        className="glass-card glass-card-hover create-project-card"
+        className="glass-card glass-card-hover create-project-card dash-create-card"
         style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: 'pointer',
-            borderStyle: 'dashed',
-            borderWidth: '2px',
-            borderColor: 'rgba(255,255,255,0.08)',
-            height: '300px',
-            padding: '32px',
-            background: 'rgba(255, 255, 255, 0.01)',
             animationDelay: '0.1s',
-            touchAction: 'pan-x pan-y',
-            userSelect: 'none',
-            position: 'relative',
-            zIndex: 1,
-            transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)'
         }}
         onClick={onClick}
+        onKeyDown={(event) => handleCardKeyDown(event, onClick)}
+        role="button"
+        tabIndex={0}
+        aria-label="创建新项目"
     >
-        <div style={{
-            width: '64px',
-            height: '64px',
-            borderRadius: '22px',
-            background: 'rgba(255, 255, 255, 0.03)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            marginBottom: '20px',
-            color: 'var(--text-tertiary)',
-            border: '1px solid rgba(255, 255, 255, 0.05)',
-        }} className="create-card-icon">
+        <div className="create-card-icon dash-create-icon">
             <Plus size={32} strokeWidth={1.5} />
         </div>
-        <h3 style={{ margin: 0, fontWeight: 700, fontSize: '1.15rem', color: 'var(--text-primary)' }}>创建新项目</h3>
-        <p style={{ margin: '8px 0 0 0', color: 'var(--text-tertiary)', fontSize: '0.88rem', fontWeight: 500 }}>开始您的标注之旅</p>
+        <h3 className="dash-create-title">创建新项目</h3>
+        <p className="dash-create-subtitle">开始您的标注之旅</p>
     </div>
 );
 

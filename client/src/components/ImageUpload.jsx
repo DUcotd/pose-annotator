@@ -61,7 +61,7 @@ export const ImageUpload = ({ projectId, onUploadComplete, compact = false, vari
         return (
             <>
                 <label
-                    className="glass-card"
+                    className={`glass-card gallery-upload-card ${uploading ? 'is-uploading' : ''}`}
                     style={{
                         display: 'flex',
                         flexDirection: 'column',
@@ -80,20 +80,6 @@ export const ImageUpload = ({ projectId, onUploadComplete, compact = false, vari
                         borderRadius: '14px',
                         transition: 'all 0.35s cubic-bezier(0.4, 0, 0.2, 1)',
                         boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)'
-                    }}
-                    onMouseEnter={(e) => {
-                        if (!uploading) {
-                            e.currentTarget.style.transform = 'translateY(-5px) scale(1.02)';
-                            e.currentTarget.style.borderColor = 'rgba(77, 161, 255, 0.35)';
-                            e.currentTarget.style.boxShadow = '0 16px 32px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(77, 161, 255, 0.15)';
-                        }
-                    }}
-                    onMouseLeave={(e) => {
-                        if (!uploading) {
-                            e.currentTarget.style.transform = 'none';
-                            e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.08)';
-                            e.currentTarget.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.15)';
-                        }
                     }}
                 >
                     <input
@@ -140,11 +126,11 @@ export const ImageUpload = ({ projectId, onUploadComplete, compact = false, vari
                                 color: 'var(--text-tertiary)',
                                 border: '1px solid rgba(255, 255, 255, 0.05)',
                                 transition: 'all 0.3s ease'
-                            }} className="create-card-icon">
+                            }} className="create-card-icon gallery-upload-icon">
                                 <UploadCloud size={24} strokeWidth={1.5} />
                             </div>
-                            <h3 style={{ margin: 0, fontWeight: 700, fontSize: '1rem', color: 'var(--text-primary)' }}>添加图片</h3>
-                            <p style={{ margin: '6px 0 0 0', color: 'var(--text-tertiary)', fontSize: '0.8rem', fontWeight: 500 }}>支持 JPG, PNG, WEBP</p>
+                            <h3 className="gallery-upload-title" style={{ margin: 0, fontWeight: 700, fontSize: '1rem', color: 'var(--text-primary)' }}>添加图片</h3>
+                            <p className="gallery-upload-subtitle" style={{ margin: '6px 0 0 0', color: 'var(--text-tertiary)', fontSize: '0.8rem', fontWeight: 500 }}>支持 JPG, PNG, WEBP</p>
                         </>
                     )}
                 </label>

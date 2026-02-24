@@ -47,14 +47,10 @@ const ThumbnailCard = ({ imageObj, projectId, index, onSelectImage, isSelected, 
     return (
         <>
             <div
-                className="image-card"
+                className={`image-card ${isSelected ? 'is-selected' : ''}`}
                 style={{
                     transitionDelay: `${(index % 8) * 0.05}s`,
-                    position: 'relative',
-                    ...(isSelected ? {
-                        borderColor: 'rgba(77, 161, 255, 0.6)',
-                        boxShadow: '0 0 0 2px rgba(77, 161, 255, 0.3), 0 12px 25px rgba(0, 0, 0, 0.4)'
-                    } : {})
+                    position: 'relative'
                 }}
                 onClick={() => onSelectImage(img)}
             >
@@ -610,6 +606,12 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
 
     const totalPages = Math.ceil(displayList.length / PAGE_SIZE);
     const pageItems = displayList.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+    const pageImageCount = pageItems.filter((item) => item !== '__UPLOAD__').length;
+    const previousCount = Math.max(0, page * PAGE_SIZE - (search.trim() ? 0 : 1));
+    const visibleStart = filtered.length === 0 ? 0 : previousCount + 1;
+    const visibleEnd = filtered.length === 0 ? 0 : Math.min(filtered.length, previousCount + pageImageCount);
+    const modelReady = !!modelPath;
+    const filterSummary = activeFiltersCount > 0 ? `${activeFiltersCount} 条` : '无';
 
     // Reset page when images or search changes
     React.useEffect(() => { setPage(0); }, [annotatedFilter, bboxesMax, bboxesMin, images, keypointsMax, keypointsMin, search]);
@@ -727,6 +729,31 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
                                         </span>
                                     )}
                                 </button>
+                            </div>
+                        </div>
+
+                        <div className="gallery-toolbar-foot">
+                            <div className="gallery-toolbar-foot-item">
+                                <span className="gallery-toolbar-foot-label">显示范围</span>
+                                <strong className="gallery-toolbar-foot-value">
+                                    {visibleStart}-{visibleEnd} / {filtered.length}
+                                </strong>
+                            </div>
+                            <div className="gallery-toolbar-foot-item">
+                                <span className="gallery-toolbar-foot-label">分页</span>
+                                <strong className="gallery-toolbar-foot-value">
+                                    {Math.min(page + 1, Math.max(totalPages, 1))} / {Math.max(totalPages, 1)}
+                                </strong>
+                            </div>
+                            <div className="gallery-toolbar-foot-item">
+                                <span className="gallery-toolbar-foot-label">筛选条件</span>
+                                <strong className="gallery-toolbar-foot-value">{filterSummary}</strong>
+                            </div>
+                            <div className={`gallery-toolbar-foot-item ${modelReady ? 'is-ready' : ''}`}>
+                                <span className="gallery-toolbar-foot-label">AI 模型</span>
+                                <strong className="gallery-toolbar-foot-value">
+                                    {modelReady ? '已配置' : '未配置'}
+                                </strong>
                             </div>
                         </div>
                     </div>
