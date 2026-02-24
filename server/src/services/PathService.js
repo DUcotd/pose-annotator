@@ -9,19 +9,61 @@ class PathService {
     this._projectsDir = null;
   }
 
+  normalizePath(inputPath) {
+    if (!inputPath || typeof inputPath !== 'string') return null;
+    return path.normalize(path.resolve(inputPath));
+  }
+
+  pathKey(inputPath) {
+    const normalized = this.normalizePath(inputPath);
+    if (!normalized) return null;
+    return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
+  }
+
+  addPathIfValid(pathSet, rawPath) {
+    const normalized = this.normalizePath(rawPath);
+    if (!normalized) return;
+    try {
+      if (!fs.existsSync(normalized)) return;
+      if (!fs.statSync(normalized).isDirectory()) return;
+      pathSet.set(this.pathKey(normalized), normalized);
+    } catch (err) {
+      logger.warn(`[PathService] Unable to use path '${normalized}': ${err.message}`);
+    }
+  }
+
   getAllProjectPaths(projectsDir) {
     const config = settings.load();
-    const paths = [projectsDir];
-    
+    const pathSet = new Map();
+    this.addPathIfValid(pathSet, projectsDir);
+
     if (config.additionalProjectPaths && Array.isArray(config.additionalProjectPaths)) {
       config.additionalProjectPaths.forEach(p => {
-        if (p && fs.existsSync(p) && !paths.includes(p)) {
-          paths.push(p);
+        if (!p || typeof p !== 'string') return;
+        if (path.isAbsolute(p)) {
+          this.addPathIfValid(pathSet, p);
+          return;
         }
+        this.addPathIfValid(pathSet, path.resolve(projectsDir, p));
       });
     }
-    
-    return paths;
+
+    // Fallback from registry to avoid losing scan paths when settings miss custom dirs.
+    try {
+      const registryPath = this.getRegistryPath(projectsDir);
+      if (fs.existsSync(registryPath)) {
+        const registry = JSON.parse(fs.readFileSync(registryPath, 'utf8'));
+        const projects = registry && registry.projects ? registry.projects : {};
+        Object.values(projects).forEach(project => {
+          if (!project || project.status === 'deleted' || !project.path) return;
+          this.addPathIfValid(pathSet, path.dirname(project.path));
+        });
+      }
+    } catch (err) {
+      logger.warn(`[PathService] Failed to read registry for additional paths: ${err.message}`);
+    }
+
+    return Array.from(pathSet.values());
   }
 
   findProjectRoot(projectId, projectsDir) {
@@ -131,12 +173,24 @@ class PathService {
 
   addToAdditionalPaths(newPath) {
     const config = settings.load();
-    const additionalPaths = config.additionalProjectPaths || [];
-    
-    if (!additionalPaths.includes(newPath)) {
-      additionalPaths.push(newPath);
+    const additionalPaths = Array.isArray(config.additionalProjectPaths) ? config.additionalProjectPaths : [];
+    const normalizedNewPath = this.normalizePath(newPath);
+    if (!normalizedNewPath) {
+      return additionalPaths;
+    }
+
+    const existingKeys = new Set(
+      additionalPaths
+        .filter(p => typeof p === 'string' && p.trim() !== '')
+        .map(p => this.pathKey(p))
+        .filter(Boolean)
+    );
+
+    const newKey = this.pathKey(normalizedNewPath);
+    if (!existingKeys.has(newKey)) {
+      additionalPaths.push(normalizedNewPath);
       settings.save({ additionalProjectPaths: additionalPaths });
-      logger.info(`[PathService] Added new project path: ${newPath}`);
+      logger.info(`[PathService] Added new project path: ${normalizedNewPath}`);
     }
     
     return additionalPaths;

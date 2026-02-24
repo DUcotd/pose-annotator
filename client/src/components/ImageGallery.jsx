@@ -255,7 +255,20 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
     const pollIntervalRef = useRef(null);
     const checkCancelIntervalRef = useRef(null);
     const timeoutRef = useRef(null);
-    const [showModelToast, setShowModelToast] = useState(false);
+    const [feedbackToast, setFeedbackToast] = useState(null);
+    const feedbackTimerRef = useRef(null);
+
+    const showFeedback = (text, type = 'info', duration = 3200) => {
+        if (feedbackTimerRef.current) {
+            clearTimeout(feedbackTimerRef.current);
+            feedbackTimerRef.current = null;
+        }
+        setFeedbackToast({ text, type });
+        feedbackTimerRef.current = setTimeout(() => {
+            setFeedbackToast(null);
+            feedbackTimerRef.current = null;
+        }, duration);
+    };
 
     useEffect(() => {
         fetchModelConfig();
@@ -279,30 +292,57 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    filters: [{ name: 'PyTorch Model', extensions: ['pt'] }]
+                    filters: [{ name: 'Model File', extensions: ['pt', 'pth', 'onnx'] }]
                 })
             });
-            const data = await resp.json();
-            if (data.path) {
-                const saveResp = await fetch(apiUrl(`/api/projects/${encodeURIComponent(projectId)}/prediction-settings`), {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ modelPath: data.path })
-                });
-                if (saveResp.ok) {
-                    setModelPath(data.path);
-                    setShowModelToast(true);
-                    setTimeout(() => setShowModelToast(false), 3000);
-                    setShowModelSettings(false); // 自动关闭对话框
-                }
+
+            const data = await resp.json().catch(() => ({}));
+            if (!resp.ok) {
+                showFeedback(data?.error || '打开模型选择窗口失败', 'error', 5000);
+                return;
             }
+
+            if (!data.path) {
+                showFeedback('未选择模型文件', 'info');
+                return;
+            }
+
+            const validateResp = await fetch(apiUrl(`/api/projects/${encodeURIComponent(projectId)}/predict/validate-model`), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ modelPath: data.path })
+            });
+            const validateData = await validateResp.json().catch(() => ({}));
+            if (!validateResp.ok || !validateData.valid) {
+                showFeedback(validateData?.error || '模型校验失败，请重新选择', 'error', 5000);
+                return;
+            }
+
+            const saveResp = await fetch(apiUrl(`/api/projects/${encodeURIComponent(projectId)}/prediction-settings`), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ modelPath: data.path })
+            });
+            const saveData = await saveResp.json().catch(() => ({}));
+            if (!saveResp.ok) {
+                showFeedback(saveData?.error || '保存模型路径失败', 'error', 5000);
+                return;
+            }
+
+            setModelPath(data.path);
+            showFeedback('模型已选择并保存', 'success');
+            setShowModelSettings(false);
         } catch (e) {
             console.error('Failed to select model:', e);
+            showFeedback(`选择模型失败：${e.message}`, 'error', 5000);
         }
     };
 
     const handleStartPreannotate = async () => {
-        if (!modelPath) return;
+        if (!modelPath) {
+            showFeedback('请先配置预标注模型', 'error');
+            return;
+        }
 
         let targetImages = [];
         if (preannotateRange === 'all') {
@@ -317,6 +357,7 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
         }
 
         if (targetImages.length === 0) {
+            showFeedback('当前范围没有可预标注图片，请切换范围后重试', 'info', 4500);
             return;
         }
 
@@ -335,12 +376,20 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
                     modelPath: modelPath,
                     images: targetImages,
                     confidenceThreshold: confidenceThreshold,
-                    mode: preannotateRange
+                    mode: 'all'
                 })
             });
+            const startData = await resp.json().catch(() => ({}));
 
             if (!resp.ok) {
-                throw new Error('预标注任务启动失败');
+                throw new Error(startData?.error || startData?.message || '预标注任务启动失败');
+            }
+
+            if (startData?.immediate && Number(startData?.processedImages) === 0) {
+                setPreannotating(false);
+                setShowPreannotateProgress(false);
+                showFeedback(startData?.message || '没有需要处理的图片', 'info', 4500);
+                return;
             }
 
             // 清理之前的轮询（如果有）
@@ -474,12 +523,7 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
             console.error('Failed to start prediction:', e);
             setPreannotating(false);
             setShowPreannotateProgress(false);
-            setPreannotateResult({
-                successCount: 0,
-                failedCount: targetImages.length,
-                cancelled: false
-            });
-            setShowPreannotateResult(true);
+            showFeedback(`预标注启动失败：${e.message || '未知错误'}`, 'error', 5000);
         }
     };
 
@@ -501,6 +545,7 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
             if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
             if (checkCancelIntervalRef.current) clearInterval(checkCancelIntervalRef.current);
             if (timeoutRef.current) clearTimeout(timeoutRef.current);
+            if (feedbackTimerRef.current) clearTimeout(feedbackTimerRef.current);
         };
     }, []);
 
@@ -1721,7 +1766,7 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
             }
 
             {
-                showModelToast && createPortal(
+                feedbackToast && createPortal(
                     <div style={{
                         position: 'fixed',
                         bottom: '24px',
@@ -1734,13 +1779,22 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
                             alignItems: 'center',
                             gap: '12px',
                             padding: '14px 20px',
-                            background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.95), rgba(5, 150, 105, 0.95))',
+                            background: feedbackToast.type === 'error'
+                                ? 'linear-gradient(135deg, rgba(239, 68, 68, 0.95), rgba(220, 38, 38, 0.95))'
+                                : feedbackToast.type === 'success'
+                                    ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.95), rgba(5, 150, 105, 0.95))'
+                                    : 'linear-gradient(135deg, rgba(59, 130, 246, 0.95), rgba(37, 99, 235, 0.95))',
                             borderRadius: '14px',
-                            boxShadow: '0 10px 40px rgba(16, 185, 129, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.1)',
-                            color: 'white'
+                            boxShadow: feedbackToast.type === 'error'
+                                ? '0 10px 40px rgba(239, 68, 68, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.1)'
+                                : feedbackToast.type === 'success'
+                                    ? '0 10px 40px rgba(16, 185, 129, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.1)'
+                                    : '0 10px 40px rgba(59, 130, 246, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.1)',
+                            color: 'white',
+                            maxWidth: '460px'
                         }}>
-                            <CheckCircle size={20} />
-                            <span style={{ fontWeight: 600, fontSize: '14px' }}>模型已选择成功</span>
+                            {feedbackToast.type === 'error' ? <AlertCircle size={20} /> : <CheckCircle size={20} />}
+                            <span style={{ fontWeight: 600, fontSize: '14px', wordBreak: 'break-word' }}>{feedbackToast.text}</span>
                         </div>
                         <style>{`
                         @keyframes slideInRight {

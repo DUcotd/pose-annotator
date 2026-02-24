@@ -227,16 +227,37 @@ function createProjectRouter(projectsDir) {
         logger.info(`[Projects] Skipped ${skippedCount} invalid projects`);
       }
 
+      // Merge projects from registry as a fallback source.
+      const registryProjects = projectRegistry.getAllProjects();
+      registryProjects.forEach(project => {
+        if (!project || !project.id || !project.path || projectMap.has(project.id)) return;
+        try {
+          if (!fs.existsSync(project.path) || !fs.statSync(project.path).isDirectory()) return;
+          const validation = projectValidator.validateProject(project.path, project.id);
+          if (!validation.valid) {
+            logger.warn(`[Projects] Skipping registry project '${project.id}': ${validation.reason}`);
+            return;
+          }
+          projectMap.set(project.id, project.path);
+
+          // Self-heal additional scan paths so future startup scans remain stable.
+          PathService.addToAdditionalPaths(path.dirname(project.path));
+        } catch (e) {
+          logger.warn(`[Projects] Failed to merge registry project '${project.id}': ${e.message}`);
+        }
+      });
+
       const projectList = Array.from(projectMap.entries()).map(([p, root]) => {
-        const paths = PathService.getProjectPaths(p, projectsDir);
+        const uploadsPath = path.join(root, 'uploads');
+        const annotationsPath = path.join(root, 'annotations');
         let imageCount = 0;
         let annotatedCount = 0;
         try {
-          if (fs.existsSync(paths.uploads)) {
-            const files = fs.readdirSync(paths.uploads).filter(f => /\.(jpg|jpeg|png|gif|webp)$/i.test(f));
+          if (fs.existsSync(uploadsPath)) {
+            const files = fs.readdirSync(uploadsPath).filter(f => /\.(jpg|jpeg|png|gif|webp)$/i.test(f));
             imageCount = files.length;
             files.forEach(file => {
-              const annotationPath = path.join(paths.annotations, `${file}.json`);
+              const annotationPath = path.join(annotationsPath, `${file}.json`);
               if (fs.existsSync(annotationPath)) {
                 try {
                   const data = JSON.parse(fs.readFileSync(annotationPath));
@@ -292,8 +313,8 @@ function createProjectRouter(projectsDir) {
 
       projectRegistry.registerProject(safeName, projectRoot, { name });
 
-      if (customPath && customPath !== projectsDir) {
-        PathService.addToAdditionalPaths(customPath);
+      if (customPath && path.resolve(targetDir) !== path.resolve(projectsDir)) {
+        PathService.addToAdditionalPaths(targetDir);
       }
 
       logger.info(`Project created: ${safeName} at ${targetDir}`);
@@ -846,8 +867,8 @@ function createProjectRouter(projectsDir) {
 
       projectRegistry.registerProject(finalProjectName, projectRoot);
 
-      if (customPath && customPath !== projectsDir) {
-        PathService.addToAdditionalPaths(customPath);
+      if (customPath && path.resolve(targetDir) !== path.resolve(projectsDir)) {
+        PathService.addToAdditionalPaths(targetDir);
       }
 
       if (req.file && fs.existsSync(req.file.path)) {
@@ -878,7 +899,7 @@ function createProjectRouter(projectsDir) {
     const { modelPath, images, confidenceThreshold, mode, device, imgsz } = req.body;
 
     try {
-      await PredictionService.runPredictionOnImages(projectId, {
+      const result = await PredictionService.runPredictionOnImages(projectId, {
         modelPath,
         images,
         confidenceThreshold: confidenceThreshold || 0.25,
@@ -888,6 +909,15 @@ function createProjectRouter(projectsDir) {
         projectsDir,
         waitForCompletion: false
       });
+
+      if (result && Number(result.processedImages) === 0) {
+        return res.json({
+          success: true,
+          immediate: true,
+          processedImages: 0,
+          message: result.message || '没有需要处理的图片'
+        });
+      }
 
       res.json({
         success: true,

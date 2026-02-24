@@ -171,6 +171,20 @@ class ProjectRegistryService {
       if (project.status === 'deleted') return;
 
       if (!filesystemProjects.has(projectId)) {
+        let registeredPathExists = false;
+        try {
+          registeredPathExists = typeof project.path === 'string' &&
+            fs.existsSync(project.path) &&
+            fs.statSync(project.path).isDirectory();
+        } catch (e) {
+          registeredPathExists = false;
+        }
+
+        if (registeredPathExists) {
+          logger.warn(`[ProjectRegistry] Keeping project active (not found in scanned paths but path exists): ${projectId} -> ${project.path}`);
+          return;
+        }
+
         this.markProjectDeleted(projectId);
         removed++;
       }
