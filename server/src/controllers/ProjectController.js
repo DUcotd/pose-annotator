@@ -14,6 +14,8 @@ const projectValidator = require('../utils/ProjectValidator');
 const { extractZipAsync } = require('../utils/zipUtils');
 const RenumberService = require('../services/RenumberService');
 const PredictionService = require('../services/PredictionService');
+const { AppError } = require('../http/errors');
+const { ERROR_CODES } = require('../http/errorCodes');
 
 function createProjectRouter(projectsDir) {
   const router = express.Router();
@@ -416,7 +418,11 @@ function createProjectRouter(projectsDir) {
     if (fs.existsSync(projectPath)) {
       res.sendFile(projectPath);
     } else {
-      res.status(404).send('File not found');
+      res.status(404).json({
+        code: ERROR_CODES.PROJECT_NOT_FOUND,
+        error: 'File not found',
+        details: { projectId, filename }
+      });
     }
   });
 
@@ -431,7 +437,11 @@ function createProjectRouter(projectsDir) {
     }
 
     if (!fs.existsSync(originalPath)) {
-      return res.status(404).send('Original file not found');
+      return res.status(404).json({
+        code: ERROR_CODES.PROJECT_NOT_FOUND,
+        error: 'Original file not found',
+        details: { projectId, filename }
+      });
     }
 
     try {
@@ -944,6 +954,7 @@ function createProjectRouter(projectsDir) {
       message: status.progress ? status.progress.currentImage : '',
       successCount: status.progress ? status.progress.successCount : 0,
       failedCount: status.progress ? status.progress.failedCount : 0,
+      errorMessage: status.errorMessage || '',
       results: status.metrics || [],
       logs: status.logs || [],
       status: status.status
@@ -968,9 +979,21 @@ function createProjectRouter(projectsDir) {
 
     try {
       const result = await PredictionService.validateModel(modelPath);
+      if (!result.valid) {
+        return res.sendError(new AppError({
+          code: ERROR_CODES.MODEL_INVALID,
+          message: result.error || '模型校验失败',
+          status: 400,
+          details: {
+            projectId,
+            modelPath: modelPath || null
+          },
+          where: { method: req.method, path: req.path },
+          retryable: false
+        }));
+      }
       res.json({
         valid: result.valid,
-        error: result.error || null,
         info: result.valid ? {
           path: result.path,
           size: result.size,
@@ -979,7 +1002,13 @@ function createProjectRouter(projectsDir) {
       });
     } catch (err) {
       logger.error(`Model validation failed for ${projectId}:`, err);
-      res.status(500).json({ valid: false, error: err.message });
+      res.sendError(new AppError({
+        code: ERROR_CODES.MODEL_INVALID,
+        message: err.message || '模型校验失败',
+        status: 500,
+        details: { projectId, modelPath: modelPath || null },
+        where: { method: req.method, path: req.path }
+      }));
     }
   });
 

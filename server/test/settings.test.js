@@ -46,7 +46,9 @@ test('settings endpoints validate input and keep backward-compatible fields', as
     const getRes = await fetch(`${url}/api/settings`);
     assert.equal(getRes.status, 200);
     const getBody = await getRes.json();
-    assert.equal(getBody.success, true);
+    assert.equal(getBody.ok, true);
+    assert.equal(getBody.data.success, true);
+    assert.ok(typeof getBody.meta.requestId === 'string');
     assert.equal(typeof getBody, 'object');
 
     const badRes = await fetch(`${url}/api/settings/projects-dir`, {
@@ -56,7 +58,9 @@ test('settings endpoints validate input and keep backward-compatible fields', as
     });
     assert.equal(badRes.status, 400);
     const badBody = await badRes.json();
-    assert.equal(badBody.success, false);
+    assert.equal(badBody.ok, false);
+    assert.equal(badBody.error.code, 'VALIDATION_ERROR');
+    assert.ok(typeof badBody.error.requestId === 'string');
 
     const okRes = await fetch(`${url}/api/settings/projects-dir`, {
       method: 'POST',
@@ -65,8 +69,9 @@ test('settings endpoints validate input and keep backward-compatible fields', as
     });
     assert.equal(okRes.status, 200);
     const okBody = await okRes.json();
-    assert.equal(okBody.success, true);
-    assert.equal(okBody.projectsDir, projectsDir);
+    assert.equal(okBody.ok, true);
+    assert.equal(okBody.data.success, true);
+    assert.equal(okBody.data.projectsDir, projectsDir);
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }

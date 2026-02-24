@@ -1,6 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useProject } from '../context/ProjectContext';
 import { normalizeTrainingMetric, hasCoreMetricValue } from '../utils/trainingMetrics';
+import { apiClient } from '../lib/apiClient';
+import { apiUrl } from '../api';
+import { useErrorCenter } from '../error/ErrorCenter';
 
 const DEFAULT_TRAINING_CONFIG = {
     model: 'yolov8n-pose.pt',
@@ -183,6 +186,8 @@ const validateRemoteConfigBeforeStart = (config = {}) => {
 
 export const useTraining = (projectId) => {
     const { projectConfig, updateProjectConfig } = useProject();
+    const { reportError } = useErrorCenter();
+    const encodedProjectId = encodeURIComponent(projectId || '');
 
     const [config, setConfig] = useState(() => ({
         ...DEFAULT_TRAINING_CONFIG,
@@ -364,62 +369,55 @@ export const useTraining = (projectId) => {
 
     const fetchEnvInfo = useCallback(async () => {
         try {
-            const res = await fetch('http://localhost:5000/api/settings/check-env');
-            const data = await res.json();
+            const data = await apiClient.get('/api/settings/check-env');
             setEnvInfo(data);
         } catch (err) {
             console.error('Failed to fetch environment info', err);
+            reportError(err, { source: 'training.fetch-env', projectId });
         }
-    }, []);
+    }, [projectId, reportError]);
 
     const fetchDatasetInfo = useCallback(async () => {
         if (!projectId) return;
         try {
-            const res = await fetch(`http://localhost:5000/api/projects/${projectId}/dataset/info`);
-            const data = await res.json();
+            const data = await apiClient.get(`/api/projects/${encodedProjectId}/dataset/info`);
             setDatasetInfo(data);
         } catch (err) {
             console.error('Failed to fetch dataset info', err);
+            reportError(err, { source: 'training.fetch-dataset-info', projectId });
         }
-    }, [projectId]);
+    }, [projectId, reportError]);
 
     const fetchStats = useCallback(async () => {
         if (!projectId) return;
         try {
-            const res = await fetch(`http://localhost:5000/api/projects/${projectId}/dataset/stats`);
-            const data = await res.json();
+            const data = await apiClient.get(`/api/projects/${encodedProjectId}/dataset/stats`);
             setStats(data);
         } catch (err) {
             console.error('Failed to fetch stats', err);
+            reportError(err, { source: 'training.fetch-stats', projectId });
         }
-    }, [projectId]);
+    }, [projectId, reportError]);
 
     const fetchV2Runs = useCallback(async () => {
         if (!projectId || !v2SupportedRef.current) return;
         try {
-            const res = await fetch(`http://localhost:5000/api/projects/${projectId}/train/v2/runs`);
-            if (res.status === 404) {
+            const data = await apiClient.get(`/api/projects/${encodedProjectId}/train/v2/runs`);
+            setRunsV2(data.runs || []);
+        } catch (err) {
+            if (err?.status === 404) {
                 handleV2Unsupported();
                 return;
             }
-            if (!res.ok) return;
-            const data = await res.json();
-            setRunsV2(data.runs || []);
-        } catch (err) {
             console.error('Failed to fetch v2 runs', err);
+            reportError(err, { source: 'training.fetch-v2-runs', projectId });
         }
-    }, [projectId, handleV2Unsupported]);
+    }, [projectId, handleV2Unsupported, reportError]);
 
     const fetchV2Status = useCallback(async () => {
         if (!projectId || !v2SupportedRef.current) return null;
         try {
-            const res = await fetch(`http://localhost:5000/api/projects/${projectId}/train/v2/status`);
-            if (res.status === 404) {
-                handleV2Unsupported();
-                return null;
-            }
-            if (!res.ok) return null;
-            const data = await res.json();
+            const data = await apiClient.get(`/api/projects/${encodedProjectId}/train/v2/status`);
 
             if (data.status) setStatus(data.status);
             if (Object.prototype.hasOwnProperty.call(data, 'diagnosis')) {
@@ -439,10 +437,15 @@ export const useTraining = (projectId) => {
             }
             return data;
         } catch (err) {
+            if (err?.status === 404) {
+                handleV2Unsupported();
+                return null;
+            }
             console.error('Failed to fetch v2 status', err);
+            reportError(err, { source: 'training.fetch-v2-status', projectId });
             return null;
         }
-    }, [projectId, mergeEvents, mergeMetrics, updateRunId, handleV2Unsupported]);
+    }, [projectId, mergeEvents, mergeMetrics, updateRunId, handleV2Unsupported, reportError]);
 
     const fetchV2Events = useCallback(async (inputCursor = null, options = {}) => {
         if (!projectId || !v2SupportedRef.current) return null;
@@ -456,13 +459,7 @@ export const useTraining = (projectId) => {
             if (selectedRunId) {
                 params.set('runId', selectedRunId);
             }
-            const res = await fetch(`http://localhost:5000/api/projects/${projectId}/train/v2/events?${params.toString()}`);
-            if (res.status === 404) {
-                handleV2Unsupported();
-                return null;
-            }
-            if (!res.ok) return null;
-            const data = await res.json();
+            const data = await apiClient.get(`/api/projects/${encodedProjectId}/train/v2/events?${params.toString()}`);
             if (Array.isArray(data.events) && data.events.length > 0) {
                 mergeEvents(data.events);
             }
@@ -473,10 +470,15 @@ export const useTraining = (projectId) => {
             if (data.runId) updateRunId(data.runId);
             return data;
         } catch (err) {
+            if (err?.status === 404) {
+                handleV2Unsupported();
+                return null;
+            }
             console.error('Failed to fetch v2 events', err);
+            reportError(err, { source: 'training.fetch-v2-events', projectId });
             return null;
         }
-    }, [projectId, mergeEvents, updateRunId, handleV2Unsupported]);
+    }, [projectId, mergeEvents, updateRunId, handleV2Unsupported, reportError]);
 
     const startFallbackPolling = useCallback(() => {
         if (!projectId || fallbackPollRef.current || !v2SupportedRef.current) return;
@@ -541,7 +543,7 @@ export const useTraining = (projectId) => {
         setStreamMode('sse');
         setConnectionState(trigger === 'manual' ? 'connecting' : 'reconnecting');
 
-        const streamUrl = `http://localhost:5000/api/projects/${projectId}/train/v2/stream?lastSeq=${cursorRef.current || 0}`;
+        const streamUrl = apiUrl(`/api/projects/${encodedProjectId}/train/v2/stream?lastSeq=${cursorRef.current || 0}`);
         const source = new window.EventSource(streamUrl);
         eventSourceRef.current = source;
 
@@ -676,8 +678,7 @@ export const useTraining = (projectId) => {
     const checkStatus = useCallback(async () => {
         if (!projectId) return;
         try {
-            const res = await fetch(`http://localhost:5000/api/projects/${projectId}/train/status`);
-            const data = await res.json();
+            const data = await apiClient.get(`/api/projects/${encodedProjectId}/train/status`);
 
             setStatus(data.status);
             setLogs(data.logs || []);
@@ -719,8 +720,9 @@ export const useTraining = (projectId) => {
             }
         } catch (err) {
             console.error('Failed to check status', err);
+            reportError(err, { source: 'training.check-status', projectId });
         }
-    }, [projectId, stopPolling]);
+    }, [projectId, stopPolling, reportError]);
 
     useEffect(() => {
         if (!projectId) return undefined;
@@ -784,21 +786,7 @@ export const useTraining = (projectId) => {
             setCursor(0);
             cursorRef.current = 0;
 
-            const res = await fetch(`http://localhost:5000/api/projects/${projectId}/train`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(submitConfig)
-            });
-            const data = await res.json();
-
-            if (!res.ok) {
-                setStatus('failed');
-                const detailMessage = Array.isArray(data?.details) && data.details.length > 0
-                    ? data.details.join('\n')
-                    : '';
-                const message = data?.error || data?.message || detailMessage || 'Unknown error';
-                throw new Error(message);
-            }
+            const data = await apiClient.post(`/api/projects/${encodedProjectId}/train`, submitConfig);
 
             setStatus('running');
             setLogs([]);
@@ -809,40 +797,40 @@ export const useTraining = (projectId) => {
             await fetchV2Runs();
         } catch (err) {
             setStatus('failed');
+            reportError(err, { source: 'training.start', projectId });
             throw err;
         }
     };
 
     const handleStop = async () => {
         try {
-            await fetch(`http://localhost:5000/api/projects/${projectId}/train/stop`, { method: 'POST' });
+            await apiClient.post(`/api/projects/${encodedProjectId}/train/stop`, {});
             await checkStatus();
             await fetchV2Status();
         } catch (err) {
             console.error('Failed to stop', err);
+            reportError(err, { source: 'training.stop', projectId });
         }
     };
 
     const handleBrowseData = async () => {
         try {
-            const res = await fetch('http://localhost:5000/api/utils/select-file', { method: 'POST' });
-            if (!res.ok) throw new Error('Failed to open file picker');
-            const data = await res.json();
+            const data = await apiClient.post('/api/utils/select-file', {});
             if (data.path) setConfig((prev) => ({ ...prev, data: data.path }));
         } catch (err) {
             console.error('Failed to browse file', err);
+            reportError(err, { source: 'training.browse-data', projectId });
             throw err;
         }
     };
 
     const handleBrowseProject = async () => {
         try {
-            const res = await fetch('http://localhost:5000/api/utils/select-folder', { method: 'POST' });
-            if (!res.ok) throw new Error('Failed to open folder picker');
-            const data = await res.json();
+            const data = await apiClient.post('/api/utils/select-folder', {});
             if (data.path) setConfig((prev) => ({ ...prev, project: data.path }));
         } catch (err) {
             console.error('Failed to browse folder', err);
+            reportError(err, { source: 'training.browse-project', projectId });
             throw err;
         }
     };
@@ -864,16 +852,10 @@ export const useTraining = (projectId) => {
         };
 
         try {
-            const response = await fetch(`http://localhost:5000/api/projects/${projectId}/train/v2/export`, {
+            const response = await apiClient.requestRaw(`/api/projects/${encodedProjectId}/train/v2/export`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
+                body: payload
             });
-
-            if (!response.ok) {
-                const errorData = await response.json().catch(() => ({ error: '导出失败' }));
-                throw new Error(errorData.error || '导出结构化诊断包失败');
-            }
 
             const contentDisposition = response.headers.get('Content-Disposition');
             const defaultFilename = `training_diagnosis_${projectId}_${new Date().toISOString().slice(0, 10)}.${payload.format === 'zip' ? 'zip' : 'json'}`;
@@ -892,6 +874,7 @@ export const useTraining = (projectId) => {
             return { success: true, filename };
         } catch (err) {
             console.error('Failed to export logs:', err);
+            reportError(err, { source: 'training.export-logs', projectId });
             throw err;
         }
     };
@@ -907,21 +890,11 @@ export const useTraining = (projectId) => {
         };
 
         try {
-            const response = await fetch(`http://localhost:5000/api/projects/${projectId}/train/v2/export-to-file`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-
-            const data = await response.json();
-
-            if (!response.ok) {
-                throw new Error(data.error || '导出失败');
-            }
-
+            const data = await apiClient.post(`/api/projects/${encodedProjectId}/train/v2/export-to-file`, payload);
             return data;
         } catch (err) {
             console.error('Failed to export logs to file:', err);
+            reportError(err, { source: 'training.export-logs-to-file', projectId });
             throw err;
         }
     };
@@ -932,21 +905,11 @@ export const useTraining = (projectId) => {
         }
 
         try {
-            const response = await fetch(`http://localhost:5000/api/projects/${projectId}/train/logs/open`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ filePath })
-            });
-
-            const data = await response.json();
-
-            if (!response.ok) {
-                throw new Error(data.error || '打开文件失败');
-            }
-
+            const data = await apiClient.post(`/api/projects/${encodedProjectId}/train/logs/open`, { filePath });
             return data;
         } catch (err) {
             console.error('Failed to open log file:', err);
+            reportError(err, { source: 'training.open-log-file', projectId });
             throw err;
         }
     };
@@ -957,19 +920,11 @@ export const useTraining = (projectId) => {
         }
 
         try {
-            const response = await fetch(`http://localhost:5000/api/projects/${projectId}/train/logs/open-folder`, {
-                method: 'POST'
-            });
-
-            const data = await response.json();
-
-            if (!response.ok) {
-                throw new Error(data.error || '打开文件夹失败');
-            }
-
+            const data = await apiClient.post(`/api/projects/${encodedProjectId}/train/logs/open-folder`, {});
             return data;
         } catch (err) {
             console.error('Failed to open logs folder:', err);
+            reportError(err, { source: 'training.open-logs-folder', projectId });
             throw err;
         }
     };

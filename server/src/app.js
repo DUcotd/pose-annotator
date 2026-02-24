@@ -3,23 +3,58 @@ const cors = require('cors');
 const bodyParser = require('body-parser');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 
 const logger = require('./utils/logger');
-const settings = require('./config/settings');
-const ProcessManager = require('./managers/ProcessManager');
 const { createTrainingRouter, createUtilsRouter } = require('./controllers/TrainingController');
 const createProjectRouter = require('./controllers/ProjectController');
 const { createSettingsRouter, createEnvSettingsRouter } = require('./controllers/SettingsController');
+const createSystemRouter = require('./controllers/SystemController');
+const { attachResponseHelpers, buildRouteManifest } = require('./http/response');
+const { AppError, toAppError } = require('./http/errors');
+const { ERROR_CODES } = require('./http/errorCodes');
 
-function createApp(PROJECTS_DIR) {
+function createApp(PROJECTS_DIR, appOptions = {}) {
   const app = express();
+  const recentErrors = [];
+  let routeManifest = { routes: [], signature: '' };
+  const startupState = {
+    mode: 'strict',
+    ready: false,
+    error: null,
+    appLogPath: appOptions.appLogPath || null
+  };
+
+  const pushRecentError = (entry) => {
+    if (!entry) return;
+    recentErrors.push(entry);
+    if (recentErrors.length > 200) {
+      recentErrors.splice(0, recentErrors.length - 200);
+    }
+  };
 
   app.use(cors());
   app.use(bodyParser.json());
 
   app.use((req, res, next) => {
-    req.requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    req.requestId = `req_${crypto.randomUUID().replace(/-/g, '')}`;
     logger.info(`[${req.requestId}] ${req.method} ${req.path}`);
+    next();
+  });
+  app.use(attachResponseHelpers);
+  app.use((req, res, next) => {
+    const originalSendError = res.sendError.bind(res);
+    res.sendError = (err, statusOverride = null) => {
+      const appError = toAppError(err, req, statusOverride || res.statusCode || 500);
+      pushRecentError({
+        requestId: req.requestId,
+        ts: new Date().toISOString(),
+        code: appError.code || ERROR_CODES.INTERNAL_ERROR,
+        message: appError.message || 'Internal server error',
+        where: appError.where || { method: req.method, path: req.path }
+      });
+      return originalSendError(err, statusOverride);
+    };
     next();
   });
 
@@ -46,25 +81,62 @@ function createApp(PROJECTS_DIR) {
     logger.info("Migration complete.");
   }
 
-  app.use('/api/projects', createProjectRouter(projectsDir));
-  app.use('/api/projects', createTrainingRouter(projectsDir));
-  app.use('/api/settings', createSettingsRouter());
-  app.use('/api/settings', createEnvSettingsRouter());
-  app.use('/api/utils', createUtilsRouter(projectsDir));
+  const projectRouter = createProjectRouter(projectsDir);
+  const trainingRouter = createTrainingRouter(projectsDir);
+  const settingsRouter = createSettingsRouter();
+  const envSettingsRouter = createEnvSettingsRouter();
+  const utilsRouter = createUtilsRouter(projectsDir);
+  const systemRouter = createSystemRouter({
+    getRouteManifest: () => routeManifest,
+    getRecentErrors: () => recentErrors,
+    getStartupState: () => startupState,
+    getLoggerInfo: () => ({
+      logsDir: logger.logsDir,
+      errorLogPath: logger.errorLogPath,
+      combinedLogPath: logger.combinedLogPath
+    })
+  });
+
+  const routeMounts = [
+    { base: '/api/projects', router: projectRouter },
+    { base: '/api/projects', router: trainingRouter },
+    { base: '/api/settings', router: settingsRouter },
+    { base: '/api/settings', router: envSettingsRouter },
+    { base: '/api/utils', router: utilsRouter },
+    { base: '/api/system', router: systemRouter }
+  ];
+  routeManifest = buildRouteManifest(routeMounts);
+
+  for (const mount of routeMounts) {
+    app.use(mount.base, mount.router);
+  }
 
   app.use((req, res, next) => {
+    const appError = new AppError({
+      code: ERROR_CODES.ROUTE_NOT_FOUND,
+      message: '请求的接口不存在',
+      status: 404,
+      details: {
+        method: req.method,
+        path: req.path
+      },
+      where: { method: req.method, path: req.path },
+      retryable: false
+    });
     logger.warn(`[404] ${req.method} ${req.path}`);
-    res.status(404).json({ error: 'Route not found', method: req.method, path: req.path });
+    res.sendError(appError, 404);
   });
 
   app.use((err, req, res, next) => {
     logger.error(`[500] ${req.method} ${req.path}:`, err);
-    res.status(500).json({
-      error: 'Internal server error',
-      details: err.message,
-      requestId: req.requestId
-    });
+    startupState.error = startupState.error || err.message;
+    res.sendError(err, Number.isInteger(err?.status) ? err.status : 500);
   });
+
+  app.locals.routeManifest = routeManifest;
+  app.locals.getRecentErrors = () => recentErrors;
+  app.locals.startupState = startupState;
+  startupState.ready = true;
 
   return app;
 }

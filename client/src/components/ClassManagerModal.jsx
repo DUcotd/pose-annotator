@@ -13,6 +13,7 @@ export const ClassManagerModal = ({ isOpen, onClose, config, onSave }) => {
     const [mappings, setMappings] = useState([]);
     const [newId, setNewId] = useState('');
     const [newName, setNewName] = useState('');
+    const [inlineError, setInlineError] = useState('');
 
     useEffect(() => {
         if (isOpen) {
@@ -27,6 +28,7 @@ export const ClassManagerModal = ({ isOpen, onClose, config, onSave }) => {
             }
             setNewId('');
             setNewName('');
+            setInlineError('');
         }
     }, [config, isOpen]);
 
@@ -34,13 +36,14 @@ export const ClassManagerModal = ({ isOpen, onClose, config, onSave }) => {
         const id = parseInt(newId);
         if (isNaN(id)) return;
         if (mappings.some(m => m.id === id)) {
-            alert('Class ID ' + id + ' 已经存在');
+            setInlineError(`Class ID ${id} 已经存在`);
             return;
         }
         const newMappings = [...mappings, { id, name: newName || `class_${id}` }].sort((a, b) => a.id - b.id);
         setMappings(newMappings);
         setNewId('');
         setNewName('');
+        setInlineError('');
     };
 
     const handleRemove = (id) => {
@@ -155,6 +158,11 @@ export const ClassManagerModal = ({ isOpen, onClose, config, onSave }) => {
                                 <Plus size={18} />
                             </button>
                         </div>
+                        {inlineError ? (
+                            <div style={{ marginTop: '8px', fontSize: '12px', color: '#fca5a5' }}>
+                                {inlineError}
+                            </div>
+                        ) : null}
                     </div>
 
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>

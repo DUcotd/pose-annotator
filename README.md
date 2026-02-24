@@ -1,6 +1,6 @@
 # Pose Annotator：目标检测与姿态关键点标注平台
 
-![Version](https://img.shields.io/badge/version-2.0.0-blue.svg)
+![Version](https://img.shields.io/badge/version-2.2.0-blue.svg)
 ![License](https://img.shields.io/badge/license-ISC-green.svg)
 ![Frontend](https://img.shields.io/badge/Frontend-React%20%2B%20Vite-61DAFB.svg)
 ![Backend](https://img.shields.io/badge/Backend-Node.js-339933.svg)
@@ -13,6 +13,14 @@ Pose Annotator 是一个面向计算机视觉数据制作流程的桌面标注�
 - 图库筛选体验升级：支持按“是否标注 / 关键点数量 / BBox 数量”组合筛选，并保持筛选后导航一致
 - 全局设置界面重构：按主题分组（项目目录 / Python / 环境），可折叠、状态提示更一致
 - 后端稳健性加固：settings 写入原子化、输入校验与错误返回更明确，便于后续扩展配置项
+
+## 2.2 错误诊断升级
+
+- 全部 JSON API 统一使用响应包结构：`ok/data/meta` 或 `ok/error/meta`
+- 所有错误统一包含：`error.code`、`error.requestId`、`error.hint`、`error.where`、`error.retryable`
+- 新增系统健康检查：`GET /api/system/health`
+- 新增诊断包导出：`POST /api/system/diagnostics/export`（ZIP）
+- Electron 启动链改为严格模式：后端未就绪时阻断进入业务页并显示启动诊断信息
 
 ## 功能概览
 
@@ -78,14 +86,16 @@ npm run client:dev
 npm run electron:build
 ```
 
-构建产物位于 `dist/`，Windows 默认生成 NSIS 安装包（例如 `Pose Annotator Setup 2.0.0.exe`）。
+构建产物位于 `dist/`，Windows 默认生成 NSIS 安装包（例如 `Pose Annotator Setup 2.2.0.exe`）。
 
 ## 配置
 
-后端运行时配置位于 `server/settings.json`，常用字段：
+后端运行时配置默认位于 Electron `userData/settings.json`（或由环境变量 `POSE_ANNOTATOR_SETTINGS_PATH` 指定），常用字段：
 - `projectsDir`：项目数据存放根目录（默认会在此目录下创建项目文件夹）
 - `additionalProjectPaths`：额外扫描/创建项目的目录列表
 - `pythonPath`：指定 Python 解释器路径（用于训练/预测）
+
+日志目录默认位于 Electron `userData/logs/`（或由 `POSE_ANNOTATOR_LOGS_DIR` 指定）。
 
 ## 使用流程
 
@@ -167,8 +177,32 @@ Windows 下删除目录会先尝试“重命名后后台清理”。如果目录
 ### 3) 训练/预测不可用
 
 确认：
-- `server/settings.json` 里的 `pythonPath` 指向有效解释器
+- `settings.json` 里的 `pythonPath` 指向有效解释器
 - Python 环境已安装 `ultralytics`（以及训练所需依赖）
+
+### 4) 出现错误如何定位根因
+
+1. 在前端错误详情面板查看 `error.code` 与 `requestId`
+2. 使用 `requestId` 到日志中检索同一请求链路
+3. 如需打包给维护者，点击“导出诊断包”或调用 `POST /api/system/diagnostics/export`
+4. 优先根据 `error.hint` 执行修复建议
+
+## 错误码速查
+
+| Code | 含义 |
+| :-- | :-- |
+| `ROUTE_NOT_FOUND` | 请求路由不存在，常见于前后端版本错配 |
+| `DESKTOP_ONLY_FEATURE` | 当前功能仅在 Electron 桌面版可用 |
+| `MODEL_INVALID` | 预标注模型路径/格式/文件有效性校验失败 |
+| `PYTHON_ENV_INVALID` | Python 环境不可用或依赖缺失 |
+| `PROJECT_NOT_FOUND` | 项目不存在或路径失效 |
+| `VALIDATION_ERROR` | 请求参数不合法 |
+| `FS_PERMISSION_DENIED` | 文件系统权限不足/文件占用 |
+| `BACKEND_BOOT_FAILED` | 后端启动失败 |
+| `DIAGNOSTICS_EXPORT_FAILED` | 诊断包导出失败 |
+| `INTERNAL_ERROR` | 未分类内部错误 |
+
+详细字段定义见 [docs/error-contract.md](./docs/error-contract.md)，发版门禁见 [docs/release-checklist.md](./docs/release-checklist.md)。
 
 ## 目录结构（源码）
 
@@ -179,7 +213,7 @@ pose-annotator/
 ├── scripts/             训练/预测相关脚本
 ├── docs/                文档与截图
 ├── electron-main.js     Electron 主进程
-└── server.js            旧版后端（仅作为兼容回退）
+└── package.json          构建与门禁脚本入口
 ```
 
 ## License

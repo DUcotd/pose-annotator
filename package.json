@@ -4,14 +4,17 @@
   "description": "",
   "main": "electron-main.js",
   "scripts": {
-    "test": "node --test server/test/*.test.js client/src/utils/*.test.js client/src/editor/core/*.test.js client/src/hooks/*.test.js client/src/components/*.interactions.test.js",
+    "test": "node --test server/test/*.test.js client/src/utils/*.test.js client/src/editor/core/*.test.js client/src/hooks/*.test.js client/src/components/*.interactions.test.js && npm run verify:no-direct-fetch",
     "test:ui": "npm --prefix client run test:ui",
     "start": "node server/index.js",
     "electron:dev": "concurrently \"npm run client:dev\" \"electron .\"",
     "client:dev": "npm run dev --prefix client",
-    "electron:build": "npx npm-run-all --serial build:client build:electron",
+    "electron:build": "npx npm-run-all --serial verify:build-config test build:client build:electron verify:packaged-output",
     "build:client": "npm run build --prefix client",
-    "build:electron": "npx electron-builder"
+    "build:electron": "npx electron-builder",
+    "verify:no-direct-fetch": "node scripts/verify-no-direct-fetch.js",
+    "verify:build-config": "node scripts/verify-build-config.js",
+    "verify:packaged-output": "node scripts/verify-packaged-output.js"
   },
   "build": {
     "appId": "com.pose-annotator.app",
@@ -21,7 +24,6 @@
     },
     "files": [
       "electron-main.js",
-      "server.js",
       "server/**/*",
       "scripts/**/*",
       "package.json",

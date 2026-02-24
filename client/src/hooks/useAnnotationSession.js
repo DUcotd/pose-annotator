@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { apiUrl } from '../api.js';
+import { apiClient } from '../lib/apiClient.js';
 
 export function deriveSessionPhase({
     conflictInfo,
@@ -121,14 +121,12 @@ export const useAnnotationSession = ({ projectId, imageId }) => {
         setAnnotations([]);
         setAnnotationEtag(null);
 
-        fetch(apiUrl(`/api/projects/${encodeURIComponent(projectId)}/annotations/${encodeURIComponent(imageId)}`), { signal: controller.signal })
-            .then(async res => {
-                if (!res.ok) {
-                    const t = await res.text().catch(() => '');
-                    throw new Error(t ? `HTTP ${res.status}: ${t}` : `HTTP ${res.status}`);
-                }
-                const etag = res.headers.get('etag');
-                const data = await res.json();
+        apiClient.request(
+            `/api/projects/${encodeURIComponent(projectId)}/annotations/${encodeURIComponent(imageId)}`,
+            { signal: controller.signal }
+        )
+            .then(({ data, response }) => {
+                const etag = response.headers.get('etag');
                 return { data, etag };
             })
             .then(({ data, etag }) => {
@@ -182,13 +180,14 @@ export const useAnnotationSession = ({ projectId, imageId }) => {
         const requestVersion = annotationVersionRef.current;
         const snapshot = annotationsRef.current;
 
-        const response = await fetch(apiUrl(`/api/projects/${encodeURIComponent(projectId)}/annotations/${encodeURIComponent(imageId)}`), {
+        const response = await apiClient.requestRaw(`/api/projects/${encodeURIComponent(projectId)}/annotations/${encodeURIComponent(imageId)}`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 ...(!force && annotationEtagRef.current ? { 'If-Match': annotationEtagRef.current } : {})
             },
-            body: JSON.stringify(snapshot)
+            body: snapshot,
+            allowErrorResponse: true
         });
 
         if (epoch !== sessionEpochRef.current) {
@@ -219,16 +218,21 @@ export const useAnnotationSession = ({ projectId, imageId }) => {
 
         if (response.status === 409) {
             const body = await response.json().catch(() => null);
-            const serverEtag = response.headers.get('etag') || body?.etag || null;
+            const serverEtag =
+                response.headers.get('etag') ||
+                body?.error?.details?.etag ||
+                body?.etag ||
+                null;
             setSaveStatus('error');
             setLastSaveError('保存冲突：标注已被其他进程更新');
             setConflictInfo({ serverEtag });
             return { ok: false, conflict: true };
         }
 
-        const t = await response.text().catch(() => '');
+        const payload = await response.json().catch(() => null);
+        const message = payload?.error?.message || payload?.error || null;
         setSaveStatus('error');
-        setLastSaveError(t ? `HTTP ${response.status}: ${t}` : `HTTP ${response.status}`);
+        setLastSaveError(message ? `HTTP ${response.status}: ${message}` : `HTTP ${response.status}`);
         return { ok: false };
     }, [imageId, projectId]);
 

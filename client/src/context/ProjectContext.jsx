@@ -1,12 +1,15 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { getImageName, validateSequentialNumbering } from '../utils/imageNumbering';
 import { apiUrl } from '../api';
+import { apiClient } from '../lib/apiClient';
+import { useErrorCenter } from '../error/ErrorCenter';
 
 const ProjectContext = createContext();
 
 export const useProject = () => useContext(ProjectContext);
 
 export const ProjectProvider = ({ children }) => {
+    const { reportError } = useErrorCenter();
     const [projects, setProjects] = useState([]);
     const [currentProject, setCurrentProject] = useState(null);
     const [images, setImages] = useState([]);
@@ -29,6 +32,14 @@ export const ProjectProvider = ({ children }) => {
     const [deletingProjects, setDeletingProjects] = useState(new Set());
     const updateTimeoutRef = useRef(null);
     const editorAttemptNavigationRef = useRef(null);
+
+    const reportProjectError = useCallback((err, source, extra = {}) => {
+        reportError(err, {
+            source,
+            projectId: currentProject || null,
+            ...extra
+        });
+    }, [reportError, currentProject]);
 
     const registerEditorAttemptNavigation = useCallback((fn) => {
         editorAttemptNavigationRef.current = fn;
@@ -57,22 +68,21 @@ export const ProjectProvider = ({ children }) => {
     const fetchProjects = useCallback(async () => {
         setLoading(true);
         try {
-            const res = await fetch(apiUrl('/api/projects'));
-            const data = await res.json();
+            const data = await apiClient.get('/api/projects');
             setProjects(data);
         } catch (err) {
             console.error("Failed to fetch projects", err);
+            reportProjectError(err, 'project-context.fetch-projects');
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [reportProjectError]);
 
     const fetchImages = useCallback(async (projectId) => {
         if (!projectId) return;
         setLoading(true);
         try {
-            const res = await fetch(apiUrl(`/api/projects/${encodeURIComponent(projectId)}/images`));
-            const data = await res.json();
+            const data = await apiClient.get(`/api/projects/${encodeURIComponent(projectId)}/images`);
             setImages(data);
 
             // If first time and no selection, default to the first image
@@ -83,24 +93,25 @@ export const ProjectProvider = ({ children }) => {
             }
         } catch (err) {
             console.error("Failed to fetch images", err);
+            reportProjectError(err, 'project-context.fetch-images', { targetProjectId: projectId });
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [reportProjectError]);
 
     const fetchProjectConfig = useCallback(async (projectId) => {
         if (!projectId) return;
         setConfigLoading(true);
         try {
-            const res = await fetch(apiUrl(`/api/projects/${encodeURIComponent(projectId)}/config`));
-            const data = await res.json();
+            const data = await apiClient.get(`/api/projects/${encodeURIComponent(projectId)}/config`);
             setProjectConfig(data);
         } catch (err) {
             console.error("Failed to fetch project config", err);
+            reportProjectError(err, 'project-context.fetch-project-config', { targetProjectId: projectId });
         } finally {
             setConfigLoading(false);
         }
-    }, []);
+    }, [reportProjectError]);
 
     const updateProjectConfig = (projectId, updates) => {
         if (!projectId) return;
@@ -111,13 +122,10 @@ export const ProjectProvider = ({ children }) => {
             if (updateTimeoutRef.current) clearTimeout(updateTimeoutRef.current);
             updateTimeoutRef.current = setTimeout(async () => {
                 try {
-                    await fetch(apiUrl(`/api/projects/${encodeURIComponent(projectId)}/config`), {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(next)
-                    });
+                    await apiClient.post(`/api/projects/${encodeURIComponent(projectId)}/config`, next);
                 } catch (err) {
                     console.error("Failed to sync project config to backend", err);
+                    reportProjectError(err, 'project-context.sync-project-config', { targetProjectId: projectId });
                 }
             }, 500);
 
@@ -127,32 +135,21 @@ export const ProjectProvider = ({ children }) => {
 
     const createProject = async (name, customPath = null) => {
         try {
-            const res = await fetch(apiUrl('/api/projects'), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name, customPath })
-            });
-            const data = await res.json();
-            if (res.ok) {
+            const data = await apiClient.post('/api/projects', { name, customPath });
+            if (data) {
                 await fetchProjects();
                 return {
                     success: true,
                     id: data.id,
                     message: data.message || '项目创建成功'
                 };
-            } else {
-                console.error("Failed to create project:", data.error);
-                return {
-                    success: false,
-                    message: data.error || '创建项目失败',
-                    details: data.details
-                };
             }
         } catch (err) {
             console.error("Failed to create project", err);
+            reportProjectError(err, 'project-context.create-project', { name, customPath });
             return {
                 success: false,
-                message: '创建项目失败：网络错误'
+                message: err?.message || '创建项目失败：网络错误'
             };
         }
     };
@@ -165,12 +162,8 @@ export const ProjectProvider = ({ children }) => {
         setDeletingProjects(prev => new Set([...prev, projectId]));
 
         try {
-            const res = await fetch(apiUrl(`/api/projects/${encodeURIComponent(projectId)}`), {
-                method: 'DELETE'
-            });
-            const data = await res.json();
-
-            if (res.ok) {
+            const data = await apiClient.del(`/api/projects/${encodeURIComponent(projectId)}`);
+            if (data) {
                 setProjects(prev => prev.filter(p => p.id !== projectId));
                 localStorage.removeItem(`lastImage_${projectId}`);
                 await fetchProjects();
@@ -187,12 +180,11 @@ export const ProjectProvider = ({ children }) => {
                     };
                 }
                 return { success: true, message: data.message || '项目已删除' };
-            } else {
-                return { success: false, message: data.error || '删除失败', details: data.details };
             }
         } catch (err) {
             console.error("Failed to delete project", err);
-            return { success: false, message: '删除失败：网络错误' };
+            reportProjectError(err, 'project-context.delete-project', { targetProjectId: projectId });
+            return { success: false, message: err?.message || '删除失败：网络错误' };
         } finally {
             setDeletingProjects(prev => {
                 const next = new Set(prev);
@@ -276,34 +268,25 @@ export const ProjectProvider = ({ children }) => {
 
     const exportProject = async (projectId, options) => {
         try {
-            const res = await fetch(apiUrl(`/api/projects/${encodeURIComponent(projectId)}/export/yolo`), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(options)
-            });
-            const data = await res.json();
+            const data = await apiClient.post(`/api/projects/${encodeURIComponent(projectId)}/export/yolo`, options);
             return {
-                success: res.ok,
-                message: data.details ? `${data.error || 'Export failed'}: ${data.details}` : (data.message || data.error),
+                success: true,
+                message: data?.details ? `${data.error || 'Export failed'}: ${data.details}` : (data?.message || data?.error),
                 path: data.path,
                 stats: data.stats
             };
         } catch (err) {
             console.error("Failed to export project", err);
-            return { success: false, message: 'Export failed due to network error' };
+            reportProjectError(err, 'project-context.export-project', { targetProjectId: projectId });
+            return { success: false, message: err?.message || 'Export failed due to network error' };
         }
     };
 
     const exportDatasetZip = async (projectId, options) => {
         try {
-            const res = await fetch(apiUrl(`/api/projects/${encodeURIComponent(projectId)}/export/yolo-zip`), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(options)
-            });
-            const data = await res.json();
+            const data = await apiClient.post(`/api/projects/${encodeURIComponent(projectId)}/export/yolo-zip`, options);
             return {
-                success: data.success !== undefined ? data.success : res.ok,
+                success: data.success !== undefined ? data.success : true,
                 message: data.message || (data.details ? `${data.error || 'ZIP export failed'}: ${data.details}` : data.error),
                 path: data.path,
                 zipSize: data.zipSize,
@@ -312,31 +295,22 @@ export const ProjectProvider = ({ children }) => {
             };
         } catch (err) {
             console.error("Failed to export dataset as ZIP", err);
-            return { success: false, message: 'ZIP export failed due to network error' };
+            reportProjectError(err, 'project-context.export-dataset-zip', { targetProjectId: projectId });
+            return { success: false, message: err?.message || 'ZIP export failed due to network error' };
         }
     };
 
     const exportCollaboration = async (projectId) => {
         try {
             if (window.electronAPI) {
-                const saveDialogRes = await fetch(apiUrl('/api/utils/save-file-dialog'), {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        title: '导出协作包',
-                        defaultPath: `${projectId}_collaboration.zip`,
-                        filters: [{ name: 'ZIP Archive', extensions: ['zip'] }]
-                    })
+                const dialogData = await apiClient.post('/api/utils/save-file-dialog', {
+                    title: '导出协作包',
+                    defaultPath: `${projectId}_collaboration.zip`,
+                    filters: [{ name: 'ZIP Archive', extensions: ['zip'] }]
                 });
-                const dialogData = await saveDialogRes.json();
 
                 if (dialogData.path) {
-                    const exportRes = await fetch(apiUrl(`/api/projects/${encodeURIComponent(projectId)}/collaboration/export-to-path`), {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ savePath: dialogData.path })
-                    });
-                    const result = await exportRes.json();
+                    const result = await apiClient.post(`/api/projects/${encodeURIComponent(projectId)}/collaboration/export-to-path`, { savePath: dialogData.path });
 
                     if (result.success) {
                         return {
@@ -362,7 +336,8 @@ export const ProjectProvider = ({ children }) => {
             return { success: true, message: '正在导出协作包，请查看浏览器下载记录' };
         } catch (err) {
             console.error("Failed to export collaboration package", err);
-            return { success: false, message: '导出失败：网络错误或服务器异常' };
+            reportProjectError(err, 'project-context.export-collaboration', { targetProjectId: projectId });
+            return { success: false, message: err?.message || '导出失败：网络错误或服务器异常' };
         }
     };
 
@@ -370,69 +345,45 @@ export const ProjectProvider = ({ children }) => {
 
     const inspectCollaboration = async (zipPath) => {
         try {
-            const res = await fetch(apiUrl('/api/projects/collaboration/inspect'), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ path: zipPath })
-            });
-            const data = await res.json();
-            return data;
+            return await apiClient.post('/api/projects/collaboration/inspect', { path: zipPath });
         } catch (err) {
             console.error("Failed to inspect collaboration package", err);
-            return { success: false, error: '检查失败：网络错误' };
+            reportProjectError(err, 'project-context.inspect-collaboration', { zipPath });
+            return { success: false, error: err?.message || '检查失败：网络错误' };
         }
     };
 
     const importCollaboration = async (zipPath, customPath = null) => {
         try {
             if (!zipPath) {
-                const resDir = await fetch(apiUrl('/api/utils/select-file'), {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        filters: [{ name: '项目协作包 (ZIP)', extensions: ['zip'] }]
-                    })
+                const dirData = await apiClient.post('/api/utils/select-file', {
+                    filters: [{ name: '项目协作包 (ZIP)', extensions: ['zip'] }]
                 });
-                const dirData = await resDir.json();
                 zipPath = dirData.path;
             }
 
             if (zipPath) {
-                const res = await fetch(apiUrl('/api/projects/collaboration/import'), {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ path: zipPath, customPath })
-                });
-                const data = await res.json();
-                if (res.ok) {
-                    await fetchProjects();
-                    return { success: true, message: '项目导入成功' };
-                } else {
-                    return { success: false, message: data.error || '项目导入失败' };
-                }
+                await apiClient.post('/api/projects/collaboration/import', { path: zipPath, customPath });
+                await fetchProjects();
+                return { success: true, message: '项目导入成功' };
             }
         } catch (err) {
             console.error("Failed to import collaboration package", err);
-            return { success: false, message: '导入失败：网络错误' };
+            reportProjectError(err, 'project-context.import-collaboration', { zipPath, customPath });
+            return { success: false, message: err?.message || '导入失败：网络错误' };
         }
         return { success: false, message: '取消导入' };
     };
 
     const renumberProject = async (projectId) => {
         try {
-            const res = await fetch(apiUrl(`/api/projects/${encodeURIComponent(projectId)}/renumber-all`), {
-                method: 'POST'
-            });
-            const data = await res.json();
-            if (res.ok) {
-                await fetchProjects();
-                return { success: true, message: data.message };
-            } else {
-                return { success: false, message: data.error || '重命名失败' };
-            }
+            const data = await apiClient.post(`/api/projects/${encodeURIComponent(projectId)}/renumber-all`, {});
+            await fetchProjects();
+            return { success: true, message: data.message };
         } catch (err) {
             console.error("Failed to renumber project", err);
-            return { success: false, message: '重命名失败：网络错误' };
+            reportProjectError(err, 'project-context.renumber-project', { targetProjectId: projectId });
+            return { success: false, message: err?.message || '重命名失败：网络错误' };
         }
     };
 
@@ -447,12 +398,9 @@ export const ProjectProvider = ({ children }) => {
 
         console.log('deleteImage called:', { projectId, imageId, navigateToNext, currentIndex: effectiveCurrentIndex, renumberAfterDelete });
         try {
-            const res = await fetch(apiUrl(`/api/projects/${encodeURIComponent(projectId)}/images/${encodeURIComponent(imageId)}`), {
-                method: 'DELETE'
-            });
-            const data = await res.json();
+            const data = await apiClient.del(`/api/projects/${encodeURIComponent(projectId)}/images/${encodeURIComponent(imageId)}`);
             console.log('Delete API response:', data);
-            if (res.ok) {
+            if (data) {
                 if (navigateToNext) {
                     if (data.remainingCount > 0) {
                         const targetIndex = Math.max(0, Math.min(effectiveCurrentIndex, data.remainingCount - 1));
@@ -460,20 +408,13 @@ export const ProjectProvider = ({ children }) => {
 
                         if (renumberAfterDelete) {
                             try {
-                                const renumberRes = await fetch(apiUrl(`/api/projects/${encodeURIComponent(projectId)}/renumber-all`), {
-                                    method: 'POST'
-                                });
-                                renumberInfo = await renumberRes.json();
-                                if (!renumberRes.ok) {
-                                    renumberInfo = { error: renumberInfo?.error || '重命名失败' };
-                                }
+                                renumberInfo = await apiClient.post(`/api/projects/${encodeURIComponent(projectId)}/renumber-all`, {});
                             } catch {
                                 renumberInfo = { error: '重命名失败：网络错误' };
                             }
                         }
 
-                        const imagesRes = await fetch(apiUrl(`/api/projects/${encodeURIComponent(projectId)}/images`));
-                        const newImages = await imagesRes.json();
+                        const newImages = await apiClient.get(`/api/projects/${encodeURIComponent(projectId)}/images`);
                         console.log('New images list:', newImages);
 
                         const validation = validateSequentialNumbering(newImages);
@@ -519,170 +460,129 @@ export const ProjectProvider = ({ children }) => {
                 await fetchProjects();
 
                 return { success: true, message: data.message, remainingCount: data.remainingCount, renumber: renumberInfo };
-            } else {
-                return { success: false, message: data.error || '删除失败' };
             }
         } catch (err) {
             console.error("Failed to delete image", err);
-            return { success: false, message: '删除失败：网络错误' };
+            reportProjectError(err, 'project-context.delete-image', { targetProjectId: projectId, imageId });
+            return { success: false, message: err?.message || '删除失败：网络错误' };
         }
     };
 
     const selectFolder = async () => {
         try {
-            const res = await fetch(apiUrl('/api/utils/select-folder'), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' }
-            });
-            const data = await res.json();
-            return data;
+            return await apiClient.post('/api/utils/select-folder', {});
         } catch (err) {
             console.error("Failed to select folder", err);
-            return { path: null, error: '选择文件夹失败' };
+            reportProjectError(err, 'project-context.select-folder');
+            return { path: null, error: err?.message || '选择文件夹失败' };
         }
     };
 
     const scanImages = async (folderPath, maxResults = 5000) => {
         try {
-            const res = await fetch(apiUrl('/api/utils/scan-images'), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ folderPath, maxResults })
-            });
-            const data = await res.json();
-            if (res.ok) {
-                return { success: true, ...data };
-            } else {
-                return { success: false, error: data.error || '扫描失败' };
-            }
+            const data = await apiClient.post('/api/utils/scan-images', { folderPath, maxResults });
+            return { success: true, ...data };
         } catch (err) {
             console.error("Failed to scan images", err);
-            return { success: false, error: '扫描失败：网络错误' };
+            reportProjectError(err, 'project-context.scan-images', { folderPath });
+            return { success: false, error: err?.message || '扫描失败：网络错误' };
         }
     };
 
     const importImages = async (projectId, images, mode = 'copy') => {
         try {
-            const res = await fetch(apiUrl(`/api/projects/${encodeURIComponent(projectId)}/import-images`), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ images, mode })
-            });
-            const data = await res.json();
-            if (res.ok) {
-                return { success: true, ...data };
-            } else {
-                return { success: false, error: data.error || '导入失败' };
-            }
+            const data = await apiClient.post(`/api/projects/${encodeURIComponent(projectId)}/import-images`, { images, mode });
+            return { success: true, ...data };
         } catch (err) {
             console.error("Failed to import images", err);
-            return { success: false, error: '导入失败：网络错误' };
+            reportProjectError(err, 'project-context.import-images', { targetProjectId: projectId });
+            return { success: false, error: err?.message || '导入失败：网络错误' };
         }
     };
 
     const getImportHistory = async (projectId) => {
         try {
-            const res = await fetch(apiUrl(`/api/projects/${encodeURIComponent(projectId)}/import-history`));
-            const data = await res.json();
+            const data = await apiClient.get(`/api/projects/${encodeURIComponent(projectId)}/import-history`);
             return data.history || [];
         } catch (err) {
             console.error("Failed to get import history", err);
+            reportProjectError(err, 'project-context.get-import-history', { targetProjectId: projectId });
             return [];
         }
     };
 
     const getPredictionSettings = async (projectId) => {
         try {
-            const res = await fetch(apiUrl(`/api/projects/${encodeURIComponent(projectId)}/prediction-settings`));
-            const data = await res.json();
-            return data;
+            return await apiClient.get(`/api/projects/${encodeURIComponent(projectId)}/prediction-settings`);
         } catch (err) {
             console.error("Failed to get prediction settings", err);
+            reportProjectError(err, 'project-context.get-prediction-settings', { targetProjectId: projectId });
             return { modelPath: '', confidenceThreshold: 0.5, lastPredictionTime: null };
         }
     };
 
     const savePredictionSettings = async (projectId, settings) => {
         try {
-            const res = await fetch(apiUrl(`/api/projects/${encodeURIComponent(projectId)}/prediction-settings`), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(settings)
-            });
-            const data = await res.json();
-            return { success: res.ok, message: data.message || data.error, data };
+            const data = await apiClient.post(`/api/projects/${encodeURIComponent(projectId)}/prediction-settings`, settings);
+            return { success: true, message: data.message, data };
         } catch (err) {
             console.error("Failed to save prediction settings", err);
-            return { success: false, message: '保存失败：网络错误' };
+            reportProjectError(err, 'project-context.save-prediction-settings', { targetProjectId: projectId });
+            return { success: false, message: err?.message || '保存失败：网络错误' };
         }
     };
 
     const runPrediction = async (projectId, options) => {
         try {
-            const res = await fetch(apiUrl(`/api/projects/${encodeURIComponent(projectId)}/predict`), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(options)
-            });
-            const data = await res.json();
-            return { success: res.ok, taskId: data.taskId, message: data.message || data.error };
+            const data = await apiClient.post(`/api/projects/${encodeURIComponent(projectId)}/predict`, options);
+            return { success: true, taskId: data.taskId, message: data.message || data.error };
         } catch (err) {
             console.error("Failed to run prediction", err);
-            return { success: false, message: '预标注失败：网络错误' };
+            reportProjectError(err, 'project-context.run-prediction', { targetProjectId: projectId });
+            return { success: false, message: err?.message || '预标注失败：网络错误' };
         }
     };
 
     const getPredictionStatus = async (projectId) => {
         try {
-            const res = await fetch(apiUrl(`/api/projects/${encodeURIComponent(projectId)}/predict/status`));
-            const data = await res.json();
-            return data;
+            return await apiClient.get(`/api/projects/${encodeURIComponent(projectId)}/predict/status`);
         } catch (err) {
             console.error("Failed to get prediction status", err);
+            reportProjectError(err, 'project-context.get-prediction-status', { targetProjectId: projectId });
             return { isRunning: false, progress: 0, current: 0, total: 0, message: '' };
         }
     };
 
     const cancelPrediction = async (projectId) => {
         try {
-            const res = await fetch(apiUrl(`/api/projects/${encodeURIComponent(projectId)}/predict/cancel`), {
-                method: 'POST'
-            });
-            const data = await res.json();
-            return { success: res.ok, message: data.message || data.error };
+            const data = await apiClient.post(`/api/projects/${encodeURIComponent(projectId)}/predict/cancel`, {});
+            return { success: true, message: data.message || data.error };
         } catch (err) {
             console.error("Failed to cancel prediction", err);
-            return { success: false, message: '取消失败：网络错误' };
+            reportProjectError(err, 'project-context.cancel-prediction', { targetProjectId: projectId });
+            return { success: false, message: err?.message || '取消失败：网络错误' };
         }
     };
 
     const validateModel = async (projectId, modelPath) => {
         try {
-            const res = await fetch(apiUrl(`/api/projects/${encodeURIComponent(projectId)}/predict/validate-model`), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ modelPath })
-            });
-            const data = await res.json();
-            return { success: res.ok, ...data };
+            const data = await apiClient.post(`/api/projects/${encodeURIComponent(projectId)}/predict/validate-model`, { modelPath });
+            return { success: true, ...data };
         } catch (err) {
             console.error("Failed to validate model", err);
-            return { success: false, error: '验证失败：网络错误' };
+            reportProjectError(err, 'project-context.validate-model', { targetProjectId: projectId, modelPath });
+            return { success: false, error: err?.message || '验证失败：网络错误' };
         }
     };
 
     const predictSingleImage = async (projectId, imageName, modelPath, confidenceThreshold = 0.25) => {
         try {
-            const res = await fetch(apiUrl(`/api/projects/${encodeURIComponent(projectId)}/predict/single`), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ imageName, modelPath, confidenceThreshold })
-            });
-            const data = await res.json();
-            return { success: res.ok, ...data };
+            const data = await apiClient.post(`/api/projects/${encodeURIComponent(projectId)}/predict/single`, { imageName, modelPath, confidenceThreshold });
+            return { success: true, ...data };
         } catch (err) {
             console.error("Failed to predict single image", err);
-            return { success: false, error: '预标注失败：网络错误' };
+            reportProjectError(err, 'project-context.predict-single-image', { targetProjectId: projectId, imageName });
+            return { success: false, error: err?.message || '预标注失败：网络错误' };
         }
     };
 

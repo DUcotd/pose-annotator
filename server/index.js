@@ -6,26 +6,40 @@ const projectRegistry = require('./src/services/ProjectRegistryService');
 const settings = require('./src/config/settings');
 const logger = require('./src/utils/logger');
 
-const PROJECTS_DIR = (function() {
-  const config = settings.load();
-  if (config.projectsDir && fs.existsSync(config.projectsDir)) {
-    logger.info(`[Config] Using projectsDir from settings: ${config.projectsDir}`);
-    return config.projectsDir;
-  }
-  
-  if (process.versions?.electron) {
-    const { app } = require('electron');
-    const exePath = app.getPath('exe');
-    const installDir = path.dirname(exePath);
-    const electronProjectsDir = path.join(installDir, 'projects');
-    if (fs.existsSync(electronProjectsDir)) {
-      return electronProjectsDir;
-    }
-  }
-  return path.join(__dirname, 'projects');
-})();
+let activeInstance = null;
+let handlersRegistered = false;
 
-async function performStartupTasks() {
+function resolveElectronUserDataDir() {
+  if (!process.versions?.electron) return null;
+  try {
+    const { app } = require('electron');
+    if (!app || typeof app.getPath !== 'function') return null;
+    return app.getPath('userData');
+  } catch {
+    return null;
+  }
+}
+
+function resolveProjectsDir() {
+  const config = settings.load();
+  if (typeof config.projectsDir === 'string' && config.projectsDir.trim()) {
+    const explicit = path.resolve(config.projectsDir);
+    logger.info(`[Config] Using projectsDir from settings: ${explicit}`);
+    return explicit;
+  }
+
+  const userDataDir = resolveElectronUserDataDir();
+  if (userDataDir) {
+    const defaultName = settings.getDefaultProjectsDirName() || 'projects';
+    const fromUserData = path.join(userDataDir, defaultName);
+    logger.info(`[Config] Using projectsDir from userData: ${fromUserData}`);
+    return fromUserData;
+  }
+
+  return path.join(__dirname, 'projects');
+}
+
+async function performStartupTasks(PROJECTS_DIR) {
   logger.info('[Startup] Performing startup tasks...');
 
   if (!fs.existsSync(PROJECTS_DIR)) {
@@ -44,11 +58,9 @@ async function performStartupTasks() {
 
   const config = settings.load();
   const allPaths = [PROJECTS_DIR];
-  if (config.additionalProjectPaths && Array.isArray(config.additionalProjectPaths)) {
-    config.additionalProjectPaths.forEach(p => {
-      if (p && !allPaths.includes(p)) {
-        allPaths.push(p);
-      }
+  if (Array.isArray(config.additionalProjectPaths)) {
+    config.additionalProjectPaths.forEach((p) => {
+      if (p && !allPaths.includes(p)) allPaths.push(p);
     });
   }
 
@@ -64,18 +76,12 @@ async function performStartupTasks() {
   }
 
   projectRegistry.cleanupDeletedProjects(7);
-
   logger.info('[Startup] Startup tasks completed');
 }
 
-const app = createApp(PROJECTS_DIR);
-const PORT = process.env.PORT || 5000;
-
-performStartupTasks().then(() => {
-  const server = app.listen(PORT, () => {
-    logger.info(`Server running on http://localhost:${PORT}`);
-    console.log(`Server running on http://localhost:${PORT}`);
-  });
+function registerProcessHandlers() {
+  if (handlersRegistered) return;
+  handlersRegistered = true;
 
   process.on('uncaughtException', (err) => {
     logger.error('[FATAL] Uncaught Exception:', err.message);
@@ -88,10 +94,51 @@ performStartupTasks().then(() => {
     logger.error('[FATAL] Unhandled Rejection:', reason);
     console.error('[FATAL] Unhandled Rejection:', reason);
   });
+}
 
-  module.exports = { app, server };
-}).catch(err => {
-  logger.error('[FATAL] Startup failed:', err);
-  console.error('[FATAL] Startup failed:', err);
-  process.exit(1);
-});
+async function startServer(options = {}) {
+  if (activeInstance?.server) {
+    return activeInstance;
+  }
+
+  const port = Number(options.port || process.env.PORT || 5000);
+  const PROJECTS_DIR = resolveProjectsDir();
+  await performStartupTasks(PROJECTS_DIR);
+
+  const app = createApp(PROJECTS_DIR, {
+    appLogPath: options.appLogPath || null
+  });
+
+  const server = await new Promise((resolve, reject) => {
+    const httpServer = app.listen(port, () => resolve(httpServer));
+    httpServer.on('error', reject);
+  });
+
+  logger.info(`Server running on http://localhost:${port}`);
+  console.log(`Server running on http://localhost:${port}`);
+
+  registerProcessHandlers();
+  activeInstance = { app, server, port, projectsDir: PROJECTS_DIR };
+  return activeInstance;
+}
+
+async function stopServer() {
+  if (!activeInstance?.server) return;
+  const { server } = activeInstance;
+  await new Promise((resolve) => server.close(resolve));
+  activeInstance = null;
+}
+
+if (require.main === module) {
+  startServer().catch((err) => {
+    logger.error('[FATAL] Startup failed:', err);
+    console.error('[FATAL] Startup failed:', err);
+    process.exit(1);
+  });
+}
+
+module.exports = {
+  startServer,
+  stopServer
+};
+

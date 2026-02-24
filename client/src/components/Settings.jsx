@@ -5,10 +5,11 @@ import {
     Box, Plus, X, Zap, AlertCircle, ChevronDown, ChevronUp
 } from 'lucide-react';
 import { createPortal } from 'react-dom';
-
-const API_BASE = 'http://localhost:5000/api';
+import { apiClient } from '../lib/apiClient';
+import { useErrorCenter } from '../error/ErrorCenter';
 
 export const Settings = ({ onBack }) => {
+    const { reportError } = useErrorCenter();
     const [activeTab, setActiveTab] = useState('projects');
     const [pythonPath, setPythonPath] = useState('');
     const [isValidating, setIsValidating] = useState(false);
@@ -51,31 +52,31 @@ export const Settings = ({ onBack }) => {
 
     const fetchSettings = async () => {
         try {
-            const res = await fetch(`${API_BASE}/settings`);
-            const data = await res.json();
+            const data = await apiClient.get('/api/settings');
             if (data.pythonPath) {
                 setPythonPath(data.pythonPath);
             }
         } catch (err) {
             console.error('Failed to load settings:', err);
+            reportError(err, { source: 'settings.fetch-settings' });
         }
         try {
-            const res = await fetch(`${API_BASE}/settings/projects-dir`);
-            const data = await res.json();
+            const data = await apiClient.get('/api/settings/projects-dir');
             setProjectsDir(data.projectsDir || '');
         } catch (err) {
             console.error('Failed to load projects dir:', err);
+            reportError(err, { source: 'settings.fetch-projects-dir' });
         }
     };
 
     const fetchEnvs = async () => {
         setIsLoadingEnvs(true);
         try {
-            const res = await fetch(`${API_BASE}/settings/envs`);
-            const data = await res.json();
+            const data = await apiClient.get('/api/settings/envs');
             setEnvs(data.envs || []);
         } catch (err) {
             console.error('Failed to fetch environments:', err);
+            reportError(err, { source: 'settings.fetch-envs' });
         } finally {
             setIsLoadingEnvs(false);
         }
@@ -83,21 +84,21 @@ export const Settings = ({ onBack }) => {
 
     const fetchCompatibility = async () => {
         try {
-            const res = await fetch(`${API_BASE}/settings/envs/compatibility`);
-            const data = await res.json();
+            const data = await apiClient.get('/api/settings/envs/compatibility');
             setCompatibilityMatrix(data);
         } catch (err) {
             console.error('Failed to fetch compatibility:', err);
+            reportError(err, { source: 'settings.fetch-compatibility' });
         }
     };
 
     const detectCuda = async () => {
         try {
-            const res = await fetch(`${API_BASE}/settings/envs/detect-cuda`);
-            const data = await res.json();
+            const data = await apiClient.get('/api/settings/envs/detect-cuda');
             setDetectedCuda(data);
         } catch (err) {
             console.error('Failed to detect CUDA:', err);
+            reportError(err, { source: 'settings.detect-cuda' });
         }
     };
 
@@ -109,12 +110,7 @@ export const Settings = ({ onBack }) => {
         setCreateProgress({ status: 'creating', message: '正在创建环境...' });
 
         try {
-            const res = await fetch(`${API_BASE}/settings/envs/create`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(newEnv)
-            });
-            const data = await res.json();
+            const data = await apiClient.post('/api/settings/envs/create', newEnv);
 
             if (data.success) {
                 setCreateProgress({ status: 'success', message: data.result?.message || '环境创建成功' });
@@ -128,33 +124,34 @@ export const Settings = ({ onBack }) => {
                 setCreateProgress({ status: 'error', message: data.result?.error || data.error || '创建失败，请重试' });
             }
         } catch (err) {
+            reportError(err, { source: 'settings.create-env' });
             setCreateProgress({ status: 'error', message: '创建失败: ' + err.message });
         }
     };
 
     const handleSelectFile = async () => {
         try {
-            const res = await fetch(`${API_BASE}/utils/select-python`, { method: 'POST' });
-            const data = await res.json();
+            const data = await apiClient.post('/api/utils/select-python', {});
             if (data.path) {
                 setPythonPath(data.path);
                 setValidationResult(null);
             }
         } catch (err) {
             console.error('Failed to select file:', err);
+            reportError(err, { source: 'settings.select-python' });
         }
     };
 
     const handleScan = async () => {
         setIsScanning(true);
         try {
-            const res = await fetch(`${API_BASE}/settings/scan-envs`);
-            const data = await res.json();
+            const data = await apiClient.get('/api/settings/scan-envs');
             if (Array.isArray(data)) {
                 setDetectedEnvs(data);
             }
         } catch (err) {
             console.error('Failed to scan environments:', err);
+            reportError(err, { source: 'settings.scan-envs' });
         } finally {
             setIsScanning(false);
             setHasScanned(true);
@@ -172,14 +169,10 @@ export const Settings = ({ onBack }) => {
         setValidationResult(null);
 
         try {
-            const res = await fetch(`${API_BASE}/settings/validate-python`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ pythonPath: path })
-            });
-            const data = await res.json();
+            const data = await apiClient.post('/api/settings/validate-python', { pythonPath: path });
             setValidationResult(data);
         } catch (err) {
+            reportError(err, { source: 'settings.validate-python' });
             setValidationResult({ valid: false, error: '验证失败: ' + err.message });
         } finally {
             setIsValidating(false);
@@ -191,12 +184,7 @@ export const Settings = ({ onBack }) => {
         setSaveMessage(null);
 
         try {
-            const res = await fetch(`${API_BASE}/settings`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ pythonPath })
-            });
-            const data = await res.json();
+            const data = await apiClient.post('/api/settings', { pythonPath });
 
             if (data.success) {
                 setSaveMessage({ type: 'success', text: '✓ 设置已保存，训练时将使用此 Python 路径' });
@@ -205,6 +193,7 @@ export const Settings = ({ onBack }) => {
                 setSaveMessage({ type: 'error', text: '保存失败: ' + data.error });
             }
         } catch (err) {
+            reportError(err, { source: 'settings.save' });
             setSaveMessage({ type: 'error', text: '保存失败: ' + err.message });
         } finally {
             setIsSaving(false);
@@ -213,14 +202,14 @@ export const Settings = ({ onBack }) => {
 
     const handleSelectProjectsDir = async () => {
         try {
-            const res = await fetch(`${API_BASE}/utils/select-folder`, { method: 'POST' });
-            const data = await res.json();
+            const data = await apiClient.post('/api/utils/select-folder', {});
             if (data.path) {
                 setProjectsDir(data.path);
                 setDirSaveMessage(null);
             }
         } catch (err) {
             console.error('Failed to select folder:', err);
+            reportError(err, { source: 'settings.select-projects-dir' });
         }
     };
 
@@ -229,12 +218,7 @@ export const Settings = ({ onBack }) => {
         setDirSaveMessage(null);
 
         try {
-            const res = await fetch(`${API_BASE}/settings/projects-dir`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ projectsDir })
-            });
-            const data = await res.json();
+            const data = await apiClient.post('/api/settings/projects-dir', { projectsDir });
 
             if (data.success) {
                 setDirSaveMessage({ type: 'success', text: data.message });
@@ -243,6 +227,7 @@ export const Settings = ({ onBack }) => {
                 setDirSaveMessage({ type: 'error', text: data.error });
             }
         } catch (err) {
+            reportError(err, { source: 'settings.save-projects-dir' });
             setDirSaveMessage({ type: 'error', text: '保存失败: ' + err.message });
         } finally {
             setIsSavingDir(false);
@@ -255,12 +240,7 @@ export const Settings = ({ onBack }) => {
         setDirSaveMessage(null);
 
         try {
-            const res = await fetch(`${API_BASE}/settings/projects-dir`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ projectsDir: null })
-            });
-            const data = await res.json();
+            const data = await apiClient.post('/api/settings/projects-dir', { projectsDir: null });
 
             if (data.success) {
                 setDirSaveMessage({ type: 'success', text: data.message });
@@ -269,6 +249,7 @@ export const Settings = ({ onBack }) => {
                 setDirSaveMessage({ type: 'error', text: data.error });
             }
         } catch (err) {
+            reportError(err, { source: 'settings.reset-projects-dir' });
             setDirSaveMessage({ type: 'error', text: '保存失败: ' + err.message });
         } finally {
             setIsSavingDir(false);

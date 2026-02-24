@@ -2,9 +2,26 @@ const path = require('path');
 const fs = require('fs');
 const defaultConfig = require('./defaultConfig');
 
-const DEFAULT_GLOBAL_CONFIG_PATH = path.join(__dirname, '..', '..', 'settings.json');
+function resolveElectronUserDataDir() {
+  if (!process.versions?.electron) return null;
+  try {
+    const { app } = require('electron');
+    if (!app || typeof app.getPath !== 'function') return null;
+    return app.getPath('userData');
+  } catch {
+    return null;
+  }
+}
 
-const getConfigPath = () => process.env.POSE_ANNOTATOR_SETTINGS_PATH || DEFAULT_GLOBAL_CONFIG_PATH;
+function resolveDefaultConfigPath() {
+  const userDataDir = resolveElectronUserDataDir();
+  if (userDataDir) {
+    return path.join(userDataDir, 'settings.json');
+  }
+  return path.join(__dirname, '..', '..', 'settings.json');
+}
+
+const getConfigPath = () => process.env.POSE_ANNOTATOR_SETTINGS_PATH || resolveDefaultConfigPath();
 
 class SettingsService {
   constructor() {

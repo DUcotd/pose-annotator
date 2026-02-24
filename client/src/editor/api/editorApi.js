@@ -1,4 +1,5 @@
 import { apiUrl } from '../../api';
+import { apiClient } from '../../lib/apiClient';
 
 const datasetStatsCache = new Map();
 
@@ -7,41 +8,23 @@ function projectPath(projectId, suffix = '') {
   return `/api/projects/${encodeURIComponent(projectId)}${tail}`;
 }
 
-async function readErrorText(res) {
-  try {
-    const text = await res.text();
-    return text || `HTTP ${res.status}`;
-  } catch {
-    return `HTTP ${res.status}`;
-  }
-}
-
 export async function getProjectConfig(projectId) {
-  const res = await fetch(apiUrl(projectPath(projectId, 'config')));
-  if (!res.ok) throw new Error(await readErrorText(res));
-  return res.json();
+  return apiClient.get(projectPath(projectId, 'config'));
 }
 
 export async function saveProjectConfig(projectId, config) {
-  const res = await fetch(apiUrl(projectPath(projectId, 'config')), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(config ?? {})
-  });
-  if (!res.ok) throw new Error(await readErrorText(res));
-  return res.json();
+  return apiClient.post(projectPath(projectId, 'config'), config ?? {});
 }
 
 export async function getImageAnnotations(projectId, imageId, options = {}) {
-  const res = await fetch(
-    apiUrl(projectPath(projectId, `annotations/${encodeURIComponent(imageId)}`)),
-    options
+  const result = await apiClient.request(
+    projectPath(projectId, `annotations/${encodeURIComponent(imageId)}`),
+    { ...options, method: options.method || 'GET' }
   );
-  if (!res.ok) throw new Error(await readErrorText(res));
-  const data = await res.json();
+  const data = result.data;
   return {
     data: Array.isArray(data) ? data : [],
-    etag: res.headers.get('etag') || null
+    etag: result.response.headers.get('etag') || null
   };
 }
 
@@ -50,10 +33,10 @@ export function saveImageAnnotations(projectId, imageId, annotations, options = 
     'Content-Type': 'application/json',
     ...(options.ifMatch ? { 'If-Match': options.ifMatch } : {})
   };
-  return fetch(apiUrl(projectPath(projectId, `annotations/${encodeURIComponent(imageId)}`)), {
+  return apiClient.requestRaw(projectPath(projectId, `annotations/${encodeURIComponent(imageId)}`), {
     method: 'POST',
     headers,
-    body: JSON.stringify(annotations ?? [])
+    body: annotations ?? []
   });
 }
 
@@ -75,11 +58,7 @@ export async function getDatasetStats(projectId, options = {}) {
     if (cached.promise) return cached.promise;
   }
 
-  const req = fetch(apiUrl(projectPath(projectId, 'dataset/stats')))
-    .then(async (res) => {
-      if (!res.ok) throw new Error(await readErrorText(res));
-      return res.json();
-    })
+  const req = apiClient.get(projectPath(projectId, 'dataset/stats'))
     .then((data) => {
       const next = data || null;
       datasetStatsCache.set(projectId, { ts: Date.now(), data: next, promise: null });
@@ -101,4 +80,3 @@ export function clearDatasetStatsCache(projectId) {
   }
   datasetStatsCache.clear();
 }
-

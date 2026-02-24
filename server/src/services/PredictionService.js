@@ -174,8 +174,23 @@ class PredictionService {
   async getPythonCommand() {
     const env = await PythonEnvService.getBestPython();
     if (!env) {
-      throw new Error('No valid Python environment found');
+      throw new Error('未找到可用 Python 环境，请先在设置中配置 Python 路径');
     }
+
+    if (env.compatibility === 'incompatible') {
+      const reason = env?.compatibilityDetails?.errors?.[0] || '当前 Python 环境与模型推理要求不兼容';
+      throw new Error(`Python 环境不兼容: ${reason}`);
+    }
+
+    const missingDeps = [];
+    if (env.hasUltralytics === false) missingDeps.push('ultralytics');
+    if (env.hasTorch === false) missingDeps.push('torch');
+    if (missingDeps.length > 0) {
+      throw new Error(
+        `当前 Python 环境缺少依赖: ${missingDeps.join(', ')}。请在设置页切换环境，或执行: pip install ${missingDeps.join(' ')}`
+      );
+    }
+
     return { cmd: env.path, info: env };
   }
 
@@ -238,6 +253,81 @@ class PredictionService {
       ],
       rawError: errorMsg.substring(0, 500)
     };
+  }
+
+  toFiniteCount(value, fallback = 0) {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n < 0) return fallback;
+    return Math.floor(n);
+  }
+
+  buildFinalStats(state, { exitCode = 0 } = {}) {
+    const totalImages = this.toFiniteCount(state?.totalImages, 0);
+    let successCount = this.toFiniteCount(state?.processedImages, 0);
+    let failedCount = Math.max(0, totalImages - successCount);
+
+    const reportedSuccess = this.toFiniteCount(state?.reportedSuccess, null);
+    const reportedFailed = this.toFiniteCount(state?.reportedFailed, null);
+
+    if (reportedSuccess !== null) {
+      successCount = reportedSuccess;
+    }
+
+    if (reportedFailed !== null) {
+      failedCount = reportedFailed;
+    } else if (totalImages > 0) {
+      failedCount = Math.max(0, totalImages - successCount);
+    }
+
+    if (totalImages > 0) {
+      successCount = Math.min(successCount, totalImages);
+      failedCount = Math.min(Math.max(0, failedCount), totalImages);
+
+      if (successCount + failedCount > totalImages) {
+        if (reportedSuccess !== null) {
+          failedCount = Math.max(0, totalImages - successCount);
+        } else {
+          successCount = Math.max(0, totalImages - failedCount);
+        }
+      } else if (successCount + failedCount < totalImages) {
+        failedCount = totalImages - successCount;
+      }
+    }
+
+    if (exitCode !== 0 && totalImages > 0 && failedCount === 0) {
+      failedCount = Math.max(1, totalImages - successCount);
+    }
+
+    const processedImages = totalImages > 0
+      ? Math.min(totalImages, Math.max(this.toFiniteCount(state?.processedImages, 0), successCount + failedCount))
+      : this.toFiniteCount(state?.processedImages, 0);
+
+    return {
+      processedImages,
+      totalImages,
+      successCount,
+      failedCount
+    };
+  }
+
+  extractFinalErrorMessage(processState) {
+    if (!processState) return '';
+    const errorLogs = Array.isArray(processState.errorLogs) ? processState.errorLogs : [];
+    if (errorLogs.length > 0) {
+      const last = this.cleanString(String(errorLogs[errorLogs.length - 1] || ''));
+      if (last) return last.substring(0, 500);
+    }
+
+    const logs = Array.isArray(processState.logs) ? processState.logs : [];
+    for (let i = logs.length - 1; i >= 0; i--) {
+      const entry = logs[i];
+      const type = entry?.type;
+      if (type !== 'error' && type !== 'stderr') continue;
+      const msg = this.cleanString(String(entry?.msg || ''));
+      if (msg) return msg.substring(0, 500);
+    }
+
+    return '';
   }
 
   async validateModel(modelPath) {
@@ -430,6 +520,9 @@ class PredictionService {
     this.predictionStates.set(projectId, {
       totalImages: images.length,
       processedImages: 0,
+      failedImages: 0,
+      reportedSuccess: null,
+      reportedFailed: null,
       activeIndex: -1,
       currentImage: null,
       results: [],
@@ -623,35 +716,28 @@ class PredictionService {
         }
 
         const state = this.predictionStates.get(projectId);
+        const finalStats = this.buildFinalStats(state, { exitCode: code });
+        const processState = this.processes.get(projectId);
+        if (processState) {
+          processState.finalStats = finalStats;
+        }
 
         if (code === 0) {
-          // 在删除predictionState之前，将统计信息保存到processState中
-          const processedImages = state ? state.processedImages : 0;
-          const totalImages = state ? state.totalImages : 0;
-
-          // 保存最终统计信息到processState，这样即使predictionState被删除也能获取
-          const processState = this.processes.get(projectId);
-          if (processState) {
-            processState.finalStats = {
-              processedImages,
-              totalImages,
-              successCount: processedImages,
-              failedCount: Math.max(0, totalImages - processedImages)
-            };
-          }
-
           this.processes.setStatus(projectId, 'completed');
+          if (processState) {
+            processState.finalErrorMessage = '';
+          }
           this.processes.addLog(projectId, {
             type: 'system',
-            msg: `✅ 预标注完成！共处理 ${processedImages} 张图片`,
+            msg: `✅ 预标注完成！共处理 ${finalStats.processedImages} 张图片`,
             time: Date.now()
           });
           logger.info(`Prediction completed for project ${projectId}`);
           this.pendingSaves.delete(projectId);
           resolve({
             success: true,
-            processedImages,
-            totalImages
+            processedImages: finalStats.processedImages,
+            totalImages: finalStats.totalImages
           });
         } else {
           this.processes.setStatus(projectId, 'failed');
@@ -691,12 +777,19 @@ class PredictionService {
                 });
               }
             }
+
+            if (processState) {
+              processState.finalErrorMessage = this.cleanString(String(recentErrors[recentErrors.length - 1] || ''));
+            }
           } else {
             this.processes.addLog(projectId, {
               type: 'error',
               msg: `⚠️ 未捕获到具体错误信息，请检查:\n1. 模型文件是否存在且格式正确\n2. Python环境是否配置正确（需要安装 ultralytics）\n3. 图片文件是否存在且格式支持\n4. 检查系统日志获取更多信息`,
               time: Date.now()
             });
+            if (processState) {
+              processState.finalErrorMessage = '未捕获到具体错误信息，请检查 Python 环境或模型配置';
+            }
           }
 
           logger.error(`Prediction failed for project ${projectId} with code ${code}`);
@@ -709,6 +802,12 @@ class PredictionService {
 
       child.on('error', (err) => {
         logger.error(`Prediction process error for ${projectId}:`, err);
+        const state = this.predictionStates.get(projectId);
+        const processState = this.processes.get(projectId);
+        if (processState) {
+          processState.finalStats = this.buildFinalStats(state, { exitCode: 1 });
+          processState.finalErrorMessage = err.message || '预标注进程启动失败';
+        }
         this.processes.setStatus(projectId, 'failed');
         this.processes.addLog(projectId, {
           type: 'system',
@@ -819,6 +918,7 @@ class PredictionService {
     }
 
     if (data.event === 'error') {
+      state.failedImages = this.toFiniteCount(state.failedImages, 0) + 1;
       this.processes.addLog(projectId, {
         type: 'error',
         msg: `处理 ${data.image} 时出错: ${data.error}`,
@@ -827,6 +927,8 @@ class PredictionService {
     }
 
     if (data.event === 'complete') {
+      state.reportedSuccess = this.toFiniteCount(data.success, null);
+      state.reportedFailed = this.toFiniteCount(data.failed, null);
       this.processes.addLog(projectId, {
         type: 'info',
         msg: `预标注完成: 成功 ${data.success}, 失败 ${data.failed}`,
@@ -889,6 +991,7 @@ class PredictionService {
     }
 
     if (data.event === 'prediction_error') {
+      state.failedImages = this.toFiniteCount(state.failedImages, 0) + 1;
       this.processes.addLog(projectId, {
         type: 'error',
         msg: `处理 ${data.image} 时出错: ${data.error}`,
@@ -911,11 +1014,15 @@ class PredictionService {
       metrics: processState.metrics,
       pid: processState.pid,
       startTime: processState.startTime,
-      endTime: processState.endTime
+      endTime: processState.endTime,
+      errorMessage: processState.finalErrorMessage || ''
     };
 
-    // 如果任务已完成且predictionState已被删除，使用保存的finalStats
-    if (processState.status === 'completed' && processState.finalStats) {
+    // 如果任务已结束且 predictionState 已被删除，使用保存的 finalStats
+    if (
+      (processState.status === 'completed' || processState.status === 'failed' || processState.status === 'stopped')
+      && processState.finalStats
+    ) {
       response.progress = {
         total: processState.finalStats.totalImages,
         processed: processState.finalStats.processedImages,
@@ -926,6 +1033,9 @@ class PredictionService {
         successCount: processState.finalStats.successCount,
         failedCount: processState.finalStats.failedCount
       };
+      if (!response.errorMessage && processState.status === 'failed') {
+        response.errorMessage = this.extractFinalErrorMessage(processState);
+      }
       return response;
     }
 
@@ -1013,6 +1123,10 @@ class PredictionService {
       };
     }
 
+    if (!response.errorMessage && processState.status === 'failed') {
+      response.errorMessage = this.extractFinalErrorMessage(processState);
+    }
+
     return response;
   }
 
@@ -1023,6 +1137,9 @@ class PredictionService {
     }
 
     try {
+      const predictionState = this.predictionStates.get(projectId);
+      processState.finalStats = this.buildFinalStats(predictionState, { exitCode: 1 });
+      processState.finalErrorMessage = '用户手动停止预标注';
       this.killProcess(processState.pid, true);
       this.processes.setStatus(projectId, 'stopped');
       this.processes.addLog(projectId, {

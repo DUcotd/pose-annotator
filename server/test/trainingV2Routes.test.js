@@ -56,14 +56,19 @@ test('training v2 routes expose status/events/export for active run', async (t) 
 
   const statusRes = await fetch(`${url}/api/projects/${projectId}/train/v2/status`);
   assert.equal(statusRes.status, 200);
-  const status = await statusRes.json();
+  const statusEnvelope = await statusRes.json();
+  assert.equal(statusEnvelope.ok, true);
+  const status = statusEnvelope.data;
   assert.equal(status.status, 'starting');
   assert.ok(status.runId);
   assert.ok(Array.isArray(status.previewEvents));
+  assert.ok(typeof statusEnvelope.meta.requestId === 'string');
 
   const eventsRes = await fetch(`${url}/api/projects/${projectId}/train/v2/events?runId=${encodeURIComponent(status.runId)}&cursor=0&limit=10`);
   assert.equal(eventsRes.status, 200);
-  const eventsPayload = await eventsRes.json();
+  const eventsEnvelope = await eventsRes.json();
+  assert.equal(eventsEnvelope.ok, true);
+  const eventsPayload = eventsEnvelope.data;
   assert.ok(Array.isArray(eventsPayload.events));
   assert.ok(eventsPayload.events.length >= 2);
   assert.equal(eventsPayload.runId, status.runId);
@@ -75,7 +80,9 @@ test('training v2 routes expose status/events/export for active run', async (t) 
   });
   assert.equal(exportRes.status, 200);
   assert.match(exportRes.headers.get('content-type') || '', /application\/json/);
-  const exportJson = await exportRes.json();
+  const exportText = await exportRes.text();
+  const parsed = JSON.parse(exportText);
+  const exportJson = parsed?.ok === true ? parsed.data : parsed;
   assert.equal(exportJson.manifest.runId, status.runId);
   assert.ok(Array.isArray(exportJson.events));
 });

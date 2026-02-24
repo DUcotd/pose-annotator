@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Folder, X, FolderOpen } from 'lucide-react';
-import { apiUrl } from '../../api';
+import { apiClient } from '../../lib/apiClient';
+import { useErrorCenter } from '../../error/ErrorCenter';
 
 export const CreateProjectModal = ({ isOpen, onClose, onSubmit }) => {
+    const { reportError } = useErrorCenter();
     const [name, setName] = useState('');
     const [customPath, setCustomPath] = useState('');
     const [defaultPath, setDefaultPath] = useState('');
@@ -14,30 +16,27 @@ export const CreateProjectModal = ({ isOpen, onClose, onSubmit }) => {
     useEffect(() => {
         if (isOpen) {
             setSubmitError('');
-            fetch(apiUrl('/api/settings/projects-dir'))
-                .then(res => res.json())
-                .then(data => {
+            apiClient.get('/api/settings/projects-dir')
+                .then((data) => {
                     setDefaultPath(data.projectsDir || '使用默认位置');
                 })
-                .catch(() => {
+                .catch((err) => {
+                    reportError(err, { source: 'create-project-modal.load-default-path' });
                     setDefaultPath('使用默认位置');
                 });
         }
-    }, [isOpen]);
+    }, [isOpen, reportError]);
 
     const handleSelectFolder = async () => {
         try {
-            const res = await fetch(apiUrl('/api/utils/select-folder'), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' }
-            });
-            const data = await res.json();
+            const data = await apiClient.post('/api/utils/select-folder', {});
             if (data.path) {
                 setCustomPath(data.path);
                 setUseCustomPath(true);
             }
         } catch (err) {
             console.error('Failed to select folder:', err);
+            reportError(err, { source: 'create-project-modal.select-folder' });
         }
     };
 

@@ -21,6 +21,8 @@ import {
     AlertTriangle
 } from 'lucide-react';
 import './export/datasetWorkspace.css';
+import { apiClient } from '../lib/apiClient';
+import { useErrorCenter } from '../error/ErrorCenter';
 
 const StatCard = ({ icon: Icon, label, value, subValue, tone = 'mint' }) => (
     <div className={`de-stat-card de-stat-${tone}`}>
@@ -79,6 +81,7 @@ export const DatasetExport = () => {
         exportCollaboration,
         goBack
     } = useProject();
+    const { reportError } = useErrorCenter();
 
     const [includeVisibility, setIncludeVisibility] = useState(true);
     const [customPath, setCustomPath] = useState('');
@@ -101,8 +104,7 @@ export const DatasetExport = () => {
     useEffect(() => {
         const fetchStats = async () => {
             try {
-                const res = await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(currentProject)}/dataset/stats`);
-                const data = await res.json();
+                const data = await apiClient.get(`/api/projects/${encodeURIComponent(currentProject)}/dataset/stats`);
                 setExportStats({
                     totalImages: data.total || 0,
                     images: data.annotated || 0,
@@ -111,6 +113,7 @@ export const DatasetExport = () => {
                 });
             } catch (err) {
                 console.error('Failed to fetch stats:', err);
+                reportError(err, { source: 'dataset-export.fetch-stats', projectId: currentProject });
             } finally {
                 setIsLoadingStats(false);
             }
@@ -129,7 +132,7 @@ export const DatasetExport = () => {
             if (s.shuffle !== undefined) setShuffleData(s.shuffle);
             if (s.includeUnannotated !== undefined) setIncludeUnannotated(s.includeUnannotated);
         }
-    }, [currentProject, projectConfig]);
+    }, [currentProject, projectConfig, reportError]);
 
     useEffect(() => {
         if (!notification) return undefined;
@@ -165,13 +168,13 @@ export const DatasetExport = () => {
 
     const handleSelectFolder = async () => {
         try {
-            const res = await fetch('http://localhost:5000/api/utils/select-folder', { method: 'POST' });
-            const data = await res.json();
+            const data = await apiClient.post('/api/utils/select-folder', {});
             if (data.path) {
                 setCustomPath(data.path);
                 saveSettings({ customPath: data.path });
             }
-        } catch {
+        } catch (err) {
+            reportError(err, { source: 'dataset-export.select-folder' });
             setNotification({ type: 'error', message: '选择目录失败，请重试。' });
         }
     };

@@ -5,11 +5,14 @@ import { createPortal } from 'react-dom';
 import { useProject } from '../context/ProjectContext';
 import { useAnnotationSession } from '../hooks/useAnnotationSession';
 import { apiUrl } from '../api';
+import { apiClient } from '../lib/apiClient';
+import { useErrorCenter } from '../error/ErrorCenter';
 import { ClassInputModal } from './ClassInputModal';
 import { ClassManagerModal } from './ClassManagerModal';
 
 export function AnnotationEditor({ image, projectId, onBack }) {
     const { images, editorNavImages, editorReloadToken, openEditor, goToTraining, currentProject, exportProject, deleteImage, predictSingleImage, getPredictionSettings, registerEditorAttemptNavigation } = useProject();
+    const { reportError } = useErrorCenter();
     const session = useAnnotationSession({ projectId, imageId: image });
     const annotations = session.annotations;
     const setAnnotations = session.setAnnotations;
@@ -249,11 +252,13 @@ export function AnnotationEditor({ image, projectId, onBack }) {
 
     // Load project config
     useEffect(() => {
-        fetch(apiUrl(`/api/projects/${encodeURIComponent(projectId)}/config`))
-            .then(res => res.json())
+        apiClient.get(`/api/projects/${encodeURIComponent(projectId)}/config`)
             .then(data => setProjectConfig(data || { classMapping: {} }))
-            .catch(err => console.error('Error loading config:', err));
-    }, [projectId]);
+            .catch(err => {
+                console.error('Error loading config:', err);
+                reportError(err, { source: 'annotation-editor.load-config', projectId });
+            });
+    }, [projectId, reportError]);
 
     // Load prediction model path
     useEffect(() => {
@@ -293,14 +298,12 @@ export function AnnotationEditor({ image, projectId, onBack }) {
     const saveConfig = (newConfig) => {
         console.log('[AnnotationEditor] saveConfig called with:', newConfig);
         setProjectConfig(newConfig);
-        fetch(apiUrl(`/api/projects/${encodeURIComponent(projectId)}/config`), {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(newConfig)
-        })
-            .then(res => res.json())
+        apiClient.post(`/api/projects/${encodeURIComponent(projectId)}/config`, newConfig)
             .then(data => console.log('[AnnotationEditor] Config saved:', data))
-            .catch(err => console.error('[AnnotationEditor] Error saving config:', err));
+            .catch(err => {
+                console.error('[AnnotationEditor] Error saving config:', err);
+                reportError(err, { source: 'annotation-editor.save-config', projectId });
+            });
     };
 
     const retrySave = useCallback(() => session.save(), [session]);
@@ -313,17 +316,13 @@ export function AnnotationEditor({ image, projectId, onBack }) {
         }
         if (nav.type === 'copyPrevToCurrent') {
             try {
-                const res = await fetch(apiUrl(`/api/projects/${encodeURIComponent(projectId)}/annotations/${encodeURIComponent(nav.sourceImage)}`));
-                if (!res.ok) {
-                    const t = await res.text().catch(() => '');
-                    throw new Error(t ? `HTTP ${res.status}: ${t}` : `HTTP ${res.status}`);
-                }
-                const data = await res.json();
+                const data = await apiClient.get(`/api/projects/${encodeURIComponent(projectId)}/annotations/${encodeURIComponent(nav.sourceImage)}`);
                 applyAnnotationEdit(Array.isArray(data) ? data : []);
                 setSelectedId(null);
             } catch (err) {
                 setPredictionError(err?.message ? `复制标注失败：${String(err.message)}` : `复制标注失败：${String(err)}`);
                 setShowPredictionError(true);
+                reportError(err, { source: 'annotation-editor.copy-prev', projectId, sourceImage: nav.sourceImage });
             }
             return;
         }
@@ -418,13 +417,13 @@ export function AnnotationEditor({ image, projectId, onBack }) {
     // Get annotated images count
     const getAnnotatedImagesCount = useCallback(async () => {
         try {
-            const res = await fetch(apiUrl(`/api/projects/${encodeURIComponent(projectId)}/dataset/stats`));
-            const data = await res.json();
+            const data = await apiClient.get(`/api/projects/${encodeURIComponent(projectId)}/dataset/stats`);
             return data.annotated || 0;
-        } catch {
+        } catch (err) {
+            reportError(err, { source: 'annotation-editor.annotated-count', projectId });
             return 0;
         }
-    }, [projectId]);
+    }, [projectId, reportError]);
 
     const [annotatedCount, setAnnotatedCount] = useState(0);
     const [datasetStats, setDatasetStats] = useState(null);
@@ -437,13 +436,13 @@ export function AnnotationEditor({ image, projectId, onBack }) {
 
     const refreshDatasetStats = useCallback(async () => {
         try {
-            const res = await fetch(apiUrl(`/api/projects/${encodeURIComponent(projectId)}/dataset/stats`));
-            const data = await res.json();
+            const data = await apiClient.get(`/api/projects/${encodeURIComponent(projectId)}/dataset/stats`);
             setDatasetStats(data || null);
-        } catch {
+        } catch (err) {
+            reportError(err, { source: 'annotation-editor.refresh-stats', projectId });
             setDatasetStats(null);
         }
-    }, [projectId]);
+    }, [projectId, reportError]);
 
     useEffect(() => {
         refreshDatasetStats();

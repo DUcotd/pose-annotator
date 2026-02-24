@@ -10,6 +10,7 @@ import { LogWorkbench } from './training/LogWorkbench';
 import { TrainingDashboard } from './training/TrainingDashboard';
 import { TrainingForm, AugmentationForm, HardwareForm, StrategyForm, LossForm, RemoteForm } from './training/TrainingForms';
 import './training/trainingWorkspace.css';
+import { useErrorCenter } from '../error/ErrorCenter';
 
 const getStatusMeta = (status) => {
     switch (status) {
@@ -44,6 +45,7 @@ const getDiagnosisMeta = (diagnosis) => {
 
 export const TrainingConfig = () => {
     const { currentProject, configLoading, goBack } = useProject();
+    const { reportError } = useErrorCenter();
     const {
         config,
         status,
@@ -79,9 +81,12 @@ export const TrainingConfig = () => {
         } catch (err) {
             const errorMsg = err.message || 'Unknown error';
             if (errorMsg.includes('Dataset config not found')) {
-                alert(`⚠️ 数据集未导出\n\n请先导出数据集再开始训练：\n1. 点击左侧导航栏的「导出数据集」\n2. 配置导出选项并点击导出\n3. 导出成功后返回此页面开始训练\n\n详细错误：${errorMsg}`);
+                reportError(new Error(`数据集未导出，请先到“导出数据集”页面完成导出后再开始训练。详情：${errorMsg}`), {
+                    source: 'training-config.start',
+                    projectId: currentProject
+                });
             } else {
-                alert(`启动失败: ${errorMsg}`);
+                reportError(err, { source: 'training-config.start', projectId: currentProject });
             }
         }
     };
@@ -220,7 +225,7 @@ export const TrainingConfig = () => {
                                         setExportResult(result);
                                         setShowExportSuccess(true);
                                     } catch (err) {
-                                        alert(`导出失败: ${err.message}`);
+                                        reportError(err, { source: 'training-config.export-logs', projectId: currentProject });
                                     }
                                 }}
                                 disabled={!hasExportableData}
@@ -331,7 +336,7 @@ export const TrainingConfig = () => {
                                     try {
                                         await openLogFile(exportResult.filePath);
                                     } catch (err) {
-                                        alert(`打开文件失败: ${err.message}`);
+                                        reportError(err, { source: 'training-config.open-log-file', projectId: currentProject });
                                     }
                                 }}
                                 style={{ height: '42px' }}
@@ -344,7 +349,7 @@ export const TrainingConfig = () => {
                                     try {
                                         await openLogsFolder();
                                     } catch (err) {
-                                        alert(`打开文件夹失败: ${err.message}`);
+                                        reportError(err, { source: 'training-config.open-log-folder', projectId: currentProject });
                                     }
                                 }}
                                 style={{ height: '42px' }}

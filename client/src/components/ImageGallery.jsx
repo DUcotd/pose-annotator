@@ -7,6 +7,8 @@ import { useProject } from '../context/ProjectContext';
 import { createPortal } from 'react-dom';
 import { filterImagesAdvanced } from '../utils/galleryFilters';
 import { apiUrl } from '../api';
+import { apiClient } from '../lib/apiClient';
+import { useErrorCenter } from '../error/ErrorCenter';
 
 const PAGE_SIZE = 60;
 
@@ -230,6 +232,7 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
     const [stats, setStats] = useState(null);
     const [loadingStats, setLoadingStats] = useState(false);
     const { deleteImage, galleryFilters, setGalleryFilters } = useProject();
+    const { reportError } = useErrorCenter();
     const search = galleryFilters?.search ?? '';
     const annotatedFilter = galleryFilters?.annotated ?? 'all';
     const keypointsMin = galleryFilters?.keypointsMin ?? '';
@@ -276,58 +279,34 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
 
     const fetchModelConfig = async () => {
         try {
-            const resp = await fetch(apiUrl(`/api/projects/${encodeURIComponent(projectId)}/prediction-settings`));
-            if (resp.ok) {
-                const data = await resp.json();
-                setModelPath(data.modelPath || '');
-            }
+            const data = await apiClient.get(`/api/projects/${encodeURIComponent(projectId)}/prediction-settings`);
+            setModelPath(data.modelPath || '');
         } catch (e) {
             console.error('Failed to fetch model config:', e);
+            reportError(e, { source: 'image-gallery.fetch-model-config', projectId });
         }
     };
 
     const handleSelectModel = async () => {
         try {
-            const resp = await fetch(apiUrl('/api/utils/select-file'), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    filters: [{ name: 'Model File', extensions: ['pt', 'pth', 'onnx'] }]
-                })
+            const data = await apiClient.post('/api/utils/select-file', {
+                filters: [{ name: 'Model File', extensions: ['pt', 'pth', 'onnx'] }]
             });
-
-            const data = await resp.json().catch(() => ({}));
-            if (!resp.ok) {
-                showFeedback(data?.error || '打开模型选择窗口失败', 'error', 5000);
-                return;
-            }
 
             if (!data.path) {
                 showFeedback('未选择模型文件', 'info');
                 return;
             }
 
-            const validateResp = await fetch(apiUrl(`/api/projects/${encodeURIComponent(projectId)}/predict/validate-model`), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ modelPath: data.path })
+            const validateData = await apiClient.post(`/api/projects/${encodeURIComponent(projectId)}/predict/validate-model`, {
+                modelPath: data.path
             });
-            const validateData = await validateResp.json().catch(() => ({}));
-            if (!validateResp.ok || !validateData.valid) {
+            if (!validateData.valid) {
                 showFeedback(validateData?.error || '模型校验失败，请重新选择', 'error', 5000);
                 return;
             }
 
-            const saveResp = await fetch(apiUrl(`/api/projects/${encodeURIComponent(projectId)}/prediction-settings`), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ modelPath: data.path })
-            });
-            const saveData = await saveResp.json().catch(() => ({}));
-            if (!saveResp.ok) {
-                showFeedback(saveData?.error || '保存模型路径失败', 'error', 5000);
-                return;
-            }
+            await apiClient.post(`/api/projects/${encodeURIComponent(projectId)}/prediction-settings`, { modelPath: data.path });
 
             setModelPath(data.path);
             showFeedback('模型已选择并保存', 'success');
@@ -335,6 +314,7 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
         } catch (e) {
             console.error('Failed to select model:', e);
             showFeedback(`选择模型失败：${e.message}`, 'error', 5000);
+            reportError(e, { source: 'image-gallery.select-model', projectId });
         }
     };
 
@@ -369,21 +349,12 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
 
         // 启动预标注任务
         try {
-            const resp = await fetch(apiUrl(`/api/projects/${encodeURIComponent(projectId)}/predict`), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    modelPath: modelPath,
-                    images: targetImages,
-                    confidenceThreshold: confidenceThreshold,
-                    mode: 'all'
-                })
+            const startData = await apiClient.post(`/api/projects/${encodeURIComponent(projectId)}/predict`, {
+                modelPath: modelPath,
+                images: targetImages,
+                confidenceThreshold: confidenceThreshold,
+                mode: 'all'
             });
-            const startData = await resp.json().catch(() => ({}));
-
-            if (!resp.ok) {
-                throw new Error(startData?.error || startData?.message || '预标注任务启动失败');
-            }
 
             if (startData?.immediate && Number(startData?.processedImages) === 0) {
                 setPreannotating(false);
@@ -400,86 +371,110 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
             // 立即执行一次状态查询，然后开始轮询
             const checkStatus = async () => {
                 try {
-                    const statusResp = await fetch(apiUrl(`/api/projects/${encodeURIComponent(projectId)}/predict/status`));
-                    if (statusResp.ok) {
-                        const status = await statusResp.json();
+                    const status = await apiClient.get(`/api/projects/${encodeURIComponent(projectId)}/predict/status`);
 
-                        const toNumber = (value, fallback = 0) => {
-                            const n = Number(value);
-                            return Number.isFinite(n) ? n : fallback;
-                        };
+                    const toNumber = (value, fallback = 0) => {
+                        const n = Number(value);
+                        return Number.isFinite(n) ? n : fallback;
+                    };
 
-                        const total = Math.max(0, toNumber(status.total, targetImages.length)) || targetImages.length;
-                        const completed = Math.max(0, toNumber(status.current, 0));
-                        const active = Math.max(completed, toNumber(status.active, completed));
-                        const activeFromPercent = total > 0
-                            ? Math.round((Math.max(
-                                toNumber(status.activeProgress, 0),
-                                toNumber(status.progress, 0)
-                            ) / 100) * total)
-                            : 0;
-                        const runningCurrent = Math.max(active, activeFromPercent);
-                        const displayCurrent = status.status === 'running' ? runningCurrent : completed;
+                    const total = Math.max(0, toNumber(status.total, targetImages.length)) || targetImages.length;
+                    const completed = Math.max(0, toNumber(status.current, 0));
+                    const active = Math.max(completed, toNumber(status.active, completed));
+                    const activeFromPercent = total > 0
+                        ? Math.round((Math.max(
+                            toNumber(status.activeProgress, 0),
+                            toNumber(status.progress, 0)
+                        ) / 100) * total)
+                        : 0;
+                    const runningCurrent = Math.max(active, activeFromPercent);
+                    const displayCurrent = status.status === 'running' ? runningCurrent : completed;
 
-                        setPreannotateProgress(prev => ({
-                            current: Math.min(total, Math.max(prev?.current || 0, displayCurrent)),
-                            total: total,
-                            currentImage: status.message || prev?.currentImage || '正在处理...'
-                        }));
+                    setPreannotateProgress(prev => ({
+                        current: Math.min(total, Math.max(prev?.current || 0, displayCurrent)),
+                        total: total,
+                        currentImage: status.message || prev?.currentImage || '正在处理...'
+                    }));
 
-                        // 检查任务是否完成
-                        if (status.status === 'completed' || status.status === 'failed' || status.status === 'stopped') {
-                            // 清理所有定时器
-                            if (pollIntervalRef.current) {
-                                clearInterval(pollIntervalRef.current);
-                                pollIntervalRef.current = null;
-                            }
-                            if (checkCancelIntervalRef.current) {
-                                clearInterval(checkCancelIntervalRef.current);
-                                checkCancelIntervalRef.current = null;
-                            }
-                            if (timeoutRef.current) {
-                                clearTimeout(timeoutRef.current);
-                                timeoutRef.current = null;
-                            }
-
-                            setPreannotating(false);
-                            setShowPreannotateProgress(false);
-
-                            // 使用后端返回的统计信息
-                            let successCount = status.successCount || 0;
-                            let failedCount = status.failedCount || 0;
-
-                            // 如果任务已完成，确保统计信息正确
-                            if (status.status === 'completed') {
-                                // 如果后端返回的successCount为0但实际有处理图片，使用current作为成功数
-                                if (successCount === 0 && completed > 0) {
-                                    successCount = completed;
-                                    failedCount = Math.max(0, total - successCount);
-                                }
-                                // 确保成功数不超过总数
-                                if (successCount > total) {
-                                    successCount = total;
-                                    failedCount = 0;
-                                }
-                                // 如果成功数 + 失败数不等于总数，重新计算失败数
-                                if (successCount + failedCount !== total && successCount > 0) {
-                                    failedCount = Math.max(0, total - successCount);
-                                }
-                            }
-
-                            setPreannotateResult({
-                                successCount,
-                                failedCount,
-                                cancelled: status.status === 'stopped' || cancelPreannotateRef.current
-                            });
-                            setShowPreannotateResult(true);
-                            onUpload();
-                            return true; // 任务已完成，停止轮询
+                    // 检查任务是否完成
+                    if (status.status === 'completed' || status.status === 'failed' || status.status === 'stopped') {
+                        // 清理所有定时器
+                        if (pollIntervalRef.current) {
+                            clearInterval(pollIntervalRef.current);
+                            pollIntervalRef.current = null;
                         }
+                        if (checkCancelIntervalRef.current) {
+                            clearInterval(checkCancelIntervalRef.current);
+                            checkCancelIntervalRef.current = null;
+                        }
+                        if (timeoutRef.current) {
+                            clearTimeout(timeoutRef.current);
+                            timeoutRef.current = null;
+                        }
+
+                        setPreannotating(false);
+                        setShowPreannotateProgress(false);
+
+                        // 使用后端返回的统计信息
+                        const isFailed = status.status === 'failed';
+                        const isCancelled = status.status === 'stopped' || cancelPreannotateRef.current;
+                        let successCount = Math.max(0, toNumber(status.successCount, 0));
+                        let failedCount = Math.max(0, toNumber(status.failedCount, 0));
+
+                        // 如果任务已完成，确保统计信息正确
+                        if (status.status === 'completed') {
+                            // 如果后端返回的successCount为0但实际有处理图片，使用current作为成功数
+                            if (successCount === 0 && completed > 0) {
+                                successCount = completed;
+                                failedCount = Math.max(0, total - successCount);
+                            }
+                            // 确保成功数不超过总数
+                            if (successCount > total) {
+                                successCount = total;
+                                failedCount = 0;
+                            }
+                            // 如果成功数 + 失败数不等于总数，重新计算失败数
+                            if (successCount + failedCount !== total && successCount > 0) {
+                                failedCount = Math.max(0, total - successCount);
+                            }
+                        } else if (isFailed) {
+                            // 失败态至少要有失败计数，避免 UI 误显示为成功
+                            if (total > 0) {
+                                if (successCount > total) successCount = total;
+                                if (failedCount === 0) {
+                                    failedCount = Math.max(1, total - successCount);
+                                }
+                                if (successCount + failedCount > total) {
+                                    failedCount = Math.max(0, total - successCount);
+                                }
+                            } else if (failedCount === 0) {
+                                failedCount = 1;
+                            }
+                        }
+
+                        const errorMessage = typeof status.errorMessage === 'string'
+                            ? status.errorMessage
+                            : '';
+
+                        setPreannotateResult({
+                            successCount,
+                            failedCount,
+                            cancelled: isCancelled,
+                            failed: isFailed,
+                            message: isFailed
+                                ? (errorMessage || status.message || '预标注失败，请检查 Python 环境和模型配置')
+                                : ''
+                        });
+                        setShowPreannotateResult(true);
+                        if (isFailed) {
+                            showFeedback(errorMessage || '预标注失败，请检查 Python 环境和模型配置', 'error', 6000);
+                        }
+                        onUpload();
+                        return true; // 任务已完成，停止轮询
                     }
                 } catch (e) {
                     console.error('Failed to poll prediction status:', e);
+                    reportError(e, { source: 'image-gallery.predict-status', projectId });
                 }
                 return false; // 任务未完成，继续轮询
             };
@@ -514,7 +509,9 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
                 setPreannotateResult({
                     successCount: 0,
                     failedCount: targetImages.length,
-                    cancelled: false
+                    cancelled: false,
+                    failed: true,
+                    message: '预标注超时，请检查模型和 Python 环境后重试'
                 });
                 setShowPreannotateResult(true);
             }, 5 * 60 * 1000);
@@ -524,6 +521,7 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
             setPreannotating(false);
             setShowPreannotateProgress(false);
             showFeedback(`预标注启动失败：${e.message || '未知错误'}`, 'error', 5000);
+            reportError(e, { source: 'image-gallery.start-preannotate', projectId });
         }
     };
 
@@ -534,9 +532,11 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
             ...(prev || { current: 0, total: 0, currentImage: '' }),
             currentImage: '正在取消预标注任务...'
         }));
-        fetch(apiUrl(`/api/projects/${encodeURIComponent(projectId)}/predict/cancel`), {
-            method: 'POST'
-        }).catch(e => console.error('Failed to cancel prediction:', e));
+        apiClient.post(`/api/projects/${encodeURIComponent(projectId)}/predict/cancel`, {})
+            .catch((e) => {
+                console.error('Failed to cancel prediction:', e);
+                reportError(e, { source: 'image-gallery.cancel-preannotate', projectId });
+            });
     };
 
     // 组件卸载时清理定时器
@@ -559,11 +559,11 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
     const fetchStats = async () => {
         setLoadingStats(true);
         try {
-            const resp = await fetch(apiUrl(`/api/projects/${encodeURIComponent(projectId)}/dataset/stats`));
-            const data = await resp.json();
+            const data = await apiClient.get(`/api/projects/${encodeURIComponent(projectId)}/dataset/stats`);
             setStats(data);
         } catch (e) {
             console.error('Failed to fetch stats:', e);
+            reportError(e, { source: 'image-gallery.fetch-stats', projectId });
         } finally {
             setLoadingStats(false);
         }
@@ -1076,13 +1076,10 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
                                                     title="在资源管理器中打开"
                                                     onClick={async () => {
                                                         try {
-                                                            await fetch(apiUrl('/api/utils/open-folder'), {
-                                                                method: 'POST',
-                                                                headers: { 'Content-Type': 'application/json' },
-                                                                body: JSON.stringify({ path: stats.projectPath })
-                                                            });
+                                                            await apiClient.post('/api/utils/open-folder', { path: stats.projectPath });
                                                         } catch (e) {
                                                             console.error('Failed to open folder:', e);
+                                                            reportError(e, { source: 'image-gallery.open-folder', projectId, path: stats.projectPath });
                                                         }
                                                     }}
                                                 >
@@ -1640,6 +1637,8 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
                             width: '90%',
                             border: preannotateResult.cancelled
                                 ? '1px solid rgba(245, 158, 11, 0.3)'
+                                : preannotateResult.failed
+                                    ? '1px solid rgba(239, 68, 68, 0.35)'
                                 : preannotateResult.failedCount > 0
                                     ? '1px solid rgba(245, 158, 11, 0.3)'
                                     : '1px solid rgba(16, 185, 129, 0.3)',
@@ -1654,6 +1653,8 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
                                     borderRadius: '50%',
                                     background: preannotateResult.cancelled
                                         ? 'rgba(245, 158, 11, 0.15)'
+                                        : preannotateResult.failed
+                                            ? 'rgba(239, 68, 68, 0.15)'
                                         : preannotateResult.failedCount > 0
                                             ? 'rgba(245, 158, 11, 0.15)'
                                             : 'rgba(16, 185, 129, 0.15)',
@@ -1664,6 +1665,8 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
                                 }}>
                                     {preannotateResult.cancelled ? (
                                         <Pause size={28} color="#f59e0b" />
+                                    ) : preannotateResult.failed ? (
+                                        <AlertCircle size={28} color="#ef4444" />
                                     ) : preannotateResult.failedCount > 0 ? (
                                         <AlertCircle size={28} color="#f59e0b" />
                                     ) : (
@@ -1673,10 +1676,17 @@ export const ImageGallery = ({ images = [], projectId, onSelectImage, onUpload, 
                                 <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-primary)' }}>
                                     {preannotateResult.cancelled
                                         ? '预标注已取消'
+                                        : preannotateResult.failed
+                                            ? '预标注失败'
                                         : preannotateResult.failedCount > 0
                                             ? '预标注完成（部分失败）'
                                             : '预标注完成'}
                                 </h3>
+                                {preannotateResult.message && (
+                                    <p style={{ margin: '8px 0 0 0', color: 'var(--text-secondary)', fontSize: '13px' }}>
+                                        {preannotateResult.message}
+                                    </p>
+                                )}
                             </div>
 
                             <div style={{

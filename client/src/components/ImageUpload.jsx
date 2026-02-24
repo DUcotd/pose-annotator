@@ -1,10 +1,13 @@
 
 import React, { useState, useRef } from 'react';
 import { UploadCloud, Check } from 'lucide-react';
+import { apiClient } from '../lib/apiClient';
+import { useErrorCenter } from '../error/ErrorCenter';
 
 const CONCURRENT_UPLOADS = 4;
 
 export const ImageUpload = ({ projectId, onUploadComplete, compact = false, variant = 'default' }) => {
+    const { reportError } = useErrorCenter();
     const [uploading, setUploading] = useState(false);
     const [progress, setProgress] = useState({ done: 0, total: 0 });
     const [message, setMessage] = useState('');
@@ -20,6 +23,7 @@ export const ImageUpload = ({ projectId, onUploadComplete, compact = false, vari
         abortRef.current = false;
 
         let count = 0;
+        let failed = 0;
         let idx = 0;
 
         const uploadNext = async () => {
@@ -29,13 +33,19 @@ export const ImageUpload = ({ projectId, onUploadComplete, compact = false, vari
                 formData.append('image', files[fileIdx]);
 
                 try {
-                    await fetch(`http://localhost:5000/api/projects/${encodeURIComponent(projectId)}/upload`, {
+                    await apiClient.request(`/api/projects/${encodeURIComponent(projectId)}/upload`, {
                         method: 'POST',
                         body: formData
                     });
                     count++;
                 } catch (error) {
                     console.error('Upload failed:', files[fileIdx].name, error);
+                    failed++;
+                    reportError(error, {
+                        source: 'image-upload.file',
+                        projectId,
+                        fileName: files[fileIdx].name
+                    });
                 }
                 setProgress(p => ({ ...p, done: p.done + 1 }));
             }
@@ -48,7 +58,7 @@ export const ImageUpload = ({ projectId, onUploadComplete, compact = false, vari
         await Promise.all(workers);
 
         setUploading(false);
-        setMessage(`成功上传 ${count}/${files.length} 张图片。`);
+        setMessage(failed > 0 ? `上传完成：成功 ${count} 张，失败 ${failed} 张。` : `成功上传 ${count}/${files.length} 张图片。`);
         if (onUploadComplete) onUploadComplete();
 
         e.target.value = '';

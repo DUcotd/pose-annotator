@@ -2,9 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { FolderOpen, X, Upload, BarChart3, Image as ImageIcon, Layers, Calendar, Info, Loader2, CheckCircle2 } from 'lucide-react';
 import { useProject } from '../../context/ProjectContext';
+import { apiClient } from '../../lib/apiClient';
+import { useErrorCenter } from '../../error/ErrorCenter';
 
 export const ImportCollaborationModal = ({ isOpen, onClose, onImport }) => {
     const { inspectCollaboration } = useProject();
+    const { reportError } = useErrorCenter();
     const [zipPath, setZipPath] = useState('');
     const [customPath, setCustomPath] = useState('');
     const [defaultPath, setDefaultPath] = useState('');
@@ -16,12 +19,12 @@ export const ImportCollaborationModal = ({ isOpen, onClose, onImport }) => {
 
     useEffect(() => {
         if (isOpen) {
-            fetch('http://localhost:5000/api/settings/projects-dir')
-                .then(res => res.json())
-                .then(data => {
+            apiClient.get('/api/settings/projects-dir')
+                .then((data) => {
                     setDefaultPath(data.projectsDir || '使用默认位置');
                 })
-                .catch(() => {
+                .catch((err) => {
+                    reportError(err, { source: 'import-collaboration.load-default-path' });
                     setDefaultPath('使用默认位置');
                 });
             setZipPath('');
@@ -30,7 +33,7 @@ export const ImportCollaborationModal = ({ isOpen, onClose, onImport }) => {
             setPkgMeta(null);
             setError('');
         }
-    }, [isOpen]);
+    }, [isOpen, reportError]);
 
     const handleInspect = async (path) => {
         setIsInspecting(true);
@@ -43,6 +46,7 @@ export const ImportCollaborationModal = ({ isOpen, onClose, onImport }) => {
                 setError(result.error || '无法读取协作包信息');
             }
         } catch (err) {
+            reportError(err, { source: 'import-collaboration.inspect', path });
             setError('解析协作包失败');
         } finally {
             setIsInspecting(false);
@@ -51,36 +55,29 @@ export const ImportCollaborationModal = ({ isOpen, onClose, onImport }) => {
 
     const handleSelectZip = async () => {
         try {
-            const res = await fetch('http://localhost:5000/api/utils/select-file', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    filters: [{ name: '项目协作包 (ZIP)', extensions: ['zip'] }]
-                })
+            const data = await apiClient.post('/api/utils/select-file', {
+                filters: [{ name: '项目协作包 (ZIP)', extensions: ['zip'] }]
             });
-            const data = await res.json();
             if (data.path) {
                 setZipPath(data.path);
                 handleInspect(data.path);
             }
         } catch (err) {
             console.error('Failed to select file:', err);
+            reportError(err, { source: 'import-collaboration.select-zip' });
         }
     };
 
     const handleSelectFolder = async () => {
         try {
-            const res = await fetch('http://localhost:5000/api/utils/select-folder', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' }
-            });
-            const data = await res.json();
+            const data = await apiClient.post('/api/utils/select-folder', {});
             if (data.path) {
                 setCustomPath(data.path);
                 setUseCustomPath(true);
             }
         } catch (err) {
             console.error('Failed to select folder:', err);
+            reportError(err, { source: 'import-collaboration.select-folder' });
         }
     };
 

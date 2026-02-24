@@ -2,9 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Download, X, Shuffle, FolderOpen, Loader2 } from 'lucide-react';
 import { useProject } from '../context/ProjectContext';
+import { apiClient } from '../lib/apiClient';
+import { useErrorCenter } from '../error/ErrorCenter';
 
 export const ExportModal = ({ isOpen, onClose, onExport }) => {
     const { currentProject, projectConfig, configLoading, updateProjectConfig } = useProject();
+    const { reportError } = useErrorCenter();
 
     const [includeVisibility, setIncludeVisibility] = useState(true);
     const [customPath, setCustomPath] = useState('');
@@ -68,14 +71,14 @@ export const ExportModal = ({ isOpen, onClose, onExport }) => {
 
     const handleSelectFolder = async () => {
         try {
-            const res = await fetch('http://localhost:5000/api/utils/select-folder', { method: 'POST' });
-            const data = await res.json();
+            const data = await apiClient.post('/api/utils/select-folder', {});
             if (data.path) {
                 setCustomPath(data.path);
                 saveSettings({ customPath: data.path });
             }
         } catch (err) {
             console.error('Failed to select folder:', err);
+            reportError(err, { source: 'export-modal.select-folder' });
         }
     };
 

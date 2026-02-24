@@ -67,3 +67,35 @@ test('PredictionService status exposes active progress from progress events', as
   }
 });
 
+test('PredictionService status keeps final stats and error message for failed tasks', async () => {
+  const projectId = `pred-status-failed-${Date.now()}`;
+  const tmpRoot = await fsp.mkdtemp(path.join(os.tmpdir(), 'pose-annotator-pred-'));
+  const projectPath = path.join(tmpRoot, 'proj');
+  await fsp.mkdir(projectPath, { recursive: true });
+
+  try {
+    const processState = PredictionService.processes.create(projectId, projectPath);
+    processState.finalStats = {
+      totalImages: 12,
+      processedImages: 5,
+      successCount: 5,
+      failedCount: 7
+    };
+    processState.finalErrorMessage = 'ImportError: No module named ultralytics';
+    PredictionService.processes.setStatus(projectId, 'failed');
+    PredictionService.predictionStates.delete(projectId);
+
+    const status = PredictionService.getStatus(projectId);
+    assert.equal(status.status, 'failed');
+    assert.equal(status.progress.total, 12);
+    assert.equal(status.progress.processed, 5);
+    assert.equal(status.progress.successCount, 5);
+    assert.equal(status.progress.failedCount, 7);
+    assert.match(status.errorMessage, /ultralytics/);
+  } finally {
+    PredictionService.predictionStates.delete(projectId);
+    PredictionService.processes.clear(projectId);
+    await fsp.rm(tmpRoot, { recursive: true, force: true });
+  }
+});
+

@@ -65,7 +65,6 @@ class ProjectValidator {
       const markers = [
         'package.json',
         'node_modules',
-        'server.js',
         'electron-main.js',
         'vite.config.js',
         '.git'

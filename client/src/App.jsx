@@ -9,15 +9,21 @@ import { ImageUpload } from './components/ImageUpload';
 import { TrainingConfig } from './components/TrainingConfig';
 import { DatasetExport } from './components/DatasetExport';
 import { Settings } from './components/Settings';
+import { ErrorCenterProvider } from './error/ErrorCenter';
+import SystemHealthGate from './components/SystemHealthGate';
 
 
 function App() {
   return (
-    <ProjectProvider>
-      <MainLayout>
-        <AppContent />
-      </MainLayout>
-    </ProjectProvider>
+    <ErrorCenterProvider>
+      <SystemHealthGate>
+        <ProjectProvider>
+          <MainLayout>
+            <AppContent />
+          </MainLayout>
+        </ProjectProvider>
+      </SystemHealthGate>
+    </ErrorCenterProvider>
   );
 }
 

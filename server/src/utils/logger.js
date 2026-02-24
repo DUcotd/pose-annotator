@@ -2,10 +2,34 @@ const winston = require('winston');
 const path = require('path');
 const fs = require('fs');
 
-const logsDir = path.join(__dirname, '..', '..', 'logs');
+function resolveElectronUserDataDir() {
+  if (!process.versions?.electron) return null;
+  try {
+    const { app } = require('electron');
+    if (!app || typeof app.getPath !== 'function') return null;
+    return app.getPath('userData');
+  } catch {
+    return null;
+  }
+}
+
+function resolveLogsDir() {
+  if (process.env.POSE_ANNOTATOR_LOGS_DIR) {
+    return process.env.POSE_ANNOTATOR_LOGS_DIR;
+  }
+  const userDataDir = resolveElectronUserDataDir();
+  if (userDataDir) {
+    return path.join(userDataDir, 'logs');
+  }
+  return path.join(__dirname, '..', '..', 'logs');
+}
+
+const logsDir = resolveLogsDir();
 if (!fs.existsSync(logsDir)) {
   fs.mkdirSync(logsDir, { recursive: true });
 }
+const errorLogPath = path.join(logsDir, 'error.log');
+const combinedLogPath = path.join(logsDir, 'combined.log');
 
 const logger = winston.createLogger({
   level: process.env.LOG_LEVEL || 'info',
@@ -18,13 +42,13 @@ const logger = winston.createLogger({
   defaultMeta: { service: 'pose-annotator' },
   transports: [
     new winston.transports.File({
-      filename: path.join(logsDir, 'error.log'),
+      filename: errorLogPath,
       level: 'error',
       maxsize: 5 * 1024 * 1024,
       maxFiles: 5
     }),
     new winston.transports.File({
-      filename: path.join(logsDir, 'combined.log'),
+      filename: combinedLogPath,
       maxsize: 5 * 1024 * 1024,
       maxFiles: 5
     })
@@ -39,5 +63,9 @@ if (process.env.NODE_ENV !== 'production') {
     )
   }));
 }
+
+logger.logsDir = logsDir;
+logger.errorLogPath = errorLogPath;
+logger.combinedLogPath = combinedLogPath;
 
 module.exports = logger;
