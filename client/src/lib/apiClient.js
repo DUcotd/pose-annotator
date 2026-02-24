@@ -4,6 +4,10 @@ function isObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
+function isJsonSerializable(value) {
+  return value !== undefined && (Array.isArray(value) || isObject(value));
+}
+
 function isApiEnvelope(payload) {
   return isObject(payload) && typeof payload.ok === 'boolean' && isObject(payload.meta);
 }
@@ -90,9 +94,15 @@ function normalizeBodyAndHeaders(options = {}) {
   const headers = new Headers(options.headers || {});
 
   const isFormData = typeof FormData !== 'undefined' && init.body instanceof FormData;
-  if (init.body !== undefined && !isFormData && !headers.has('Content-Type') && isObject(init.body)) {
-    headers.set('Content-Type', 'application/json');
-    init.body = JSON.stringify(init.body);
+  if (init.body !== undefined && !isFormData) {
+    if (!headers.has('Content-Type') && isJsonSerializable(init.body)) {
+      headers.set('Content-Type', 'application/json');
+    }
+
+    const contentType = headers.get('Content-Type') || '';
+    if (contentType.toLowerCase().includes('application/json') && typeof init.body !== 'string') {
+      init.body = JSON.stringify(init.body);
+    }
   }
 
   init.headers = headers;

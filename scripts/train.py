@@ -1942,20 +1942,56 @@ def train_model(args):
         if not os.path.exists(abs_data_path):
             raise FileNotFoundError(f"找不到配置文件: {abs_data_path}")
 
-        models_dir = args.models_dir if args.models_dir else os.path.join(args.project, 'models')
+        models_dir = os.path.abspath(args.models_dir if args.models_dir else os.path.join(args.project, 'models'))
         os.makedirs(models_dir, exist_ok=True)
+        os.environ['YOLO_CONFIG_DIR'] = models_dir
         
-        model_name = args.model
+        model_name = (args.model or '').strip()
         model_path = model_name
+        searched_paths = []
         
-        if not os.path.isabs(model_name):
-            potential_path = os.path.join(models_dir, model_name)
-            if os.path.exists(potential_path):
-                model_path = potential_path
-                training_logger.info('model_load', f'使用本地模型: {model_path}')
+        if os.path.isabs(model_name):
+            if os.path.exists(model_name):
+                model_path = model_name
+                training_logger.info('model_load', f'使用绝对路径模型: {model_path}')
             else:
-                os.environ['YOLO_CONFIG_DIR'] = models_dir
-                training_logger.info('model_load', f'模型将下载/存储到: {models_dir}')
+                training_logger.warning('model_load', f'指定的绝对路径模型不存在: {model_name}')
+        else:
+            project_dir_abs = os.path.abspath(args.project) if args.project else ''
+            project_root_abs = os.path.dirname(project_dir_abs) if project_dir_abs else ''
+            candidate_dirs = [
+                models_dir,
+                os.path.join(project_root_abs, 'models') if project_root_abs else '',
+                os.path.join(os.getcwd(), 'models'),
+                project_dir_abs
+            ]
+
+            seen_dirs = set()
+            normalized_dirs = []
+            for d in candidate_dirs:
+                if not d:
+                    continue
+                norm = os.path.normcase(os.path.normpath(os.path.abspath(d)))
+                if norm in seen_dirs:
+                    continue
+                seen_dirs.add(norm)
+                normalized_dirs.append(d)
+
+            for candidate_dir in normalized_dirs:
+                potential_path = os.path.join(candidate_dir, model_name)
+                searched_paths.append(potential_path)
+                if os.path.exists(potential_path):
+                    model_path = potential_path
+                    training_logger.info('model_load', f'使用本地模型: {model_path}')
+                    break
+            else:
+                model_path = os.path.join(models_dir, model_name)
+                training_logger.warning(
+                    'model_load',
+                    f'未在本地找到模型: {model_name}，将尝试自动下载',
+                    searched_paths=searched_paths[:10]
+                )
+                training_logger.info('model_load', f'模型将下载到: {model_path}')
         
         training_logger.info('model_load', f'开始加载模型: {model_path}')
         training_logger.info('model_load', f'数据集路径: {abs_data_path}')

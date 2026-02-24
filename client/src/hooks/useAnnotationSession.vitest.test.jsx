@@ -8,7 +8,10 @@ function createJsonResponse(data, { status = 200, etag = null } = {}) {
     status,
     headers: {
       get(name) {
-        return name?.toLowerCase() === 'etag' ? etag : null;
+        const key = name?.toLowerCase();
+        if (key === 'etag') return etag;
+        if (key === 'content-type') return 'application/json';
+        return null;
       }
     },
     async json() {
@@ -69,6 +72,9 @@ describe('useAnnotationSession (vitest)', () => {
       expect(result.current.hasUnsavedChanges).toBe(false);
       expect(result.current.phase).toBe('ready');
     }, { timeout: 8000 });
+
+    const saveCall = global.fetch.mock.calls[1];
+    expect(saveCall?.[1]?.body).toBe(JSON.stringify([{ id: 'b1', type: 'bbox', x: 0, y: 0, width: 20, height: 20 }]));
   }, 12000);
 
   it('enters conflict phase on 409 and exposes server etag', async () => {

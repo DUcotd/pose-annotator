@@ -34,8 +34,6 @@ function createApp(PROJECTS_DIR, appOptions = {}) {
   };
 
   app.use(cors());
-  app.use(bodyParser.json());
-
   app.use((req, res, next) => {
     req.requestId = `req_${crypto.randomUUID().replace(/-/g, '')}`;
     logger.info(`[${req.requestId}] ${req.method} ${req.path}`);
@@ -57,6 +55,7 @@ function createApp(PROJECTS_DIR, appOptions = {}) {
     };
     next();
   });
+  app.use(bodyParser.json());
 
   const projectsDir = PROJECTS_DIR || path.join(__dirname, '..', 'projects');
 
@@ -128,9 +127,33 @@ function createApp(PROJECTS_DIR, appOptions = {}) {
   });
 
   app.use((err, req, res, next) => {
-    logger.error(`[500] ${req.method} ${req.path}:`, err);
+    const status = Number.isInteger(err?.status)
+      ? err.status
+      : (Number.isInteger(err?.statusCode) ? err.statusCode : 500);
+    logger.error(`[${status}] ${req.method} ${req.path}:`, err);
     startupState.error = startupState.error || err.message;
-    res.sendError(err, Number.isInteger(err?.status) ? err.status : 500);
+
+    if (typeof res.sendError === 'function') {
+      return res.sendError(err, status);
+    }
+
+    const appError = toAppError(err, req, status);
+    return res.status(status).json({
+      ok: false,
+      error: {
+        code: appError.code || ERROR_CODES.INTERNAL_ERROR,
+        message: appError.message || 'Internal server error',
+        hint: appError.hint,
+        where: appError.where || { method: req?.method, path: req?.path },
+        details: appError.details || {},
+        retryable: !!appError.retryable,
+        requestId: req?.requestId || null
+      },
+      meta: {
+        requestId: req?.requestId || null,
+        timestamp: new Date().toISOString()
+      }
+    });
   });
 
   app.locals.routeManifest = routeManifest;

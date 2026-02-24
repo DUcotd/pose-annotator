@@ -435,8 +435,9 @@ class TrainingService {
       '--name', config.name || 'exp_auto',
     ];
 
-    if (config.project) {
-      const modelsDir = path.join(config.project, 'models');
+    const modelBaseDir = config.projectRoot || config.project || '';
+    if (modelBaseDir) {
+      const modelsDir = path.join(modelBaseDir, 'models');
       args.push('--models_dir', modelsDir);
     }
 
@@ -1138,7 +1139,10 @@ class TrainingService {
         ...process.env,
         KMP_DUPLICATE_LIB_OK: 'TRUE',
         PYTHONIOENCODING: 'utf-8',
-        PYTHONUTF8: '1'
+        PYTHONUTF8: '1',
+        ...(config.projectRoot || config.project
+          ? { YOLO_CONFIG_DIR: path.join(config.projectRoot || config.project, 'models') }
+          : {})
       }
     });
 
